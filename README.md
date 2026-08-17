@@ -3,7 +3,7 @@
 > DeepSeek Harness（DSH）插件：给任意会话挂上**只读参考库**，agent 需要查证时
 > **先在参考库里检索**——而不是凭空猜测或直接搜网。
 >
-> 安装：`dsh plugin --profile web add git+https://github.com/hpyperry/dsh-ref-lib.git`
+> 安装：`dsh plugin --profile web add github:hpyperry/dsh-ref-lib`
 
 ## ✨ 特性
 
@@ -22,8 +22,8 @@
 ## 📦 安装
 
 ```bash
-# 从 GitHub 安装（dsh plugin 负责维护 profile manifest 与依赖）
-dsh plugin --profile web add git+https://github.com/hpyperry/dsh-ref-lib.git
+# 从 GitHub 安装（`github:owner/repo` 简写，dsh plugin 负责维护 profile manifest 与依赖）
+dsh plugin --profile web add github:hpyperry/dsh-ref-lib
 
 # 本地开发期（改动即时生效）：指向仓库本地路径
 # dsh plugin --profile web add /path/to/ref-lib
@@ -31,6 +31,8 @@ dsh plugin --profile web add git+https://github.com/hpyperry/dsh-ref-lib.git
 # 重启生效
 dsh --profile web
 ```
+
+> 发布到 npm 后也可直接按包名安装：`dsh plugin --profile web add @hpyperry/dsh-ref-lib`。
 
 卸载：`dsh plugin --profile web remove @hpyperry/dsh-ref-lib`
 
