@@ -1,10 +1,10 @@
 # ref-lib — 只读参考库插件
 
 > **@hpyperry/dsh-ref-lib** · DeepSeek Harness 插件 · node half + client UI
-> 状态：**已交付** · 当前版本 **v7**
+> 状态：**已交付**
 >
-> v7：**dock 行内胶囊、零测量**——取消 hero 相位测量/绝对定位，胶囊渲染在输入卡正上方
-> 的独立一行，经官方设计令牌纯 CSS 与输入卡左缘对齐，根除与"标准模式"按钮的重叠竞态。
+> 入口为输入卡正上方的「参考库」胶囊（`conversation.input.dock` 独立一行）：纯 CSS 与
+> 输入卡左缘对齐、零测量，根除与"标准模式"按钮的重叠竞态。
 
 ---
 
@@ -48,17 +48,17 @@ dsh --profile web
 | 机制 | 参照 | ref-lib（本插件） |
 | --- | --- | --- |
 | 上下文注入 | `dsh-sandbox-policy`：`ctx.systemPrompt.context({ name, order, text })`（动态上下文，durable 快照，空文本零 token） | `reference-libs` 贡献：`ctx.inject(['systemPrompt'], ...)` + `context({ name: 'reference-libs', order: 150, text })`——**仅向配置了参考库的会话**注入库清单、查询优先级与只读约束（按 `context.agent?.session` 折叠） |
-| UI 管理 | `ui-conversation` 的 `conversation.input.dock`（list 型 slot，per-session；输入框上方，hero 与 active 均渲染） | client 注册 **`conversation.input.dock`**「参考库」胶囊（order 200 排最后；**独立一行**，左缘经 `--dsh-composer-side-clearance`/`--dsh-composer-card-max-width` 官方令牌纯 CSS 与输入卡左缘对齐——v7 起**取消 hero 相位测量/绝对定位**，零 JS 测量、零竞态；数量徽标 + 管理面板） |
+| UI 管理 | `ui-conversation` 的 `conversation.input.dock`（list 型 slot，per-session；输入框上方，hero 与 active 均渲染） | client 注册 **`conversation.input.dock`**「参考库」胶囊（order 200 排最后；**独立一行**，左缘经 `--dsh-composer-side-clearance`/`--dsh-composer-card-max-width` 官方令牌纯 CSS 与输入卡左缘对齐——**取消 hero 相位测量/绝对定位**，零 JS 测量、零竞态；数量徽标 + 管理面板） |
 | 命令入口 | `/plan`（`ctx.commands.register`，经 `command/run` 事件） | `/ref-lib add <path>`、`/ref-lib list`、`/ref-lib remove <id>`——操作 `invocation.agent.session` |
-| 状态存储 | plan-mode 的 per-session 事件 + 折叠 | **v3 sidecar JSON**（`<dshHome>/plugin-data/ref-lib/<sessionId>.json`，`dshHomePath()` 解析）：随 dsh home 持久化/恢复，天然 session 隔离；旧日志 `ref-lib/set` 事件仅冷读折叠迁移一次（`foldRefLibs`），子会话无自身状态时继承 `parentSession` 的列表 |
+| 状态存储 | plan-mode 的 per-session 事件 + 折叠 | **sidecar JSON**（`<dshHome>/plugin-data/ref-lib/<sessionId>.json`，`dshHomePath()` 解析）：随 dsh home 持久化/恢复，天然 session 隔离；旧日志 `ref-lib/set` 事件仅冷读折叠迁移一次（`foldRefLibs`），子会话无自身状态时继承 `parentSession` 的列表 |
 
-### 数据通道（v4+）
+### 数据通道
 
 - **读/写**（打开面板/刷新/添加/移除）：client 经**普通同源 fetch** 访问插件在宿主
   `ctx.webServer`（`@deepseek-ai/dsh-host-webserver`）上自注册的 `/api/ref-lib/*`
   HTTP 路由（`GET /list`、`POST /add`、`POST /remove`），node 端读写 sidecar——
   **静默双向，不渲染命令卡片、不执行命令**（参照 dsh-ssh / dsh-persona-memory 先例）；
-- **目录选择（v6 能力自适应）**：browse 后端 → 应用内目录浏览器 `RefLibBrowser`
+- **目录选择（能力自适应）**：browse 后端 → 应用内目录浏览器 `RefLibBrowser`
   （`ctx.workspaces.listDirectory()`，面包屑/路径编辑/子目录列表）；native 后端 →
   `ctx.workspaces.pickDirectory()` 系统原生对话框；探测一次并缓存，两种后端均可工作；
 - `/ref-lib` 命令仍保留（对话内管理），与 UI 数据一致（同一 sidecar）。
@@ -182,7 +182,7 @@ pnpm build       # tsc（node half）+ tsdown（client bundle）→ lib/
 
 ## ⚠️ 已知限制
 
-- **系统原生目录选择器可能卡顿且界面语言跟随 OS**（v6 缓解）：`pickDirectory()` 由
+- **系统原生目录选择器可能卡顿且界面语言跟随 OS**：`pickDirectory()` 由
   host 原生 OS 对话框实现，打开慢且文案不可由插件控制。**缓解**：面板提供路径输入直加
   （绝大多数场景不必打开对话框）；若在 profile 的 `cordis.patch.yml` 把
   `directory-picker` 行切换为 `@deepseek-ai/dsh-host-directory-picker-browse`（含 client
@@ -194,11 +194,6 @@ pnpm build       # tsc（node half）+ tsdown（client bundle）→ lib/
 - UI 添加暂不支持备注（note 字段已在类型中预留）。
 - **命令路径解析**：`/ref-lib add <path>` 支持绝对路径、`~`/`~/` 展开与相对路径——
   相对路径**基于当前会话工作区**（`agent.session.header.cwd`）解析，而非 dsh 进程启动目录。
-- **历史版本说明**：v1/v2 曾把 per-session 状态写成自定义会话事件（不在加载器白名单内，
-  会导致会话日志整体拒读，2026-08-17 事故）；v3 起改 sidecar 存储、不再写任何自定义
-  会话事件。已中招的旧日志用 `scripts/patch-ref-lib-logs.mjs` 修补、
-  `scripts/verify-ref-lib-logs.mjs` 以 GUI 同款加载器验证。旧版 v1 全局 `settings.yaml`
-  的 `ref-lib` 节已废弃，可手动清理。
 - 版本注意：npm -g dsh 为 0.1.0-rc.6，core 源码为 0.1.0-rc.5，联调以运行时（npm-g）为准。
 
 ## 🧪 测试与开发环境（2026-08-17 事故后确立）
@@ -206,7 +201,7 @@ pnpm build       # tsc（node half）+ tsdown（client bundle）→ lib/
 分层测试标准见本仓库 `AGENTS.md` §6（工作区所有插件的参考实现）：
 
 - **L2 harness 边界回归** `tests/harness-roundtrip.spec.ts`：真实 `SessionStore` +
-  `JsonlSessionPersistence` + 临时根，验证 v3 使用后会话日志可冷加载且不含
+  `JsonlSessionPersistence` + 临时根，验证会话日志可冷加载且不含
   `ref-lib/set`；「陷阱守卫」用例固化事故行为（写白名单外事件 → 冷加载必须抛
   `SessionFormatUnsupportedError`）；
 - **L3 隔离开发环境** `scripts/dev-isolate.sh`：`DSH_HOME`（默认 `~/.dsh-dev`）+
