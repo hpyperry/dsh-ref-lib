@@ -8,7 +8,8 @@
 
 - **`@hpyperry/dsh-ref-lib`**：只读参考库插件（node half + client UI，per-session 隔离）。
 - **自包含工程**：`package.json` / `tsconfig.json` / `src/` / `tests/` / `scripts/` /
-  构建配置与 `README.md` 齐全，可独立安装/构建/验证（安装与验证见 `README.md` §4/§5）。
+  构建配置与 `README.md` 齐全，可独立安装/构建/验证（安装见 `README.md`「📦 安装」、
+  构建/验证见「🧑‍💻 开发」）。
 - 版本沿革：v3（sidecar 存储，2026-08-17 事故修复）→ v4（`ctx.webServer` 路由通道）→
   v5（UI 重构：dock 入口/设计令牌面板/zh-en 本地化）→ v6（目录选择能力自适应）→
   v7（**dock 行内胶囊、零测量**：取消 hero 相位测量/绝对定位，纯 CSS 与输入卡左缘
@@ -76,7 +77,7 @@
 1. **`core` 只读**：禁止写操作；违反即视为严重错误。
 2. **先查证、后实现**：不确定的 API/约定必须先查 `core` 或官方文档，禁止臆造。
 3. **结果可复现**：本仓库可独立运行/验证（`pnpm build` + `scripts/dev-isolate.sh`），
-   运行方式见 `README.md` §4/§5/§7.1。
+   运行方式见 `README.md`「🧑‍💻 开发」节。
 4. 本文件是仓库核心记忆；后续新增约定时直接维护本文件，并同步 `README.md`。
 
 ## 6. 插件开发测试标准（2026-08-17 事故后确立，本工作区所有插件必须遵守）
@@ -111,6 +112,6 @@
 ## 7. 开发环境速查
 
 - 隔离开发环境：`scripts/dev-isolate.sh`（启动/插件安装卸载/补丁覆盖/热更新/重置的
-  完整命令见 `README.md` §7.1）。
+  完整命令见 `README.md`「🧑‍💻 开发」节）。
 - 热更新：`src/client/*` 改动 `pnpm build:client` 后浏览器 ≤0.5s 自动更新；node half
   改动 `pnpm build:node` 后必须重启 `dsh web`。
