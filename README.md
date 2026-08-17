@@ -79,6 +79,10 @@ pnpm build       # tsc（node half）+ tsdown（client bundle）→ lib/
 - **隔离开发环境**：`scripts/dev-isolate.sh`（独立 `DSH_HOME`，默认 `~/.dsh-dev`，真实 `~/.dsh` 零接触；`rm -rf` 即重置）——启动/安装/热更新/重置的完整用法见仓库 `AGENTS.md`；
 - **热更新**：`src/client/*` 改动 `pnpm build:client` 后浏览器 ≤0.5s 自动热更新；node half 改动需重启 `dsh web`。
 
+## 📄 License
+
+[MIT](LICENSE)，与 DeepSeek Harness 一致。
+
 ## 📚 更多
 
 - 项目开发约定（开发规范 / 测试标准 / 开发环境）：见仓库 `AGENTS.md`
