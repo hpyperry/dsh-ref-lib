@@ -81,5 +81,5 @@ pnpm build       # tsc（node half）+ tsdown（client bundle）→ lib/
 
 ## 📚 更多
 
-- 项目开发约定（core 查证规则 / 测试标准 / 环境）：见仓库 `AGENTS.md`
+- 项目开发约定（开发规范 / 测试标准 / 开发环境）：见仓库 `AGENTS.md`
 - 仓库：<https://github.com/hpyperry/dsh-ref-lib>
