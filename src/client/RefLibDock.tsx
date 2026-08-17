@@ -1,0 +1,278 @@
+/**
+ * 参考库入口（conversation.input.dock，输入卡正上方）+ 面板状态持有者。
+ *
+ * 位置（v7）：v5/v6 曾在 hero 相位把胶囊**测量定位**提入官方 hero 行（紧跟"标准
+ * 模式"chip 之后）。该像素测量与 hero 行的异步内容存在竞态——模式 chip 的 roster
+ * 经 RPC 异步挂载、Web 字体异步加载、其他插件 chip 异步加入——而重测触发面
+ * （hero 行/槽位出口/栈均为固定盒或 display:contents）对"行内内容变化"是盲区，
+ * 导致偶发与模式按钮重叠。v7 起**取消测量与绝对定位**：胶囊统一渲染在 dock 槽位
+ * （输入卡正上方）的独立一行，左缘经官方设计令牌（--dsh-composer-side-clearance /
+ * --dsh-composer-card-max-width）纯 CSS 与输入卡左缘对齐——hero/active 一致、
+ * 零 JS 测量、零竞态；plan/model 等工具行座位的启停不影响本行位置；与其他 dock
+ * 条带（todo/goal/queue）按 order 流式堆叠，天然不重叠。
+ *
+ * 数据（v4/v5）：读/写经 /api/ref-lib/* 路由（静默、无命令卡片）；
+ * 目录选择走系统原生选择器，另提供路径输入直加（绕开卡顿的原生对话框）。
+ * @module @hpyperry/dsh-ref-lib/src/client/RefLibDock
+ */
+
+import { useEffect, useRef, useState } from 'react'
+import type { ReactElement } from 'react'
+import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
+import type { DirectoryListing, SessionId } from '@deepseek-ai/dsh-client-runtime/client'
+import { IconFolderOpen16 } from '@deepseek-ai/dsh-client-ui-primitives'
+import type { RefLibEntry } from '../spec.ts'
+import { RefLibApiError } from './data.ts'
+import type { RefLibKey } from './locales.ts'
+import { RefLibBrowser } from './RefLibBrowser.tsx'
+import { RefLibPanel } from './RefLibPanel.tsx'
+import { ensureRefLibStyles } from './styles.ts'
+
+/** 面板组件依赖的注入面（apply 闭包绑定 runtime 能力）。 */
+export interface RefLibDockInjected {
+  /** 读取会话的参考库列表（GET /api/ref-lib/list，静默）。 */
+  load: (sessionId: SessionId) => Promise<RefLibEntry[]>
+  /** 添加一个参考库目录（POST /api/ref-lib/add，静默）。 */
+  add: (sessionId: SessionId, path: string) => Promise<void>
+  /** 移除一个参考库条目（POST /api/ref-lib/remove，静默）。 */
+  remove: (sessionId: SessionId, id: string) => Promise<void>
+  /** 唤起系统原生"选择文件夹"对话框；取消时返回 null。 */
+  pickDirectory: () => Promise<string | null>
+  /** 列出一层目录（browse 后端）；缺省路径 = 宿主主目录；signal 中止扫描。 */
+  listDirectory: (path?: string, signal?: AbortSignal) => Promise<DirectoryListing>
+}
+
+/** 完整 props：input.dock 运行时套件 + 注入面 + 本地化 seat。 */
+export type RefLibDockProps = PropsRuntime<'conversation.input.dock'> & RefLibDockInjected & PropsLocale<'ref-lib'>
+
+/** wire 错误码 → 本地化文案键（未知码回退原始消息）。 */
+const ERROR_KEYS: Record<string, RefLibKey> = {
+  'ref-lib/missing': 'error.missing',
+  'ref-lib/not-directory': 'error.notDirectory',
+  'ref-lib/unsafe': 'error.unsafe',
+  'ref-lib/unknown-id': 'error.unknownId',
+}
+
+/** 把未知错误规整为可展示文案。 */
+function messageOf(cause: unknown): string {
+  return cause instanceof Error ? cause.message : String(cause)
+}
+
+/**
+ * 把 API 错误本地化：已知 wire code 映射为当前语言文案（带 path/id 参数），
+ * 其余错误原样展示服务端消息。
+ */
+function formatError(cause: unknown, t: RefLibDockProps['t']): string {
+  if (cause instanceof RefLibApiError) {
+    const key = ERROR_KEYS[cause.code]
+    if (key !== undefined) {
+      const params =
+        cause.details.path !== undefined
+          ? { path: cause.details.path }
+          : cause.details.id !== undefined
+            ? { id: cause.details.id }
+            : undefined
+      return t(key, params)
+    }
+  }
+  return messageOf(cause)
+}
+
+// 模块装载即注入样式（幂等）；组件挂载后再兜底一次（覆盖装载早于 DOM 的情况）。
+ensureRefLibStyles()
+
+/**
+ * 输入卡正上方的参考库入口：胶囊按钮（图标 + 文案 + 数量徽标）唤起管理面板。
+ * 位置由 .reflib-dock 的纯 CSS padding 与输入卡左缘对齐，无任何 JS 测量。
+ * @param props - sessionId 与注入面。
+ * @returns 胶囊入口（+ 打开时的管理面板）。
+ */
+export function RefLibDock(props: RefLibDockProps): ReactElement {
+  const { sessionId, load, add, remove, pickDirectory, listDirectory, t } = props
+  const [open, setOpen] = useState(false)
+  const [libs, setLibs] = useState<RefLibEntry[]>([])
+  const [loading, setLoading] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const [picking, setPicking] = useState(false)
+  const [removingId, setRemovingId] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  // 并发读守卫：仅采纳最新一次 refresh 的结果（挂载预载与开面板刷新可能重叠）。
+  const seq = useRef(0)
+
+  // 目录选择能力（v6）：browse（应用内浏览器，listDirectory）或 native（OS 对话框，
+  // pickDirectory）。探测一次并缓存；host 侧能力在单次 boot 内稳定。
+  const [pickerMode, setPickerMode] = useState<'browse' | 'native' | null>(null)
+  const [browserOpen, setBrowserOpen] = useState(false)
+  const detectPicker = async (): Promise<'browse' | 'native'> => {
+    if (pickerMode !== null) return pickerMode
+    let mode: 'browse' | 'native'
+    try {
+      await listDirectory(undefined, new AbortController().signal)
+      mode = 'browse'
+    } catch {
+      // browse 不可用（directory-picker-unavailable）→ 回退 native 尝试；
+      // pickDirectory 若也不可用，由错误槽如实展示。
+      mode = 'native'
+    }
+    setPickerMode(mode)
+    return mode
+  }
+
+  const refresh = async (): Promise<void> => {
+    const mine = ++seq.current
+    try {
+      const next = await load(sessionId)
+      if (mine !== seq.current) return
+      setLibs(next)
+      setError(null)
+    } catch (cause) {
+      if (mine !== seq.current) return
+      setError(formatError(cause, t))
+    } finally {
+      if (mine === seq.current) setLoading(false)
+    }
+  }
+
+  // 挂载预载。依赖 sessionId：若同一 dock 实例跨会话复用（槽位按会话切换），
+  // 会话切换后徽标/列表随之刷新，避免停留在上一个会话的过期数据（seq 守卫防竞态）。
+  useEffect(() => {
+    ensureRefLibStyles()
+    void refresh()
+  }, [sessionId])
+  useEffect(() => {
+    if (open) {
+      setLoading(true)
+      void refresh()
+    }
+  }, [open])
+
+  const handleRemove = async (id: string): Promise<void> => {
+    setRemovingId(id)
+    setBusy(true)
+    setError(null)
+    try {
+      await remove(sessionId, id)
+      await refresh()
+    } catch (cause) {
+      setError(formatError(cause, t))
+    } finally {
+      setRemovingId(null)
+      setBusy(false)
+    }
+  }
+
+  const handleAddPath = async (path: string): Promise<void> => {
+    setBusy(true)
+    setError(null)
+    try {
+      await add(sessionId, path)
+      await refresh()
+    } catch (cause) {
+      setError(formatError(cause, t))
+      // 失败时重新抛出：让面板保留输入内容供修正
+      throw cause
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  /** 添加一个已选定目录并刷新列表；返回是否成功（失败时错误已入错误槽，不抛出）。 */
+  const addPath = async (path: string): Promise<boolean> => {
+    setBusy(true)
+    setError(null)
+    try {
+      await add(sessionId, path)
+      await refresh()
+      return true
+    } catch (cause) {
+      setError(formatError(cause, t))
+      return false
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const handleBrowse = async (): Promise<void> => {
+    setError(null)
+    // 探测目录选择能力：browse → 应用内目录浏览器；native → 系统 OS 对话框。
+    let mode: 'browse' | 'native'
+    try {
+      mode = await detectPicker()
+    } catch (cause) {
+      setError(formatError(cause, t))
+      return
+    }
+    if (mode === 'browse') {
+      setBrowserOpen(true)
+      return
+    }
+    setPicking(true)
+    try {
+      const picked = await pickDirectory()
+      if (picked !== null) await addPath(picked)
+    } catch (cause) {
+      setError(formatError(cause, t))
+    } finally {
+      setPicking(false)
+    }
+  }
+
+  /** 应用内浏览器选定目录 → 添加成功才关闭（失败时错误显示在面板，浏览器保持打开便于重试）。 */
+  const handleBrowserPick = async (path: string): Promise<void> => {
+    if (await addPath(path)) setBrowserOpen(false)
+  }
+
+  return (
+    <>
+      <div className="reflib-dock">
+        <button
+          type="button"
+          className="reflib-chip"
+          data-active={open || undefined}
+          aria-haspopup="dialog"
+          aria-expanded={open}
+          aria-label={libs.length > 0 ? t('dock.count.aria', { count: String(libs.length) }) : t('dock.aria')}
+          title={t('dock.aria')}
+          onClick={() => {
+            setOpen((value) => !value)
+          }}
+        >
+          <span className="reflib-chipIcon">
+            <IconFolderOpen16 size={14} />
+          </span>
+          <span className="reflib-chipLabel">{t('dock.label')}</span>
+          {libs.length > 0 && <span className="reflib-chipBadge">{libs.length}</span>}
+        </button>
+      </div>
+      <RefLibPanel
+        open={open}
+        onClose={() => {
+          setOpen(false)
+        }}
+        libs={libs}
+        loading={loading}
+        busy={busy}
+        picking={picking}
+        removingId={removingId}
+        error={error}
+        t={t}
+        onRemove={(id) => {
+          void handleRemove(id)
+        }}
+        onAddPath={handleAddPath}
+        onBrowse={handleBrowse}
+      />
+      <RefLibBrowser
+        open={browserOpen}
+        onClose={() => {
+          setBrowserOpen(false)
+        }}
+        listDirectory={listDirectory}
+        t={t}
+        onOpen={(path) => {
+          void handleBrowserPick(path)
+        }}
+      />
+    </>
+  )
+}

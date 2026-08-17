@@ -1,0 +1,6 @@
+# ref-lib 组合包（bundle）的配置层。
+# 安装方式：`dsh plugin --profile web add <ref-lib 路径>`；
+# 插件行按包名引用，由 Node 模块解析找到已安装的代码。
+- insert:
+    - id: ref-lib
+      name: '@hpyperry/dsh-ref-lib'
