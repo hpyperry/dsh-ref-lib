@@ -7,7 +7,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { Session } from '@deepseek-ai/dsh-session'
 import { describe, expect, it } from 'vitest'
 import { isLoopbackRequest, makeRefLibRoutes, MAX_JSON_BODY_BYTES } from '../src/routes.ts'
-import { RefLibPathError, RefLibUnknownError, type RefLibService } from '../src/service.ts'
+import { RefLibNoteError, RefLibPathError, RefLibUnknownError, type RefLibService } from '../src/service.ts'
 
 /** 假响应：捕获状态码与 body。 */
 function fakeRes(): { res: ServerResponse; out: { status: number; body: string } } {
@@ -75,15 +75,19 @@ describe('makeRefLibRoutes', () => {
   const fakeSession = { id: 'session-live', header: { id: 'session-live', cwd: '/workspace' } } as unknown as Session
 
   function boot() {
-    const calls: Array<{ session: unknown; path?: string; id?: string }> = []
+    const calls: Array<{ session: unknown; path?: string; note?: string; id?: string }> = []
     const refLibs = {
       list: () => [{ id: 'e1', path: '/lib/a' }],
-      add: async (_session: unknown, path: string) => {
-        calls.push({ session: _session, path })
-        return { id: 'e1', path }
+      add: async (_session: unknown, path: string, note?: string) => {
+        calls.push({ session: _session, path, ...(note === undefined ? {} : { note }) })
+        return { id: 'e1', path, ...(note === undefined ? {} : { note }) }
       },
       remove: async (_session: unknown, id: string) => {
         calls.push({ session: _session, id })
+      },
+      setNote: async (_session: unknown, id: string, note: string) => {
+        calls.push({ session: _session, id, note })
+        return { id, path: '/lib/a', note }
       },
     } as unknown as RefLibService
     const resolveSession = (sessionId: string): Session | undefined =>
@@ -118,6 +122,29 @@ describe('makeRefLibRoutes', () => {
     expect(out.status).toBe(200)
     expect(JSON.parse(out.body)).toEqual({ entry: { id: 'e1', path: '/lib/a' } })
     expect(calls[0]).toMatchObject({ session: fakeSession, path: '/lib/a' })
+  })
+
+  it('POST add 透传 note 用途说明', async () => {
+    const { calls, byPath } = boot()
+    const { res, out } = fakeRes()
+    await byPath('/api/ref-lib/add').handler(
+      fakeReq({ method: 'POST', body: { session: 'session-live', path: '/lib/a', note: '源码库' } }),
+      res,
+    )
+    expect(out.status).toBe(200)
+    expect(JSON.parse(out.body)).toEqual({ entry: { id: 'e1', path: '/lib/a', note: '源码库' } })
+    expect(calls[0]).toMatchObject({ path: '/lib/a', note: '源码库' })
+  })
+
+  it('POST add note 非字符串返回 400', async () => {
+    const { byPath } = boot()
+    const { res, out } = fakeRes()
+    await byPath('/api/ref-lib/add').handler(
+      fakeReq({ method: 'POST', body: { session: 'session-live', path: '/lib/a', note: 42 } }),
+      res,
+    )
+    expect(out.status).toBe(400)
+    expect(JSON.parse(out.body)).toEqual({ error: 'note must be a string' })
   })
 
   it('POST add 请求体超限返回 400（流仍被排空）', async () => {
@@ -167,12 +194,29 @@ describe('makeRefLibRoutes', () => {
     expect((JSON.parse(out.body) as { code: string }).code).toBe('ref-lib/unsafe')
   })
 
+  it('add note 含控制字符（RefLibNoteError）映射 400 并带 wire code', async () => {
+    const refLibs = {
+      list: () => [],
+      add: async () => {
+        throw new RefLibNoteError()
+      },
+      remove: async () => {},
+    } as unknown as RefLibService
+    const resolveSession = () => fakeSession
+    const routes = makeRefLibRoutes({ refLibs, resolveSession, log: () => {} })
+    const { res, out } = fakeRes()
+    await routes
+      .find((route) => route.path === '/api/ref-lib/add')!
+      .handler(fakeReq({ method: 'POST', body: { session: 'session-live', path: '/lib', note: 'bad\nnote' } }), res)
+    expect(out.status).toBe(400)
+    expect((JSON.parse(out.body) as { code: string }).code).toBe('ref-lib/note-unsafe')
+  })
+
   it('POST remove 调用服务并返回 { ok: true }', async () => {
     const { calls, byPath } = boot()
     const { res, out } = fakeRes()
     await byPath('/api/ref-lib/remove').handler(
-      fakeReq({ method: 'POST', body: { session: 'session-live', id: 'e1' } }),
-      res,
+      fakeReq({ method: 'POST', body: { session: 'session-live', id: 'e1' } }),      res,
     )
     expect(out.status).toBe(200)
     expect(JSON.parse(out.body)).toEqual({ ok: true })
@@ -198,6 +242,40 @@ describe('makeRefLibRoutes', () => {
       code: 'ref-lib/unknown-id',
       id: 'ghost',
     })
+  })
+
+  it('POST note 更新用途说明并返回 { entry }', async () => {
+    const { calls, byPath } = boot()
+    const { res, out } = fakeRes()
+    await byPath('/api/ref-lib/note').handler(
+      fakeReq({ method: 'POST', body: { session: 'session-live', id: 'e1', note: '新用途' } }),
+      res,
+    )
+    expect(out.status).toBe(200)
+    expect(JSON.parse(out.body)).toEqual({ entry: { id: 'e1', path: '/lib/a', note: '新用途' } })
+    expect(calls[0]).toMatchObject({ id: 'e1', note: '新用途' })
+  })
+
+  it('POST note 缺 id 返回 400', async () => {
+    const { byPath } = boot()
+    const { res, out } = fakeRes()
+    await byPath('/api/ref-lib/note').handler(
+      fakeReq({ method: 'POST', body: { session: 'session-live', note: 'x' } }),
+      res,
+    )
+    expect(out.status).toBe(400)
+    expect(JSON.parse(out.body)).toEqual({ error: 'missing id' })
+  })
+
+  it('POST note note 非字符串返回 400', async () => {
+    const { byPath } = boot()
+    const { res, out } = fakeRes()
+    await byPath('/api/ref-lib/note').handler(
+      fakeReq({ method: 'POST', body: { session: 'session-live', id: 'e1', note: 42 } }),
+      res,
+    )
+    expect(out.status).toBe(400)
+    expect(JSON.parse(out.body)).toEqual({ error: 'note must be a string' })
   })
 
   it('非 loopback 请求一律 403', async () => {

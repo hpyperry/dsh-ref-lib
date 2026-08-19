@@ -15,7 +15,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { Session } from '@deepseek-ai/dsh-session'
 import type { WebRoute } from '@deepseek-ai/dsh-host-webserver'
 import { resolveRefLibPath } from './commands.ts'
-import { RefLibPathError, RefLibUnknownError, type RefLibService } from './service.ts'
+import { RefLibNoteError, RefLibPathError, RefLibUnknownError, type RefLibService } from './service.ts'
 
 /** 请求体大小上限（管理载荷都很小）。 */
 export const MAX_JSON_BODY_BYTES = 64 * 1024
@@ -141,6 +141,10 @@ export function makeRefLibRoutes(deps: RefLibRouteDeps): WebRoute[] {
       writeJson(res, 400, { error: error.message, code: 'ref-lib/unknown-id', id: error.id })
       return
     }
+    if (error instanceof RefLibNoteError) {
+      writeJson(res, 400, { error: error.message, code: 'ref-lib/note-unsafe' })
+      return
+    }
     log(`ref-lib route error: ${error instanceof Error ? error.message : String(error)}`)
     writeJson(res, 500, { error: error instanceof Error ? error.message : String(error) })
   }
@@ -179,8 +183,13 @@ export function makeRefLibRoutes(deps: RefLibRouteDeps): WebRoute[] {
             writeJson(res, 400, { error: 'missing path' })
             return
           }
+          const note = body.note
+          if (note !== undefined && typeof note !== 'string') {
+            writeJson(res, 400, { error: 'note must be a string' })
+            return
+          }
           const base = session.header.cwd ?? process.cwd()
-          const entry = await refLibs.add(session, resolveRefLibPath(body.path, base))
+          const entry = await refLibs.add(session, resolveRefLibPath(body.path, base), note)
           writeJson(res, 200, { entry })
         } catch (error) {
           writeError(res, error)
@@ -207,6 +216,35 @@ export function makeRefLibRoutes(deps: RefLibRouteDeps): WebRoute[] {
           }
           await refLibs.remove(session, body.id)
           writeJson(res, 200, { ok: true })
+        } catch (error) {
+          writeError(res, error)
+        }
+      },
+    },
+
+    {
+      kind: 'exact',
+      path: '/api/ref-lib/note',
+      handler: async (req, res) => {
+        if (!guard(req, res, 'POST')) return
+        try {
+          const body = await readJsonBody(req)
+          if (body === undefined) {
+            writeJson(res, 400, { error: 'invalid JSON body' })
+            return
+          }
+          const session = requireSession(res, body.session)
+          if (session === undefined) return
+          if (typeof body.id !== 'string' || body.id === '') {
+            writeJson(res, 400, { error: 'missing id' })
+            return
+          }
+          if (body.note !== undefined && typeof body.note !== 'string') {
+            writeJson(res, 400, { error: 'note must be a string' })
+            return
+          }
+          const entry = await refLibs.setNote(session, body.id, body.note)
+          writeJson(res, 200, { entry })
         } catch (error) {
           writeError(res, error)
         }

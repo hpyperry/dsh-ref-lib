@@ -277,6 +277,12 @@ const CSS = `
   padding: 0 8px;
 }
 
+.reflib-listItem {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
 .reflib-row {
   display: flex;
   align-items: center;
@@ -292,7 +298,7 @@ const CSS = `
   background: var(--dsw-alias-interactive-bg-hover);
 }
 
-.reflib-row[data-removing='true'] {
+.reflib-listItem[data-removing='true'] {
   opacity: 0.55;
   pointer-events: none;
 }
@@ -331,6 +337,16 @@ const CSS = `
   white-space: nowrap;
 }
 
+/* 列表行用途说明（Description，v8）：单行截断，与路径同属次行层级 */
+.reflib-rowNote {
+  overflow: hidden;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 16px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .reflib-rowRemove {
   display: inline-flex;
   align-items: center;
@@ -355,6 +371,120 @@ const CSS = `
 .reflib-rowRemove:disabled {
   opacity: 0.4;
   cursor: default;
+}
+
+/* 详情/编辑入口按钮（与移除同尺寸，非危险 hover） */
+.reflib-rowAction {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--dsw-alias-label-tertiary);
+  cursor: pointer;
+  transition: background-color 120ms ease, color 120ms ease;
+}
+
+.reflib-rowAction:hover:not(:disabled) {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
+.reflib-rowAction:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* 条目详情展开区（ID / 路径 / 用途编辑） */
+.reflib-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin: 2px 0 6px;
+  padding: 8px 10px 10px;
+  border-radius: 10px;
+  background: var(--dsw-alias-surface-inset, var(--dsw-alias-surface-raised));
+  min-width: 0;
+}
+
+.reflib-detailMeta {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
+.reflib-detailKey {
+  flex: none;
+  font-size: 11px;
+  line-height: 16px;
+  color: var(--dsw-alias-label-caption);
+}
+
+.reflib-detailValue {
+  overflow: hidden;
+  min-width: 0;
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--dsw-alias-label-secondary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.reflib-detailActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+  margin-top: 2px;
+}
+
+/* 用途说明多行输入（添加表单 + 详情编辑共用） */
+.reflib-noteWrap {
+  position: relative;
+  display: flex;
+  min-width: 0;
+}
+
+.reflib-noteTextarea {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 6px 8px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  background: var(--dsw-alias-surface-field);
+  color: var(--dsw-alias-label-primary);
+  font: inherit;
+  font-size: 13px;
+  line-height: 18px;
+  resize: vertical;
+  min-height: 40px;
+}
+
+.reflib-noteTextarea:focus {
+  outline: 2px solid var(--dsw-alias-focus-ring, var(--dsw-alias-state-info-primary));
+  outline-offset: -1px;
+}
+
+.reflib-noteTextarea:disabled {
+  opacity: 0.5;
+}
+
+.reflib-noteCount {
+  position: absolute;
+  right: 8px;
+  bottom: 6px;
+  padding: 0 4px;
+  border-radius: 4px;
+  background: var(--dsw-alias-surface-field);
+  font-size: 10px;
+  line-height: 14px;
+  color: var(--dsw-alias-label-caption);
+  pointer-events: none;
 }
 
 /* 空态 / 加载态 / 错误态 */
@@ -422,9 +552,28 @@ const CSS = `
   background: var(--dsw-alias-border-l2);
 }
 
+/* ── 管理面板 Modal（v8 优化）──
+   宽度放宽到约 1/3 屏（上限 560px）；进入动画为柔和缓出（easeOutQuint 风格：
+   280ms 浮起 + 淡入，位移 12px→0、scale 0.96→1），无回弹——更从容、高级感。 */
+.reflib-modal {
+  width: min(33vw, 560px);
+  animation: reflib-pop 280ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes reflib-pop {
+  0% {
+    opacity: 0;
+    transform: scale(0.96) translateY(12px);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
 /* ── 添加表单 ──
-   两组操作分离（优化点 2.1）：手动输入路径 + 「添加」是一组（主路径）；
-   「选择目录」是另一组备选方式，独占一行，避免并排造成困惑。 */
+   统一表单（v8 UI 重构）：路径（可输入 / 浏览填充）+ 用途（可选）同一容器，
+   同一「添加」按钮提交——用途与路径强关联，浏览不再直接添加。 */
 .reflib-add {
   display: flex;
   flex-direction: column;
@@ -437,25 +586,6 @@ const CSS = `
   line-height: 16px;
   font-weight: 500;
   color: var(--dsw-alias-label-secondary);
-}
-
-/* 主方式：选择目录 —— 全宽主按钮（优先级最高） */
-.reflib-addBrowseMain {
-  width: 100%;
-}
-
-/* 备选：手动输入路径组 */
-.reflib-addManual {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  min-width: 0;
-}
-
-.reflib-addManualLabel {
-  font-size: 12px;
-  line-height: 16px;
-  color: var(--dsw-alias-label-caption);
 }
 
 .reflib-addRow {
@@ -479,13 +609,18 @@ const CSS = `
   line-height: 18px;
 }
 
+/* 全宽「添加」主按钮 */
+.reflib-addSubmit {
+  width: 100%;
+}
+
 .reflib-addHint {
   font-size: 11px;
   line-height: 16px;
   color: var(--dsw-alias-label-caption);
 }
 
-/* 窄视口：主路径行换行，输入框占满一行 */
+/* 窄视口：路径行换行，输入框占满一行 */
 @media (max-width: 440px) {
   .reflib-addRow {
     flex-wrap: wrap;

@@ -32,10 +32,12 @@ import { ensureRefLibStyles } from './styles.ts'
 export interface RefLibDockInjected {
   /** 读取会话的参考库列表（GET /api/ref-lib/list，静默）。 */
   load: (sessionId: SessionId) => Promise<RefLibEntry[]>
-  /** 添加一个参考库目录（POST /api/ref-lib/add，静默）。 */
-  add: (sessionId: SessionId, path: string) => Promise<void>
+  /** 添加一个参考库目录（POST /api/ref-lib/add，静默；note 为可选用途说明）。 */
+  add: (sessionId: SessionId, path: string, note?: string) => Promise<void>
   /** 移除一个参考库条目（POST /api/ref-lib/remove，静默）。 */
   remove: (sessionId: SessionId, id: string) => Promise<void>
+  /** 更新一个条目的用途说明（POST /api/ref-lib/note，静默；空串清除）。 */
+  setNote: (sessionId: SessionId, id: string, note: string) => Promise<void>
   /** 唤起系统原生"选择文件夹"对话框；取消时返回 null。 */
   pickDirectory: () => Promise<string | null>
   /** 列出一层目录（browse 后端）；缺省路径 = 宿主主目录；signal 中止扫描。 */
@@ -88,7 +90,7 @@ ensureRefLibStyles()
  * @returns 胶囊入口（+ 打开时的管理面板）。
  */
 export function RefLibDock(props: RefLibDockProps): ReactElement {
-  const { sessionId, load, add, remove, pickDirectory, listDirectory, t } = props
+  const { sessionId, load, add, remove, setNote, pickDirectory, listDirectory, t } = props
   const [open, setOpen] = useState(false)
   const [libs, setLibs] = useState<RefLibEntry[]>([])
   const [loading, setLoading] = useState(false)
@@ -103,6 +105,8 @@ export function RefLibDock(props: RefLibDockProps): ReactElement {
   // pickDirectory）。探测一次并缓存；host 侧能力在单次 boot 内稳定。
   const [pickerMode, setPickerMode] = useState<'browse' | 'native' | null>(null)
   const [browserOpen, setBrowserOpen] = useState(false)
+  // pickPath 等待应用内浏览器选定时挂起的 resolve（取消以 null 结束）。
+  const pendingPick = useRef<((path: string | null) => void) | null>(null)
   const detectPicker = async (): Promise<'browse' | 'native'> => {
     if (pickerMode !== null) return pickerMode
     let mode: 'browse' | 'native'
@@ -161,11 +165,11 @@ export function RefLibDock(props: RefLibDockProps): ReactElement {
     }
   }
 
-  const handleAddPath = async (path: string): Promise<void> => {
+  const handleAddPath = async (path: string, note?: string): Promise<void> => {
     setBusy(true)
     setError(null)
     try {
-      await add(sessionId, path)
+      await add(sessionId, path, note)
       await refresh()
     } catch (cause) {
       setError(formatError(cause, t))
@@ -176,23 +180,23 @@ export function RefLibDock(props: RefLibDockProps): ReactElement {
     }
   }
 
-  /** 添加一个已选定目录并刷新列表；返回是否成功（失败时错误已入错误槽，不抛出）。 */
-  const addPath = async (path: string): Promise<boolean> => {
+  /** 更新条目用途说明（编辑详情保存）；失败入错误槽、不抛出（编辑区保持打开）。 */
+  const handleUpdateNote = async (id: string, note: string): Promise<void> => {
     setBusy(true)
     setError(null)
     try {
-      await add(sessionId, path)
+      await setNote(sessionId, id, note)
       await refresh()
-      return true
     } catch (cause) {
       setError(formatError(cause, t))
-      return false
     } finally {
       setBusy(false)
     }
   }
 
-  const handleBrowse = async (): Promise<void> => {
+  /** 唤起目录选择（browse 应用内浏览器 / native 系统对话框）并返回选中的路径；
+   * 取消或失败返回 null——**不直接添加**，由面板把路径填入表单（用户可补用途后提交）。 */
+  const pickPath = async (): Promise<string | null> => {
     setError(null)
     // 探测目录选择能力：browse → 应用内目录浏览器；native → 系统 OS 对话框。
     let mode: 'browse' | 'native'
@@ -200,26 +204,39 @@ export function RefLibDock(props: RefLibDockProps): ReactElement {
       mode = await detectPicker()
     } catch (cause) {
       setError(formatError(cause, t))
-      return
+      return null
     }
     if (mode === 'browse') {
       setBrowserOpen(true)
-      return
+      return await new Promise<string | null>((resolve) => {
+        pendingPick.current = resolve
+      })
     }
     setPicking(true)
     try {
-      const picked = await pickDirectory()
-      if (picked !== null) await addPath(picked)
+      return await pickDirectory()
     } catch (cause) {
       setError(formatError(cause, t))
+      return null
     } finally {
       setPicking(false)
     }
   }
 
-  /** 应用内浏览器选定目录 → 添加成功才关闭（失败时错误显示在面板，浏览器保持打开便于重试）。 */
-  const handleBrowserPick = async (path: string): Promise<void> => {
-    if (await addPath(path)) setBrowserOpen(false)
+  /** 应用内浏览器选定目录 → 把路径交给等待中的 pickPath 调用方并关闭浏览器。 */
+  const handleBrowserPick = (path: string): void => {
+    setBrowserOpen(false)
+    const resolve = pendingPick.current
+    pendingPick.current = null
+    resolve?.(path)
+  }
+
+  /** 应用内浏览器取消 → 以 null 结束等待中的 pickPath。 */
+  const handleBrowserClose = (): void => {
+    setBrowserOpen(false)
+    const resolve = pendingPick.current
+    pendingPick.current = null
+    resolve?.(null)
   }
 
   return (
@@ -260,18 +277,15 @@ export function RefLibDock(props: RefLibDockProps): ReactElement {
           void handleRemove(id)
         }}
         onAddPath={handleAddPath}
-        onBrowse={handleBrowse}
+        onUpdateNote={handleUpdateNote}
+        onBrowse={pickPath}
       />
       <RefLibBrowser
         open={browserOpen}
-        onClose={() => {
-          setBrowserOpen(false)
-        }}
+        onClose={handleBrowserClose}
         listDirectory={listDirectory}
         t={t}
-        onOpen={(path) => {
-          void handleBrowserPick(path)
-        }}
+        onOpen={handleBrowserPick}
       />
     </>
   )

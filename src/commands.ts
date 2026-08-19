@@ -9,7 +9,7 @@ import { resolve } from 'node:path'
 /** `/ref-lib` 支持的子命令。 */
 export type RefLibCommand =
   | { readonly kind: 'list' }
-  | { readonly kind: 'add'; readonly path: string }
+  | { readonly kind: 'add'; readonly path: string; readonly note?: string }
   | { readonly kind: 'remove'; readonly id: string }
 
 /** 解析失败的结果（含给用户看的错误文案）。 */
@@ -22,7 +22,7 @@ export interface RefLibCommandError {
 export type RefLibCommandResult = RefLibCommand | RefLibCommandError
 
 /** 用法提示，供 help 与错误文案复用。 */
-export const REF_LIB_USAGE = '用法：/ref-lib add <path> | /ref-lib list | /ref-lib remove <id>'
+export const REF_LIB_USAGE = '用法：/ref-lib add <path> [--note <用途>] | /ref-lib list | /ref-lib remove <id>'
 
 /**
  * 把用户输入的路径解析为绝对路径：展开 `~`/`~/`，相对路径基于给定基准目录
@@ -52,8 +52,17 @@ export function parseRefLibCommand(rawInput: string): RefLibCommandResult {
   switch (verb) {
     case 'list':
       return rest === '' ? { kind: 'list' } : { kind: 'error', text: `list 不接受参数。${REF_LIB_USAGE}` }
-    case 'add':
-      return rest === '' ? { kind: 'error', text: `add 需要目录路径。${REF_LIB_USAGE}` } : { kind: 'add', path: rest }
+    case 'add': {
+      if (rest === '') return { kind: 'error', text: `add 需要目录路径。${REF_LIB_USAGE}` }
+      // `--note <note>` 分隔：之前为路径（可含空格），之后到行尾为用途说明
+      // （`--note` 可位于行尾——此时 note 为空，视为未提供）。
+      const noteAt = rest.search(/\s--note(?:\s|$)/)
+      if (noteAt === -1) return { kind: 'add', path: rest }
+      const path = rest.slice(0, noteAt).trim()
+      const note = rest.slice(noteAt).replace(/^\s*--note\s*/, '').trim()
+      if (path === '') return { kind: 'error', text: `add 需要目录路径。${REF_LIB_USAGE}` }
+      return note === '' ? { kind: 'add', path } : { kind: 'add', path, note }
+    }
     case 'remove':
       return rest === ''
         ? { kind: 'error', text: `remove 需要条目 id。${REF_LIB_USAGE}` }

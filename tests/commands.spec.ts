@@ -55,6 +55,28 @@ describe('parseRefLibCommand', () => {
     expect(r.kind).toBe('error')
   })
 
+  it('add 支持 --note 用途说明（--note 前为路径、后到行尾为 note）', () => {
+    expect(parseRefLibCommand('add /home/user/dev/deepseek-harness --note harness 源码')).toEqual({
+      kind: 'add',
+      path: '/home/user/dev/deepseek-harness',
+      note: 'harness 源码',
+    })
+    // 路径可含空格：--note 是唯一分隔符
+    expect(parseRefLibCommand('add "/home/user/My Docs/Deepseek Harness" --note 带空格路径')).toEqual({
+      kind: 'add',
+      path: '"/home/user/My Docs/Deepseek Harness"',
+      note: '带空格路径',
+    })
+  })
+
+  it('add --note 后为空视为未提供 note', () => {
+    expect(parseRefLibCommand('add /lib/a --note  ')).toEqual({ kind: 'add', path: '/lib/a' })
+  })
+
+  it('add 路径本身含 --note 字样但无分隔空白时不拆解', () => {
+    expect(parseRefLibCommand('add /lib/--note-lib')).toEqual({ kind: 'add', path: '/lib/--note-lib' })
+  })
+
   it('remove', () => {
     expect(parseRefLibCommand(' remove abc-123')).toEqual({ kind: 'remove', id: 'abc-123' })
   })

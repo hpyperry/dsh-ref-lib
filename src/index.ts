@@ -10,8 +10,9 @@
  * - `ctx.refLibs` 服务：per-session 参考库校验与持久化（list / add / remove）；
  * - `/ref-lib` 命令（`ctx.commands`）：操作**当前会话**的参考库；
  * - `/api/ref-lib/*` 路由（`ctx.webServer` + `ctx.sessions`）：client UI 静默读/写；
- * - `reference-libs` 上下文贡献（`ctx.systemPrompt.context`）：仅向配置了
- *   参考库的会话注入其库清单与只读约束。
+ * - `reference-libs:policy` 上下文贡献（`ctx.systemPrompt.context`）：仅向配置了
+ *   参考库的会话注入其库清单与只读约束（命名遵循 harness 的 `域:类型` 惯例，
+ *   与 `sandbox:policy` / `approval:policy` 同类）。
  *
  * 只读保证分层：
  * - L1 沙箱天然只读：库位于 session workspace 之外时，read-only /
@@ -60,8 +61,8 @@ export class RefLibPlugin extends Service {
     ctx.inject(['commands'], (commandsCtx) => {
       commandsCtx.commands.register({
         name: 'ref-lib',
-        description: '管理本会话的只读参考库（add <path> / list / remove <id>）',
-        input: { hint: 'add <path> | list | remove <id>' },
+        description: '管理本会话的只读参考库（add <path> [--note <用途>] / list / remove <id>）',
+        input: { hint: 'add <path> [--note <用途>] | list | remove <id>' },
         handler: async (invocation) => {
           const parsed = parseRefLibCommand(invocation.rawInput)
           if (parsed.kind === 'error') return { kind: 'error', text: parsed.text }
@@ -73,8 +74,9 @@ export class RefLibPlugin extends Service {
             if (parsed.kind === 'add') {
               // 相对路径基于当前会话工作区解析（`~` 亦展开）。
               const base = session.header.cwd ?? process.cwd()
-              const entry = await refLibs.add(session, resolveRefLibPath(parsed.path, base))
-              return { kind: 'success', text: `已添加只读参考库：${entry.path}` }
+              const entry = await refLibs.add(session, resolveRefLibPath(parsed.path, base), parsed.note)
+              const note = entry.note === undefined ? '' : `（${entry.note}）`
+              return { kind: 'success', text: `已添加只读参考库：${entry.path}${note}` }
             }
             await refLibs.remove(session, parsed.id)
             return { kind: 'success', text: `已移除参考库条目：${parsed.id}` }
@@ -88,7 +90,7 @@ export class RefLibPlugin extends Service {
 
     ctx.inject(['systemPrompt'], (promptCtx) => {
       promptCtx.systemPrompt.context({
-        name: 'reference-libs',
+        name: 'reference-libs:policy',
         order: 150,
         text: (context) => {
           const session = context.agent?.session

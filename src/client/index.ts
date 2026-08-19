@@ -82,11 +82,14 @@ export function apply(ctx: ClientContext): void {
       parseLibsPayload(
         await api<{ libs?: unknown }>(`/list?session=${encodeURIComponent(sessionId)}`, undefined, 'GET'),
       ),
-    add: async (sessionId: SessionId, path: string): Promise<void> => {
-      await api('/add', { session: sessionId, path })
+    add: async (sessionId: SessionId, path: string, note?: string): Promise<void> => {
+      await api('/add', { session: sessionId, path, ...(note === undefined ? {} : { note }) })
     },
     remove: async (sessionId: SessionId, id: string): Promise<void> => {
       await api('/remove', { session: sessionId, id })
+    },
+    setNote: async (sessionId: SessionId, id: string, note: string): Promise<void> => {
+      await api('/note', { session: sessionId, id, note })
     },
     pickDirectory: () => ctx.workspaces.pickDirectory(),
     listDirectory: (path, signal) => ctx.workspaces.listDirectory(path, signal),

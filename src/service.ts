@@ -13,7 +13,7 @@
  */
 
 import { randomUUID } from 'node:crypto'
-import { realpath, stat } from 'node:fs/promises'
+import { readFile, realpath, stat } from 'node:fs/promises'
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { dshHomePath } from '@deepseek-ai/dsh-home-paths'
@@ -32,6 +32,9 @@ const SIDECAR_VERSION = 2
  * 语义不变，只是多一次文件读）。防止长驻进程在大量会话上无限累积内存。
  */
 const CACHE_MAX_SESSIONS = 512
+
+/** 用途说明（note）最大长度；超出截断，防止注入文本膨胀。 */
+export const NOTE_MAX_LENGTH = 120
 
 /** add 请求指向的路径不存在或不是目录（或含控制字符）。 */
 export class RefLibPathError extends Error {
@@ -63,6 +66,54 @@ export class RefLibUnknownError extends Error {
     super(`未找到参考库条目：${id}（先用 /ref-lib list 查看本会话已注册条目）`)
     this.name = 'RefLibUnknownError'
   }
+}
+
+/** note 含控制字符（提示词注入卫生；渲染层另有兜底消毒）。 */
+export class RefLibNoteError extends Error {
+  constructor() {
+    super('用途说明（note）包含控制字符，已拒绝（防止破坏上下文注入）')
+    this.name = 'RefLibNoteError'
+  }
+}
+
+/** 从 README 文本提取首个 Markdown 标题（去 `#`、trim、限长）；无标题返回 undefined。 */
+export function extractReadmeTitle(content: string): string | undefined {
+  for (const line of content.split('\n')) {
+    const match = /^#\s+(.+)$/.exec(line.trim())
+    if (match !== null) {
+      const title = match[1]!.trim()
+      return title.length > NOTE_MAX_LENGTH ? title.slice(0, NOTE_MAX_LENGTH) : title
+    }
+  }
+  return undefined
+}
+
+/** 读取目录 README（README.md/README/readme.md/index.md）的首个标题作为默认 note；IO 失败静默返回 undefined。 */
+async function readReadmeTitle(dir: string): Promise<string | undefined> {
+  for (const candidate of ['README.md', 'README', 'readme.md', 'index.md']) {
+    try {
+      const content = await readFile(join(dir, candidate), 'utf8')
+      const title = extractReadmeTitle(content)
+      if (title !== undefined) return title
+    } catch {
+      /* 该候选不可读，尝试下一个 */
+    }
+  }
+  return undefined
+}
+
+/** note 允许的空白：换行/制表（多行说明，渲染注入时折叠为空格）；
+ * 其余不可见控制字符（含 U+2028/2029 行/段分隔符）仍拒绝——防止破坏注入格式。 */
+const NOTE_UNSAFE_CHARACTERS = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f\u2028\u2029]/
+
+/** 规范化 note：统一换行（\r\n/\r → \n）、trim；含不允许的控制字符抛 RefLibNoteError；
+ * 空串/undefined 返回 undefined；超长截断。 */
+function normalizeNote(note: string | undefined): string | undefined {
+  if (note === undefined) return undefined
+  const normalized = note.replace(/\r\n?/g, '\n').trim()
+  if (normalized === '') return undefined
+  if (NOTE_UNSAFE_CHARACTERS.test(normalized)) throw new RefLibNoteError()
+  return normalized.length > NOTE_MAX_LENGTH ? normalized.slice(0, NOTE_MAX_LENGTH) : normalized
 }
 
 declare module '@deepseek-ai/cordis' {
@@ -127,10 +178,13 @@ export class RefLibService extends Service {
    * 同路径已注册时幂等返回现有条目。
    * @param session - 目标会话。
    * @param path - 目录路径（相对路径按宿主 cwd 解析）。
+   * @param note - 可选用途说明（注入上下文时展示）；空/undefined 时尝试自动提取
+   * README 首标题作为默认 note。
    * @returns 新增（或已存在）的条目。
    * @throws {RefLibPathError} 路径不存在或不是目录。
+   * @throws {RefLibNoteError} note 含控制字符。
    */
-  async add(session: Session, path: string): Promise<RefLibEntry> {
+  async add(session: Session, path: string, note?: string): Promise<RefLibEntry> {
     const canonical = await realpath(path).catch(() => {
       throw new RefLibPathError(path, 'missing')
     })
@@ -141,10 +195,25 @@ export class RefLibService extends Service {
       throw new RefLibPathError(path, 'missing')
     })
     if (!info.isDirectory()) throw new RefLibPathError(path, 'not-directory')
+    // note：显式提供优先；否则自动提取 README 标题（IO 失败/无标题则 undefined）。
+    const noteValue = normalizeNote(note) ?? (await readReadmeTitle(canonical))
     const current = this.list(session)
     const existing = current.find((entry) => entry.path === canonical)
-    if (existing !== undefined) return existing
-    const entry: RefLibEntry = { id: randomUUID(), path: canonical }
+    if (existing !== undefined) {
+      // 同路径再次 add 且带不同 note：更新用途说明（兼作改用途入口）。
+      if (noteValue !== undefined && noteValue !== existing.note) {
+        const next = current.map((entry) => (entry.id === existing.id ? { ...entry, note: noteValue } : entry))
+        this.persistSync(session.id, next)
+        this.cacheSet(session.id, next)
+        return { ...existing, note: noteValue }
+      }
+      return existing
+    }
+    const entry: RefLibEntry = {
+      id: randomUUID(),
+      path: canonical,
+      ...(noteValue === undefined ? {} : { note: noteValue }),
+    }
     const next = upsertLib(current, entry)
     this.persistSync(session.id, next)
     this.cacheSet(session.id, next)
@@ -163,6 +232,35 @@ export class RefLibService extends Service {
     const next = removeLib(current, id)
     this.persistSync(session.id, next)
     this.cacheSet(session.id, next)
+  }
+
+  /**
+   * 更新已有条目的用途说明（note）；note 为空/undefined 时清除该字段。
+   * @param session - 目标会话。
+   * @param id - 条目 id。
+   * @param note - 新用途说明（可为空串清除）。
+   * @returns 更新后的条目。
+   * @throws {RefLibUnknownError} id 未注册。
+   * @throws {RefLibNoteError} note 含不允许的控制字符。
+   */
+  async setNote(session: Session, id: string, note?: string): Promise<RefLibEntry> {
+    const current = this.list(session)
+    const entry = current.find((item) => item.id === id)
+    if (entry === undefined) throw new RefLibUnknownError(id)
+    const normalized = normalizeNote(note)
+    const next = current.map((item) => {
+      if (item.id !== id) return item
+      // 空串/undefined：清除 note 字段（显式删除键，避免 spread 保留旧值）。
+      if (normalized === undefined) {
+        const rest = { ...item }
+        delete rest.note
+        return rest
+      }
+      return { ...item, note: normalized }
+    })
+    this.persistSync(session.id, next)
+    this.cacheSet(session.id, next)
+    return next.find((item) => item.id === id)!
   }
 
   /** 冷读：sidecar 文件 → 旧日志事件迁移 → 父会话继承 → 空列表。 */

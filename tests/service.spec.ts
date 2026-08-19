@@ -3,7 +3,14 @@ import { join } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
 import type { Session, SessionEvent, SessionHeader } from '@deepseek-ai/dsh-session'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { RefLibPathError, RefLibService, RefLibUnknownError } from '../src/service.ts'
+import {
+  extractReadmeTitle,
+  NOTE_MAX_LENGTH,
+  RefLibNoteError,
+  RefLibPathError,
+  RefLibService,
+  RefLibUnknownError,
+} from '../src/service.ts'
 import type { RefLibEntry } from '../src/spec.ts'
 
 let counter = 0
@@ -163,5 +170,148 @@ describe('RefLibService v3（per-session sidecar）', () => {
     expect(service.list(child).map((entry) => entry.path)).toEqual([dir])
     // 子会话自身尚未落盘（无独立状态）
     await expect(readFile(sidecarPath(tmp, child.id), 'utf8')).rejects.toThrow()
+  })
+
+  it('add 带 note 时写入 sidecar 并返回', async () => {
+    const dir = join(tmp, 'lib-note')
+    await mkdir(dir)
+    const service = new RefLibService(new Context(), { root: tmp })
+    const session = fakeSession()
+    const entry = await service.add(session, dir, '核心源码库')
+    expect(entry.note).toBe('核心源码库')
+    expect(await readSidecar(tmp, session.id)).toEqual([entry])
+  })
+
+  it('add 未带 note 时自动提取 README 首标题作为默认 note', async () => {
+    const dir = join(tmp, 'lib-readme')
+    await mkdir(dir)
+    await writeFile(join(dir, 'README.md'), '# My Awesome Library\n\n说明文字')
+    const service = new RefLibService(new Context(), { root: tmp })
+    const session = fakeSession()
+    const entry = await service.add(session, dir)
+    expect(entry.note).toBe('My Awesome Library')
+  })
+
+  it('add 无 README 或无标题时 note 为空', async () => {
+    const dir = join(tmp, 'lib-noreadme')
+    await mkdir(dir)
+    const service = new RefLibService(new Context(), { root: tmp })
+    const session = fakeSession()
+    const entry = await service.add(session, dir)
+    expect(entry.note).toBeUndefined()
+  })
+
+  it('add 同路径带不同 note 时更新用途说明', async () => {
+    const dir = join(tmp, 'lib-update')
+    await mkdir(dir)
+    const service = new RefLibService(new Context(), { root: tmp })
+    const session = fakeSession()
+    const first = await service.add(session, dir, '旧用途')
+    const updated = await service.add(session, dir, '新用途')
+    expect(updated.id).toBe(first.id)
+    expect(updated.note).toBe('新用途')
+    expect(service.list(session)).toHaveLength(1)
+    expect(await readSidecar(tmp, session.id)).toEqual([{ ...first, note: '新用途' }])
+  })
+
+  it('add 同路径不带 note 时保持幂等不覆盖既有 note', async () => {
+    const dir = join(tmp, 'lib-idempotent')
+    await mkdir(dir)
+    const service = new RefLibService(new Context(), { root: tmp })
+    const session = fakeSession()
+    const first = await service.add(session, dir, '保留用途')
+    const second = await service.add(session, dir)
+    expect(second).toEqual(first)
+  })
+
+  it('add 拒绝含不允许控制字符的 note（U+2028 行分隔符，防止上下文注入）', async () => {
+    const dir = join(tmp, 'lib-noteunsafe')
+    await mkdir(dir)
+    const service = new RefLibService(new Context(), { root: tmp })
+    const session = fakeSession()
+    await expect(service.add(session, dir, 'bad\u2028note')).rejects.toBeInstanceOf(RefLibNoteError)
+    expect(service.list(session)).toEqual([])
+  })
+
+  it('note 超长时截断到 NOTE_MAX_LENGTH', async () => {
+    const dir = join(tmp, 'lib-longnote')
+    await mkdir(dir)
+    const service = new RefLibService(new Context(), { root: tmp })
+    const session = fakeSession()
+    const long = 'x'.repeat(NOTE_MAX_LENGTH + 50)
+    const entry = await service.add(session, dir, long)
+    expect(entry.note).toBe('x'.repeat(NOTE_MAX_LENGTH))
+  })
+
+  it('note 支持多行（换行存储保留，供展示/详情；注入时折叠）', async () => {
+    const dir = join(tmp, 'lib-multiline')
+    await mkdir(dir)
+    const service = new RefLibService(new Context(), { root: tmp })
+    const session = fakeSession()
+    const entry = await service.add(session, dir, '第一行\n第二行')
+    expect(entry.note).toBe('第一行\n第二行')
+    expect(await readSidecar(tmp, session.id)).toEqual([entry])
+  })
+
+  it('note 统一 \r\n 与 \r 为 \n', async () => {
+    const dir = join(tmp, 'lib-crlf')
+    await mkdir(dir)
+    const service = new RefLibService(new Context(), { root: tmp })
+    const session = fakeSession()
+    const entry = await service.add(session, dir, 'a\r\nb\rc')
+    expect(entry.note).toBe('a\nb\nc')
+  })
+
+  it('setNote 更新条目用途说明并落盘', async () => {
+    const dir = join(tmp, 'lib-setnote')
+    await mkdir(dir)
+    const service = new RefLibService(new Context(), { root: tmp })
+    const session = fakeSession()
+    const entry = await service.add(session, dir)
+    const updated = await service.setNote(session, entry.id, '新用途')
+    expect(updated.note).toBe('新用途')
+    expect(updated.id).toBe(entry.id)
+    expect(await readSidecar(tmp, session.id)).toEqual([{ ...entry, note: '新用途' }])
+  })
+
+  it('setNote 空串清除用途说明', async () => {
+    const dir = join(tmp, 'lib-clearnote')
+    await mkdir(dir)
+    const service = new RefLibService(new Context(), { root: tmp })
+    const session = fakeSession()
+    const entry = await service.add(session, dir, '将被清除')
+    const cleared = await service.setNote(session, entry.id, '')
+    expect(cleared.note).toBeUndefined()
+    expect(await readSidecar(tmp, session.id)).toEqual([{ id: entry.id, path: entry.path }])
+  })
+
+  it('setNote 未知 id 抛 RefLibUnknownError', async () => {
+    const service = new RefLibService(new Context(), { root: tmp })
+    const session = fakeSession()
+    await expect(service.setNote(session, 'nope', 'x')).rejects.toBeInstanceOf(RefLibUnknownError)
+  })
+
+  it('setNote 拒绝不允许的控制字符（U+2028 行分隔符）', async () => {
+    const dir = join(tmp, 'lib-noteline')
+    await mkdir(dir)
+    const service = new RefLibService(new Context(), { root: tmp })
+    const session = fakeSession()
+    const entry = await service.add(session, dir)
+    await expect(service.setNote(session, entry.id, 'bad\u2028note')).rejects.toBeInstanceOf(RefLibNoteError)
+  })
+})
+
+describe('extractReadmeTitle', () => {
+  it('提取首个 Markdown 标题', () => {
+    expect(extractReadmeTitle('# Hello\n\nbody')).toBe('Hello')
+    expect(extractReadmeTitle('body\n\n## Sub')).toBeUndefined()
+    // 只认 H1（`# `）；`## ` 是子标题不匹配，首个命中的是后续 H1
+    expect(extractReadmeTitle('## 子标题\n# 主标题')).toBe('主标题')
+    expect(extractReadmeTitle('')).toBeUndefined()
+  })
+
+  it('超长标题截断到 NOTE_MAX_LENGTH', () => {
+    const long = 't'.repeat(NOTE_MAX_LENGTH + 10)
+    expect(extractReadmeTitle(`# ${long}`)).toBe('t'.repeat(NOTE_MAX_LENGTH))
   })
 })
