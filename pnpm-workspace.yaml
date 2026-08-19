@@ -1,0 +1,5 @@
+# pnpm 11 依赖构建脚本批准名单（package.json 的 pnpm 字段已废弃，统一放这里）。
+# koffi 是 cordis-plugin-loader 的原生 FFI 依赖；pnpm 11 默认 strictDepBuilds=true，
+# 不批准会令 `pnpm install` 以 ERR_PNPM_IGNORED_BUILDS 失败。
+allowBuilds:
+  koffi: true
