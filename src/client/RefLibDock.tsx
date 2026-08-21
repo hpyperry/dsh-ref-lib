@@ -202,6 +202,17 @@ export function RefLibDock(props: RefLibDockProps): ReactElement {
     void refresh(true)
   }, [userMessageCount])
 
+  // 命令执行即刷新：`/ref-lib` 命令（add/remove/note）执行必然产生
+  // `command/run` → `command/done`，会话快照中的 command 节点从 running
+  // （outcome null）变为 settled——settled 计数 +1 触发静默刷新，命令执行后
+  // UI 立即同步，不必等发消息或轮询。与 userMessageCount 同模式（组件内响应式）。
+  const refLibCommandDone = session.nodes.filter(
+    (node) => node.kind === 'command' && node.name === 'ref-lib' && node.outcome !== null,
+  ).length
+  useEffect(() => {
+    void refresh(true)
+  }, [refLibCommandDone])
+
   // 可见期轮询（v9 遗留 §14 方案 1）：挂载期间每 30s 静默刷新一次——外部删除/
   // 恢复目录后，胶囊失效角标与面板列表自动反向同步，无需手动刷新。负载：每会话
   // 每 30s 一次 GET /list（node 端内存缓存 + N 次 statSync，毫秒级；状态变化才写盘），
