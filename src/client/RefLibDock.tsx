@@ -24,6 +24,7 @@ import { IconFolderOpen16 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { RefLibEntry } from '../spec.ts'
 import { RefLibApiError } from './data.ts'
 import type { RefLibKey } from './locales.ts'
+import { RefreshGuard } from './refresh-guard.ts'
 import { RefLibBrowser } from './RefLibBrowser.tsx'
 import { RefLibPanel } from './RefLibPanel.tsx'
 import { ensureRefLibStyles } from './styles.ts'
@@ -106,8 +107,9 @@ export function RefLibDock(props: RefLibDockProps): ReactElement {
   const [picking, setPicking] = useState(false)
   const [removingId, setRemovingId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
-  // 并发读守卫：仅采纳最新一次 refresh 的结果（挂载预载与开面板刷新可能重叠）。
-  const seq = useRef(0)
+  // 并发读守卫（竞态控制）：仅采纳最新一次 refresh 的结果（挂载预载/开面板/轮询/
+  // 操作后刷新可能重叠）；详见 src/client/refresh-guard.ts 与 tests/refresh-guard.spec.ts。
+  const guard = useRef(new RefreshGuard())
 
   // 目录选择能力（v6）：browse（应用内浏览器，listDirectory）或 native（OS 对话框，
   // pickDirectory）。探测一次并缓存；host 侧能力在单次 boot 内稳定。
@@ -137,17 +139,17 @@ export function RefLibDock(props: RefLibDockProps): ReactElement {
    * 提前结束面板加载态（轮询仅更新 libs 数据）。
    */
   const refresh = async (silent = false): Promise<void> => {
-    const mine = ++seq.current
+    const mine = guard.current.begin()
     try {
       const next = await load(sessionId)
-      if (mine !== seq.current) return
+      if (!guard.current.isLatest(mine)) return
       setLibs(next)
       if (!silent) setError(null)
     } catch (cause) {
-      if (mine !== seq.current) return
+      if (!guard.current.isLatest(mine)) return
       if (!silent) setError(formatError(cause, t))
     } finally {
-      if (mine === seq.current && !silent) setLoading(false)
+      if (guard.current.isLatest(mine) && !silent) setLoading(false)
     }
   }
 
@@ -160,14 +162,14 @@ export function RefLibDock(props: RefLibDockProps): ReactElement {
     let retries = 0
     let timer: number | undefined
     const attempt = async (): Promise<void> => {
-      const mine = ++seq.current
+      const mine = guard.current.begin()
       try {
         const next = await load(sessionId)
-        if (stopped || mine !== seq.current) return
+        if (stopped || !guard.current.isLatest(mine)) return
         setLibs(next)
         setError(null)
       } catch (cause) {
-        if (stopped || mine !== seq.current) return
+        if (stopped || !guard.current.isLatest(mine)) return
         if (retries < MOUNT_RETRY_MAX) {
           retries += 1
           timer = window.setTimeout(() => { void attempt() }, MOUNT_RETRY_DELAY_MS)
@@ -175,7 +177,7 @@ export function RefLibDock(props: RefLibDockProps): ReactElement {
         }
         setError(formatError(cause, t))
       } finally {
-        if (!stopped && mine === seq.current) setLoading(false)
+        if (!stopped && guard.current.isLatest(mine)) setLoading(false)
       }
     }
     void attempt()
