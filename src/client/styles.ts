@@ -651,6 +651,86 @@ const CSS = `
   color: var(--dsw-alias-label-caption);
 }
 
+/* ── /ref-lib 命令结果卡片（conversation.chat.commandview）── */
+.reflib-cmd {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.reflib-cmdHead {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.reflib-cmdHeadIcon {
+  flex: none;
+}
+
+.reflib-cmdName {
+  flex: none;
+  color: var(--dsw-alias-label-primary);
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 500;
+}
+
+/* 摘要行 = 结果首行；过长单行省略（完整结果见下方 body） */
+.reflib-cmdSummary {
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 13px;
+  line-height: 20px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.reflib-cmdSummary[data-error] {
+  color: var(--dsw-alias-state-error-primary);
+}
+
+.reflib-cmdCopy {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border: 1px solid var(--dsw-alias-border-l1);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 18px;
+  cursor: pointer;
+}
+
+.reflib-cmdCopy:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+/* 完整结果：默认全展开（无 max-height 截断），超宽自动换行 */
+.reflib-cmdBody {
+  margin: 0;
+  padding: 10px 14px;
+  overflow: auto;
+  border: 1px solid var(--dsw-alias-border-l1);
+  border-radius: 10px;
+  background: var(--dsw-alias-markdown-code-block);
+  color: var(--dsw-alias-label-primary);
+  font: var(--dsw-font-markdown-code-block-small);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.reflib-cmdBody[data-error] {
+  color: var(--dsw-alias-state-error-primary);
+}
+
 /* 窄视口：路径行换行，输入框占满一行 */
 @media (max-width: 440px) {
   .reflib-addRow {

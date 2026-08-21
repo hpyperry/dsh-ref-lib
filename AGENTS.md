@@ -19,7 +19,11 @@
    v9（**参考库可用性状态**：sidecar v3 条目带 `status`/`checkedAt`；每次读取（含每次
    模型请求的注入回调）实时 `statSync` 探测、仅状态变化写盘；失效库（missing /
    not-directory）不注入并红色提示（面板状态行 + dock 失效角标 + `/ref-lib list`
-   `[已失效]` 标记）；依赖基线保持 dsh 0.1.0-rc.7）。
+   `[已失效]` 标记）；失效条目仅允许移除（UI 禁用详情 + node note 接口 400
+   `ref-lib/unavailable`）；胶囊徽标显可用数、红色角标显失效数；**`/ref-lib` 命令
+   结果专属卡片**（`conversation.chat.commandview` keyed 槽位：默认全展开完整结果 +
+   复制按钮，规避官方卡片折叠单行 ellipsis / 展开 260px 截断）；依赖基线保持 dsh
+   0.1.0-rc.7）。
 
 ## 2. 开发规范（必须遵守）
 

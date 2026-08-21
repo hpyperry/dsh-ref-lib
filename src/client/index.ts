@@ -23,6 +23,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type { RefLibEntry } from '../spec.ts'
 import { parseApiErrorPayload, parseLibsPayload, RefLibApiError } from './data.ts'
+import { RefLibCommandCard } from './RefLibCommandCard.tsx'
 import { RefLibDock, type RefLibDockInjected } from './RefLibDock.tsx'
 import { zh, en, type RefLibKey } from './locales.ts'
 
@@ -107,6 +108,19 @@ export function apply(ctx: ClientContext): void {
         inject: injected,
       },
       RefLibDock,
+    ),
+  )
+
+  // /ref-lib 命令结果专属卡片：官方 GenericCommandCard 长结果显示不全（折叠单行
+  // ellipsis / 展开 260px 内滚动），本卡片默认全展开完整结果 + 复制按钮。
+  ctx.slots.inject('conversation.chat.commandview', () =>
+    ctx.slots.register(
+      {
+        name: 'conversation.chat.commandview',
+        key: 'ref-lib',
+        locale: NS,
+      },
+      RefLibCommandCard,
     ),
   )
 }
