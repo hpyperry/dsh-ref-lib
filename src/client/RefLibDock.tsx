@@ -99,7 +99,7 @@ ensureRefLibStyles()
  * @returns 胶囊入口（+ 打开时的管理面板）。
  */
 export function RefLibDock(props: RefLibDockProps): ReactElement {
-  const { sessionId, load, add, remove, setNote, pickDirectory, listDirectory, t } = props
+  const { sessionId, session, load, add, remove, setNote, pickDirectory, listDirectory, t } = props
   const [open, setOpen] = useState(false)
   const [libs, setLibs] = useState<RefLibEntry[]>([])
   const [loading, setLoading] = useState(false)
@@ -192,6 +192,15 @@ export function RefLibDock(props: RefLibDockProps): ReactElement {
       void refresh()
     }
   }, [open])
+
+  // 发消息即刷新（交互钩子）：dock owner 的 `session` 是**响应式会话快照**——用户
+  // 发消息必然产生 user 消息节点（`kind: 'user'`），计数 +1 触发静默刷新，UI 在
+  // 发消息后立即同步（不必等 30s 轮询）；流式 assistant 回复不改变 user 计数，
+  // 不会每 token 刷新。外部文件操作仍由下方 30s 轮询兜底。
+  const userMessageCount = session.nodes.filter((node) => node.kind === 'user').length
+  useEffect(() => {
+    void refresh(true)
+  }, [userMessageCount])
 
   // 可见期轮询（v9 遗留 §14 方案 1）：挂载期间每 30s 静默刷新一次——外部删除/
   // 恢复目录后，胶囊失效角标与面板列表自动反向同步，无需手动刷新。负载：每会话
