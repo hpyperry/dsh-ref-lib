@@ -44,6 +44,10 @@ export interface RefLibDockInjected {
   listDirectory: (path?: string, signal?: AbortSignal) => Promise<DirectoryListing>
 }
 
+/** 挂载预载失败重试：间隔与上限（重启后会话 live 通常 <1s，重试 1–2 次即成功）。 */
+const MOUNT_RETRY_DELAY_MS = 800
+const MOUNT_RETRY_MAX = 5
+
 /** 完整 props：input.dock 运行时套件 + 注入面 + 本地化 seat。 */
 export type RefLibDockProps = PropsRuntime<'conversation.input.dock'> & RefLibDockInjected & PropsLocale<'ref-lib'>
 
@@ -138,11 +142,38 @@ export function RefLibDock(props: RefLibDockProps): ReactElement {
     }
   }
 
-  // 挂载预载。依赖 sessionId：若同一 dock 实例跨会话复用（槽位按会话切换），
-  // 会话切换后徽标/列表随之刷新，避免停留在上一个会话的过期数据（seq 守卫防竞态）。
+  // 挂载/会话切换预载（带失败重试）：重启 dsh web 后会话可能尚未 live（/list 404），
+  // 首次加载失败若直接放弃，胶囊角标/列表会缺失直到用户点开面板——延迟重试直至
+  // 会话就绪或达到上限，让"刚启动"的失效角标也能自动出现（seq 守卫防并发竞态）。
   useEffect(() => {
     ensureRefLibStyles()
-    void refresh()
+    let stopped = false
+    let retries = 0
+    let timer: number | undefined
+    const attempt = async (): Promise<void> => {
+      const mine = ++seq.current
+      try {
+        const next = await load(sessionId)
+        if (stopped || mine !== seq.current) return
+        setLibs(next)
+        setError(null)
+      } catch (cause) {
+        if (stopped || mine !== seq.current) return
+        if (retries < MOUNT_RETRY_MAX) {
+          retries += 1
+          timer = window.setTimeout(() => { void attempt() }, MOUNT_RETRY_DELAY_MS)
+          return
+        }
+        setError(formatError(cause, t))
+      } finally {
+        if (!stopped && mine === seq.current) setLoading(false)
+      }
+    }
+    void attempt()
+    return () => {
+      stopped = true
+      if (timer !== undefined) window.clearTimeout(timer)
+    }
   }, [sessionId])
   useEffect(() => {
     if (open) {
