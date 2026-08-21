@@ -22,8 +22,12 @@
    `[已失效]` 标记）；失效条目仅允许移除（UI 禁用详情 + node note 接口 400
    `ref-lib/unavailable`）；胶囊徽标显可用数、红色角标显失效数；**`/ref-lib` 命令
    结果专属卡片**（`conversation.chat.commandview` keyed 槽位：默认全展开完整结果 +
-   复制按钮，规避官方卡片折叠单行 ellipsis / 展开 260px 截断）；依赖基线保持 dsh
-   0.1.0-rc.7）。
+   复制按钮，规避官方卡片折叠单行 ellipsis / 展开 260px 截断）；**UI 同步交互驱动**
+   （`/ref-lib` 命令完成 / 发消息 / 面板操作即时刷新——经 dock owner 响应式会话快照
+   钩子 `refLibCommandDone` / `userMessageCount`，无后台轮询；外部文件变化在下次
+   GUI 交互时同步，注入侧不受影响）；**竞态守卫 `RefreshGuard`**（`src/client/
+   refresh-guard.ts`：只接受最后发起的请求结果，`tests/refresh-guard.spec.ts` 钉死
+   并发/乱序/作废行为）；依赖基线保持 dsh 0.1.0-rc.7）。
 
 ## 2. 开发规范（必须遵守）
 
