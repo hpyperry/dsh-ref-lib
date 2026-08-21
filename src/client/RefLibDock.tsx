@@ -48,6 +48,9 @@ export interface RefLibDockInjected {
 const MOUNT_RETRY_DELAY_MS = 800
 const MOUNT_RETRY_MAX = 5
 
+/** 可见期轮询间隔：外部变更（删除/恢复目录）自动反向同步到 UI。 */
+const POLL_INTERVAL_MS = 30_000
+
 /** 完整 props：input.dock 运行时套件 + 注入面 + 本地化 seat。 */
 export type RefLibDockProps = PropsRuntime<'conversation.input.dock'> & RefLibDockInjected & PropsLocale<'ref-lib'>
 
@@ -127,7 +130,12 @@ export function RefLibDock(props: RefLibDockProps): ReactElement {
     return mode
   }
 
-  const refresh = async (): Promise<void> => {
+  /**
+   * 拉取会话参考库列表并更新 UI。
+   * @param silent - 静默模式（轮询用）：失败不写入错误槽（避免后台刷新打扰用户）；
+   * 成功时照常清错误（数据已恢复正常的信号）。
+   */
+  const refresh = async (silent = false): Promise<void> => {
     const mine = ++seq.current
     try {
       const next = await load(sessionId)
@@ -136,7 +144,7 @@ export function RefLibDock(props: RefLibDockProps): ReactElement {
       setError(null)
     } catch (cause) {
       if (mine !== seq.current) return
-      setError(formatError(cause, t))
+      if (!silent) setError(formatError(cause, t))
     } finally {
       if (mine === seq.current) setLoading(false)
     }
@@ -181,6 +189,15 @@ export function RefLibDock(props: RefLibDockProps): ReactElement {
       void refresh()
     }
   }, [open])
+
+  // 可见期轮询（v9 遗留 §14 方案 1）：挂载期间每 30s 静默刷新一次——外部删除/
+  // 恢复目录后，胶囊失效角标与面板列表自动反向同步，无需手动刷新。负载：每会话
+  // 每 30s 一次 GET /list（node 端内存缓存 + N 次 statSync，毫秒级；状态变化才写盘），
+  // 多开会话线性叠加，可忽略。
+  useEffect(() => {
+    const timer = window.setInterval(() => { void refresh(true) }, POLL_INTERVAL_MS)
+    return () => window.clearInterval(timer)
+  }, [sessionId])
 
   const handleRemove = async (id: string): Promise<void> => {
     setRemovingId(id)
