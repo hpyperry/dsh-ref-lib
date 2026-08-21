@@ -94,6 +94,22 @@ const CSS = `
   font-weight: 500;
 }
 
+/* 失效条目计数角标（v9）：红色系，与普通数量徽标区分。 */
+.reflib-chipWarn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 9px;
+  background: var(--dsw-alias-state-error-primary);
+  color: #fff;
+  font-size: 11px;
+  line-height: 18px;
+  font-weight: 500;
+}
+
 /* ── 应用内目录浏览器（browse 后端）── */
 .reflib-browser {
   width: min(460px, 100%);
@@ -309,6 +325,11 @@ const CSS = `
   color: var(--dsw-alias-label-tertiary);
 }
 
+/* 失效条目行图标（v9）：警示色。 */
+.reflib-rowIconWarn {
+  color: var(--dsw-alias-state-error-primary);
+}
+
 .reflib-rowBody {
   display: flex;
   flex: 1;
@@ -341,6 +362,16 @@ const CSS = `
 .reflib-rowNote {
   overflow: hidden;
   color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 16px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 失效条目状态行（v9）：红色警示文案，位于路径之下 */
+.reflib-rowStatus {
+  overflow: hidden;
+  color: var(--dsw-alias-state-error-primary);
   font-size: 12px;
   line-height: 16px;
   text-overflow: ellipsis;

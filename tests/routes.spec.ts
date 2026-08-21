@@ -7,7 +7,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { Session } from '@deepseek-ai/dsh-session'
 import { describe, expect, it } from 'vitest'
 import { isLoopbackRequest, makeRefLibRoutes, MAX_JSON_BODY_BYTES } from '../src/routes.ts'
-import { RefLibNoteError, RefLibPathError, RefLibUnknownError, type RefLibService } from '../src/service.ts'
+import { RefLibNoteError, RefLibPathError, RefLibUnavailableError, RefLibUnknownError, type RefLibService } from '../src/service.ts'
 
 /** 假响应：捕获状态码与 body。 */
 function fakeRes(): { res: ServerResponse; out: { status: number; body: string } } {
@@ -254,6 +254,28 @@ describe('makeRefLibRoutes', () => {
     expect(out.status).toBe(200)
     expect(JSON.parse(out.body)).toEqual({ entry: { id: 'e1', path: '/lib/a', note: '新用途' } })
     expect(calls[0]).toMatchObject({ id: 'e1', note: '新用途' })
+  })
+
+  it('POST note 对失效条目映射 400 并带 wire code（仅允许移除）', async () => {
+    const refLibs = {
+      list: () => [],
+      add: async () => ({ id: 'x', path: '/x' }),
+      remove: async () => undefined,
+      setNote: async () => {
+        throw new RefLibUnavailableError('/lib/deleted')
+      },
+    } as unknown as RefLibService
+    const resolveSession = () => fakeSession
+    const routes = makeRefLibRoutes({ refLibs, resolveSession, log: () => {} })
+    const { res, out } = fakeRes()
+    await routes
+      .find((route) => route.path === '/api/ref-lib/note')!
+      .handler(fakeReq({ method: 'POST', body: { session: 'session-live', id: 'e1', note: '新用途' } }), res)
+    expect(out.status).toBe(400)
+    expect(JSON.parse(out.body) as { code: string; path: string }).toMatchObject({
+      code: 'ref-lib/unavailable',
+      path: '/lib/deleted',
+    })
   })
 
   it('POST note 缺 id 返回 400', async () => {

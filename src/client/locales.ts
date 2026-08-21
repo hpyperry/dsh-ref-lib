@@ -14,6 +14,10 @@ export const zh = {
   'dock.label': '参考库',
   'dock.aria': '管理只读参考库',
   'dock.count.aria': '参考库，共 {count} 个',
+  'dock.unavailable': '参考库，{count} 个失效',
+  // ── 条目可用性（失效检测，v9）──
+  'status.missing': '目录已删除或不可访问',
+  'status.notDirectory': '路径不再是目录',
   // ── 管理面板 ──
   'panel.title': '参考库',
   'panel.close': '关闭',
@@ -53,6 +57,7 @@ export const zh = {
   'error.notDirectory': '不是目录：{path}',
   'error.unsafe': '路径包含控制字符，已拒绝：{path}',
   'error.unknownId': '未找到参考库条目：{id}',
+  'error.unavailable': '参考库目录不可用（仅允许移除）',
 } satisfies Record<string, string>
 
 /** ref-lib 命名空间的键集。 */
@@ -63,6 +68,10 @@ export const en = {
   'dock.label': 'Reference Library',
   'dock.aria': 'Manage read-only reference libraries',
   'dock.count.aria': 'Reference library, {count} total',
+  'dock.unavailable': 'Reference library, {count} unavailable',
+  // ── Entry availability (stale detection, v9) ──
+  'status.missing': 'Directory deleted or unavailable',
+  'status.notDirectory': 'Path is no longer a directory',
   'panel.title': 'Reference Library',
   'panel.close': 'Close',
   'panel.description':
@@ -100,4 +109,5 @@ export const en = {
   'error.notDirectory': 'Not a directory: {path}',
   'error.unsafe': 'Path contains control characters and was rejected: {path}',
   'error.unknownId': 'Reference library entry not found: {id}',
+  'error.unavailable': 'Reference library directory unavailable (remove only)',
 } satisfies Record<RefLibKey, string>

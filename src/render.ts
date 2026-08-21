@@ -8,6 +8,7 @@
  */
 
 import { basename } from 'node:path'
+import { filterAvailable } from './logic.ts'
 import type { RefLibEntry } from './spec.ts'
 import { sanitizeControlCharacters } from './validate.ts'
 
@@ -107,18 +108,21 @@ If changes are required:
 3. Keep the original reference library unchanged.`
 
 /**
- * 渲染参考库清单与规则声明。空列表返回空串（不占用模型上下文 token）。
- * @param libs - 已注册的只读参考库。
- * @returns 注入到系统提示的文本；无库时为空串。
+ * 渲染参考库清单与规则声明。先过滤失效条目（`filterAvailable`）：失效目录读了也
+ * 白读，且避免误导模型访问不存在的路径。过滤后为空（无库/全部失效）返回空串，
+ * 不占用模型上下文 token。
+ * @param libs - 已注册的只读参考库（含失效）。
+ * @returns 注入到系统提示的文本；无可注入库时为空串。
  */
 export function renderRefLibs(libs: readonly RefLibEntry[]): string {
-  if (libs.length === 0) return ''
-  const libraries = libs.map(renderLibrary).join('\n\n')
+  const available = filterAvailable(libs)
+  if (available.length === 0) return ''
+  const libraries = available.map(renderLibrary).join('\n\n')
   return REF_LIB_TEMPLATE.replace('{LIBS}', libraries)
 }
 
 /**
- * 渲染 `/ref-lib list` 的人类可读输出。
+ * 渲染 `/ref-lib list` 的人类可读输出；失效条目带状态标记。
  * @param libs - 已注册的只读参考库。
  * @returns 列表文本；无库时提示为空。
  */
@@ -127,7 +131,10 @@ export function renderLibList(libs: readonly RefLibEntry[]): string {
   return libs
     .map((entry) => {
       const note = entry.note === undefined || entry.note === '' ? '' : `（${sanitizeControlCharacters(entry.note)}）`
-      return `- ${entry.id}: ${sanitizeControlCharacters(entry.path)}${note}`
+      const status = entry.status === 'missing'
+        ? ' [已失效]'
+        : entry.status === 'not-directory' ? ' [不是目录]' : ''
+      return `- ${entry.id}: ${sanitizeControlCharacters(entry.path)}${status}${note}`
     })
     .join('\n')
 }

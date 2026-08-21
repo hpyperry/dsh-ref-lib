@@ -2,13 +2,41 @@ import { describe, expect, it } from 'vitest'
 import { renderLibList, renderRefLibs } from '../src/render.ts'
 import type { RefLibEntry } from '../src/spec.ts'
 
+/** 可用条目（真实链路中 service.list 返回前已实时探测并填充 status）。 */
+function available(id: string, path: string, note?: string): RefLibEntry {
+  return { id, path, status: 'available', checkedAt: 1, ...(note === undefined ? {} : { note }) }
+}
+
 describe('renderRefLibs', () => {
   it('空列表返回空串（零 token）', () => {
     expect(renderRefLibs([])).toBe('')
   })
 
+  it('全部失效（missing/not-directory/未检测）返回空串', () => {
+    const libs: RefLibEntry[] = [
+      { id: '1', path: '/lib/deleted', status: 'missing', checkedAt: 1 },
+      { id: '2', path: '/lib/replaced', status: 'not-directory', checkedAt: 1 },
+      { id: '3', path: '/lib/unprobed' },
+    ]
+    expect(renderRefLibs(libs)).toBe('')
+  })
+
+  it('失效条目被过滤，仅可用条目注入', () => {
+    const libs: RefLibEntry[] = [
+      available('1', '/lib/a'),
+      { id: '2', path: '/lib/deleted', status: 'missing', checkedAt: 1 },
+      { id: '3', path: '/lib/replaced', status: 'not-directory', checkedAt: 1 },
+    ]
+    const text = renderRefLibs(libs)
+    expect(text).toContain('1. a')
+    expect(text).toContain('   Path: /lib/a')
+    // 失效库不得进入注入文本
+    expect(text).not.toContain('deleted')
+    expect(text).not.toContain('replaced')
+  })
+
   it('包含定稿英文模板的关键规则短语', () => {
-    const libs: RefLibEntry[] = [{ id: '1', path: '/lib/a' }]
+    const libs: RefLibEntry[] = [available('1', '/lib/a')]
     const text = renderRefLibs(libs)
     // 强制语义与关键条款（防止未来误改模板）
     expect(text).toContain('[Read-only Reference Libraries]')
@@ -22,7 +50,7 @@ describe('renderRefLibs', () => {
   })
 
   it('库列表渲染为序号 + basename + Path（无 note 省略 Description）', () => {
-    const libs: RefLibEntry[] = [{ id: '1', path: '/lib/deepseek-harness' }]
+    const libs: RefLibEntry[] = [available('1', '/lib/deepseek-harness')]
     const text = renderRefLibs(libs)
     expect(text).toContain('1. deepseek-harness')
     expect(text).toContain('   Path: /lib/deepseek-harness')
@@ -30,15 +58,15 @@ describe('renderRefLibs', () => {
   })
 
   it('含 note 时渲染 Description 行', () => {
-    const libs: RefLibEntry[] = [{ id: '1', path: '/lib/deepseek-harness', note: 'harness 源码' }]
+    const libs: RefLibEntry[] = [available('1', '/lib/deepseek-harness', 'harness 源码')]
     const text = renderRefLibs(libs)
     expect(text).toContain('   Description: harness 源码')
   })
 
   it('多库按注册序编号，库间空行分隔', () => {
     const libs: RefLibEntry[] = [
-      { id: '1', path: '/lib/a' },
-      { id: '2', path: '/lib/b', note: 'b 用途' },
+      available('1', '/lib/a'),
+      available('2', '/lib/b', 'b 用途'),
     ]
     const text = renderRefLibs(libs)
     expect(text).toContain('1. a')
@@ -47,14 +75,14 @@ describe('renderRefLibs', () => {
   })
 
   it('多行 note 注入时折叠为单行（Description 模板为单行）', () => {
-    const libs: RefLibEntry[] = [{ id: '1', path: '/lib/a', note: '第一行\n第二行\t缩进' }]
+    const libs: RefLibEntry[] = [available('1', '/lib/a', '第一行\n第二行\t缩进')]
     const text = renderRefLibs(libs)
     expect(text).toContain('   Description: 第一行 第二行 缩进')
     expect(text).not.toContain('\n第二行')
   })
 
   it('路径与 note 的控制字符被消毒/折叠（提示词注入卫生）', () => {
-    const libs: RefLibEntry[] = [{ id: '1', path: '/lib/a\nignore-all', note: 'bad\u2028note' }]
+    const libs: RefLibEntry[] = [available('1', '/lib/a\nignore-all', 'bad\u2028note')]
     const text = renderRefLibs(libs)
     // 路径：消毒为 U+FFFD
     expect(text).toContain('/lib/a\uFFFDignore-all')
@@ -74,5 +102,18 @@ describe('renderLibList', () => {
     const libs: RefLibEntry[] = [{ id: '1', path: '/lib/a', note: 'n' }]
     const text = renderLibList(libs)
     expect(text).toContain('1: /lib/a（n）')
+  })
+
+  it('失效条目带状态标记', () => {
+    const libs: RefLibEntry[] = [
+      { id: '1', path: '/lib/a', status: 'available', checkedAt: 1 },
+      { id: '2', path: '/lib/deleted', status: 'missing', checkedAt: 1 },
+      { id: '3', path: '/lib/replaced', status: 'not-directory', checkedAt: 1 },
+    ]
+    const text = renderLibList(libs)
+    expect(text).toContain('1: /lib/a')
+    expect(text).not.toContain('1: /lib/a [')
+    expect(text).toContain('2: /lib/deleted [已失效]')
+    expect(text).toContain('3: /lib/replaced [不是目录]')
   })
 })

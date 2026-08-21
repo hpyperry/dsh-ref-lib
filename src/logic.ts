@@ -4,7 +4,7 @@
  */
 
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
-import type { RefLibEntry } from './spec.ts'
+import type { RefLibAvailability, RefLibEntry } from './spec.ts'
 import { isRefLibEntry } from './validate.ts'
 
 /**
@@ -48,4 +48,25 @@ export function upsertLib(list: readonly RefLibEntry[], entry: RefLibEntry): Ref
  */
 export function removeLib(list: readonly RefLibEntry[], id: string): RefLibEntry[] {
   return list.filter((entry) => entry.id !== id)
+}
+
+/**
+ * 注入过滤：仅保留可用条目。失效（missing/not-directory）与未检测（status 缺省）
+ * 条目一律不注入——注入的是"可用参考"，失效目录读了也白读，且避免误导模型访问
+ * 不存在的路径。调用方（service.list）保证 status 在返回前已实时探测。
+ * @param libs - 全部条目（含失效）。
+ * @returns 仅 `status === 'available'` 的条目。
+ */
+export function filterAvailable(libs: readonly RefLibEntry[]): RefLibEntry[] {
+  return libs.filter((entry) => entry.status === 'available')
+}
+
+/**
+ * 探测结果是否与条目当前 status 不同（决定是否写盘）。
+ * @param entry - 条目（可能无检测记录）。
+ * @param probe - 最新探测结果。
+ * @returns true 表示需要把探测结果落盘：条目从未检测（status 缺省），或结果已变化。
+ */
+export function statusChanged(entry: RefLibEntry, probe: RefLibAvailability): boolean {
+  return entry.status === undefined || entry.status !== probe
 }

@@ -14,18 +14,34 @@
 
 import { randomUUID } from 'node:crypto'
 import { readFile, realpath, stat } from 'node:fs/promises'
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { dshHomePath } from '@deepseek-ai/dsh-home-paths'
 import { Context, Service } from '@deepseek-ai/cordis'
 import type { Session } from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-session'
-import { foldRefLibs, removeLib, upsertLib } from './logic.ts'
-import type { RefLibEntry } from './spec.ts'
+import { foldRefLibs, removeLib, statusChanged, upsertLib } from './logic.ts'
+import type { RefLibAvailability, RefLibEntry } from './spec.ts'
 import { hasControlCharacters, isRefLibEntry } from './validate.ts'
 
-/** sidecar 文件内容版本（v3 文件 = `{ version: 2, libs }`）。 */
-const SIDECAR_VERSION = 2
+/** sidecar 文件内容版本（v3 文件 = `{ version: 3, libs }`，条目带 status/checkedAt）。 */
+const SIDECAR_VERSION = 3
+
+/**
+ * 探测目录可用性（同步 statSync）。库数量少、本地磁盘、单次亚毫秒级；同步形态
+ * 保持 `list()` 与 systemPrompt 注入回调（`text()` 为同步函数）不变。
+ * @param path - 目录绝对路径。
+ * @returns 存在且是目录 → available；存在但不是目录 → not-directory；
+ * stat 失败（不存在/权限不可达）→ missing。
+ */
+export function probeAvailability(path: string): RefLibAvailability {
+  try {
+    const info = statSync(path)
+    return info.isDirectory() ? 'available' : 'not-directory'
+  } catch {
+    return 'missing'
+  }
+}
 
 /**
  * 内存缓存会话数上限：超出后按插入序淘汰最旧会话（下次访问从 sidecar 重读，
@@ -73,6 +89,17 @@ export class RefLibNoteError extends Error {
   constructor() {
     super('用途说明（note）包含控制字符，已拒绝（防止破坏上下文注入）')
     this.name = 'RefLibNoteError'
+  }
+}
+
+/** 条目目录不可用（missing / not-directory）：仅允许移除，其他变更（如更新 note）拒绝。 */
+export class RefLibUnavailableError extends Error {
+  /**
+   * @param path - 失效条目的目录路径。
+   */
+  constructor(readonly path: string) {
+    super(`参考库目录不可用（仅允许移除）：${path}`)
+    this.name = 'RefLibUnavailableError'
   }
 }
 
@@ -164,13 +191,36 @@ export class RefLibService extends Service {
     this.root = config.root ?? join(dshHomePath('plugin-data', 'ref-lib'))
   }
 
-  /** 当前会话的参考库列表（内存缓存 → sidecar 文件 → 旧日志迁移 → 父会话继承）。 */
+  /** 当前会话的参考库列表（内存缓存 → sidecar 文件 → 旧日志迁移 → 父会话继承），
+   * 返回前对每个条目实时探测可用性，状态变化时原子写回。每次读取（面板/命令/注入
+   * 回调）即刷新——"下一次对话"必然反映最新失效状态。 */
   list(session: Session): readonly RefLibEntry[] {
     const cached = this.cache.get(session.id)
-    if (cached !== undefined) return cached
-    const libs = this.loadFromStorage(session)
-    this.cacheSet(session.id, libs)
-    return libs
+    const libs = cached !== undefined ? cached : this.loadFromStorage(session)
+    const refreshed = this.refreshAvailability(session.id, libs)
+    this.cacheSet(session.id, refreshed)
+    return refreshed
+  }
+
+  /**
+   * 对每个条目实时探测可用性；探测结果与条目当前 status 不同（或从未检测）时，
+   * 更新 status/checkedAt 并原子写回 sidecar v3；无变化不写盘。
+   * @param sessionId - 会话 id（写回目标）。
+   * @param libs - 条目列表。
+   * @returns 探测后的最新列表（元素在无变化时保持引用不变）。
+   */
+  private refreshAvailability(sessionId: string, libs: readonly RefLibEntry[]): readonly RefLibEntry[] {
+    if (libs.length === 0) return libs
+    const now = Date.now()
+    let changed = false
+    const next = libs.map((entry) => {
+      const probe = probeAvailability(entry.path)
+      if (!statusChanged(entry, probe)) return entry
+      changed = true
+      return { ...entry, status: probe, checkedAt: now }
+    })
+    if (changed) this.persistSync(sessionId, next)
+    return next
   }
 
   /**
@@ -212,6 +262,9 @@ export class RefLibService extends Service {
     const entry: RefLibEntry = {
       id: randomUUID(),
       path: canonical,
+      // add 已做 realpath + stat 校验，新条目直接标记可用并记录检测时间。
+      status: 'available',
+      checkedAt: Date.now(),
       ...(noteValue === undefined ? {} : { note: noteValue }),
     }
     const next = upsertLib(current, entry)
@@ -236,17 +289,23 @@ export class RefLibService extends Service {
 
   /**
    * 更新已有条目的用途说明（note）；note 为空/undefined 时清除该字段。
+   * 失效条目（status 非 available）**拒绝更新**——目录不可用时仅允许移除。
    * @param session - 目标会话。
    * @param id - 条目 id。
    * @param note - 新用途说明（可为空串清除）。
    * @returns 更新后的条目。
    * @throws {RefLibUnknownError} id 未注册。
+   * @throws {RefLibUnavailableError} 条目目录不可用（仅允许移除）。
    * @throws {RefLibNoteError} note 含不允许的控制字符。
    */
   async setNote(session: Session, id: string, note?: string): Promise<RefLibEntry> {
     const current = this.list(session)
     const entry = current.find((item) => item.id === id)
     if (entry === undefined) throw new RefLibUnknownError(id)
+    // list() 返回前已实时探测；失效条目只允许 remove。
+    if (entry.status !== undefined && entry.status !== 'available') {
+      throw new RefLibUnavailableError(entry.path)
+    }
     const normalized = normalizeNote(note)
     const next = current.map((item) => {
       if (item.id !== id) return item

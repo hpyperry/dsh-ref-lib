@@ -15,7 +15,11 @@
   v7（**dock 行内胶囊、零测量**：取消 hero 相位测量/绝对定位，纯 CSS 与输入卡左缘
   对齐，根除与模式按钮的重叠竞态）→ v8（**用途说明 note + 定稿英文注入模板**：
   add 支持 `--note`/UI 输入框/自动 README 首标题兜底；注入升级为 MUST/ALWAYS 强制
-  查证流程、note 作 routing metadata、权威性/冲突处理/外部来源自报条款）。
+  查证流程、note 作 routing metadata、权威性/冲突处理/外部来源自报条款）→
+   v9（**参考库可用性状态**：sidecar v3 条目带 `status`/`checkedAt`；每次读取（含每次
+   模型请求的注入回调）实时 `statSync` 探测、仅状态变化写盘；失效库（missing /
+   not-directory）不注入并红色提示（面板状态行 + dock 失效角标 + `/ref-lib list`
+   `[已失效]` 标记）；依赖基线保持 dsh 0.1.0-rc.7）。
 
 ## 2. 开发规范（必须遵守）
 

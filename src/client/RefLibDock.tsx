@@ -53,6 +53,7 @@ const ERROR_KEYS: Record<string, RefLibKey> = {
   'ref-lib/not-directory': 'error.notDirectory',
   'ref-lib/unsafe': 'error.unsafe',
   'ref-lib/unknown-id': 'error.unknownId',
+  'ref-lib/unavailable': 'error.unavailable',
 }
 
 /** 把未知错误规整为可展示文案。 */
@@ -239,6 +240,15 @@ export function RefLibDock(props: RefLibDockProps): ReactElement {
     resolve?.(null)
   }
 
+  /**
+   * 胶囊计数（v9）：徽标显示**可用**数量（失效不计入），红色角标显示失效数量
+   * （总数 − 可用数），仅存在失效条目时显示。注意：UI 数据只在打开面板/操作后
+   * 刷新，外部变更（如删除目录）不会自动反向同步到界面（与命令修改后不刷新同属
+   * 待解决的 UI 数据同步问题，见设计文档"遗留备注"）。
+   */
+  const availableCount = libs.filter((entry) => entry.status === 'available').length
+  const unavailableCount = libs.length - availableCount
+
   return (
     <>
       <div className="reflib-dock">
@@ -248,7 +258,11 @@ export function RefLibDock(props: RefLibDockProps): ReactElement {
           data-active={open || undefined}
           aria-haspopup="dialog"
           aria-expanded={open}
-          aria-label={libs.length > 0 ? t('dock.count.aria', { count: String(libs.length) }) : t('dock.aria')}
+          aria-label={
+            unavailableCount > 0
+              ? t('dock.unavailable', { count: String(unavailableCount) })
+              : availableCount > 0 ? t('dock.count.aria', { count: String(availableCount) }) : t('dock.aria')
+          }
           title={t('dock.aria')}
           onClick={() => {
             setOpen((value) => !value)
@@ -258,7 +272,12 @@ export function RefLibDock(props: RefLibDockProps): ReactElement {
             <IconFolderOpen16 size={14} />
           </span>
           <span className="reflib-chipLabel">{t('dock.label')}</span>
-          {libs.length > 0 && <span className="reflib-chipBadge">{libs.length}</span>}
+          {availableCount > 0 && <span className="reflib-chipBadge">{availableCount}</span>}
+          {unavailableCount > 0 && (
+            <span className="reflib-chipWarn" title={t('dock.unavailable', { count: String(unavailableCount) })}>
+              {unavailableCount}
+            </span>
+          )}
         </button>
       </div>
       <RefLibPanel

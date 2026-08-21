@@ -152,10 +152,18 @@ export function RefLibPanel(props: RefLibPanelProps): ReactElement {
               const name = libBasename(entry.path)
               const removing = removingId === entry.id
               const detailOpen = detailId === entry.id
+              const unavailable = entry.status !== undefined && entry.status !== 'available'
               return (
-                <div key={entry.id} className="reflib-listItem" data-removing={removing || undefined}>
+                <div
+                  key={entry.id}
+                  className="reflib-listItem"
+                  data-removing={removing || undefined}
+                  data-status={unavailable ? entry.status : undefined}
+                >
                   <div className="reflib-row">
-                    <IconFolderOpen16 size={16} className="reflib-rowIcon" />
+                    {unavailable
+                      ? <IconWarningOutline16 size={16} className="reflib-rowIcon reflib-rowIconWarn" />
+                      : <IconFolderOpen16 size={16} className="reflib-rowIcon" />}
                     <div className="reflib-rowBody">
                       <span className="reflib-rowName" title={entry.path}>
                         {name}
@@ -163,6 +171,11 @@ export function RefLibPanel(props: RefLibPanelProps): ReactElement {
                       <span className="reflib-rowPath" title={entry.path}>
                         {entry.path}
                       </span>
+                      {unavailable && (
+                        <span className="reflib-rowStatus" role="status">
+                          {t(entry.status === 'missing' ? 'status.missing' : 'status.notDirectory')}
+                        </span>
+                      )}
                       {entry.note !== undefined && entry.note !== '' && (
                         <span className="reflib-rowNote" title={entry.note}>
                           {entry.note.replace(/\s+/g, ' ')}
@@ -175,7 +188,8 @@ export function RefLibPanel(props: RefLibPanelProps): ReactElement {
                         className="reflib-rowAction"
                         aria-label={t('detail.open.aria', { name })}
                         aria-expanded={detailOpen || undefined}
-                        disabled={busy || removingId !== null}
+                        // 失效条目只允许移除：详情/用途编辑禁用（node 端 note 接口同样拒绝）。
+                        disabled={busy || removingId !== null || unavailable}
                         onClick={() => {
                           toggleDetail(entry)
                         }}
@@ -201,7 +215,8 @@ export function RefLibPanel(props: RefLibPanelProps): ReactElement {
                       </button>
                     </Tooltip>
                   </div>
-                  {detailOpen && (
+                  {/* 失效条目不渲染详情/用途编辑区（只允许移除） */}
+                  {detailOpen && !unavailable && (
                     <div className="reflib-detail">
                       <div className="reflib-detailMeta">
                         <span className="reflib-detailKey">ID</span>

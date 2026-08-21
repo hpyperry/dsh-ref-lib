@@ -15,7 +15,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { Session } from '@deepseek-ai/dsh-session'
 import type { WebRoute } from '@deepseek-ai/dsh-host-webserver'
 import { resolveRefLibPath } from './commands.ts'
-import { RefLibNoteError, RefLibPathError, RefLibUnknownError, type RefLibService } from './service.ts'
+import { RefLibNoteError, RefLibPathError, RefLibUnavailableError, RefLibUnknownError, type RefLibService } from './service.ts'
 
 /** 请求体大小上限（管理载荷都很小）。 */
 export const MAX_JSON_BODY_BYTES = 64 * 1024
@@ -143,6 +143,10 @@ export function makeRefLibRoutes(deps: RefLibRouteDeps): WebRoute[] {
     }
     if (error instanceof RefLibNoteError) {
       writeJson(res, 400, { error: error.message, code: 'ref-lib/note-unsafe' })
+      return
+    }
+    if (error instanceof RefLibUnavailableError) {
+      writeJson(res, 400, { error: error.message, code: 'ref-lib/unavailable', path: error.path })
       return
     }
     log(`ref-lib route error: ${error instanceof Error ? error.message : String(error)}`)

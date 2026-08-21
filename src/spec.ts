@@ -12,6 +12,9 @@
 
 import type {} from '@deepseek-ai/dsh-session/types'
 
+/** 目录在文件系统上的可用性（最近一次检测快照）。 */
+export type RefLibAvailability = 'available' | 'missing' | 'not-directory'
+
 /** 一个只读参考库条目。 */
 export interface RefLibEntry {
   /** 稳定 id（uuid），与路径解耦（路径可规范化重写）。 */
@@ -20,6 +23,13 @@ export interface RefLibEntry {
   readonly path: string
   /** 可选用途说明，注入上下文时展示。 */
   readonly note?: string
+  /**
+   * 最近一次可用性检测结果；无检测记录（v2 旧 sidecar / 旧日志迁移条目）时缺省，
+   * 首次读取即探测。`missing` = 目录被删/不可达；`not-directory` = 路径被替换为文件。
+   */
+  readonly status?: RefLibAvailability
+  /** 最近一次检测的 epoch ms；缺省视为"从未检测"（立即探测）。 */
+  readonly checkedAt?: number
 }
 
 declare module '@deepseek-ai/dsh-session/types' {

@@ -9,6 +9,7 @@ import {
   RefLibNoteError,
   RefLibPathError,
   RefLibService,
+  RefLibUnavailableError,
   RefLibUnknownError,
 } from '../src/service.ts'
 import type { RefLibEntry } from '../src/spec.ts'
@@ -156,8 +157,10 @@ describe('RefLibService v3（per-session sidecar）', () => {
     const session = fakeSession({ events: legacy })
     const service = new RefLibService(new Context(), { root: tmp })
     expect(service.list(session).map((entry) => entry.path)).toEqual(['/old/lib'])
-    // 迁移结果已落盘
-    expect(await readSidecar(tmp, session.id)).toEqual([{ id: 'old-1', path: '/old/lib' }])
+    // 迁移结果已落盘：迁移条目无 status，首访探测（路径不存在 → missing）并升版写回 v3。
+    const stored = await readSidecar(tmp, session.id)
+    expect(stored).toEqual([{ id: 'old-1', path: '/old/lib', status: 'missing', checkedAt: expect.any(Number) }])
+    expect(JSON.parse(await readFile(sidecarPath(tmp, session.id), 'utf8'))).toMatchObject({ version: 3 })
   })
 
   it('继承：子会话无自身状态时继承父会话列表', async () => {
@@ -282,7 +285,10 @@ describe('RefLibService v3（per-session sidecar）', () => {
     const entry = await service.add(session, dir, '将被清除')
     const cleared = await service.setNote(session, entry.id, '')
     expect(cleared.note).toBeUndefined()
-    expect(await readSidecar(tmp, session.id)).toEqual([{ id: entry.id, path: entry.path }])
+    // 条目保留可用性字段（status/checkedAt 不被 setNote 清除）
+    expect(await readSidecar(tmp, session.id)).toEqual([
+      { id: entry.id, path: entry.path, status: 'available', checkedAt: expect.any(Number) },
+    ])
   })
 
   it('setNote 未知 id 抛 RefLibUnknownError', async () => {
@@ -298,6 +304,142 @@ describe('RefLibService v3（per-session sidecar）', () => {
     const session = fakeSession()
     const entry = await service.add(session, dir)
     await expect(service.setNote(session, entry.id, 'bad\u2028note')).rejects.toBeInstanceOf(RefLibNoteError)
+  })
+})
+
+describe('可用性探测（v9：每次读取实时探测，状态变化写回）', () => {
+  let tmp: string
+
+  beforeEach(async () => {
+    tmp = await mkdtemp(join(process.cwd(), 'tests/.tmp-'))
+  })
+
+  afterEach(async () => {
+    await rm(tmp, { recursive: true, force: true })
+  })
+
+  it('add 新条目初始 status = available 并落盘', async () => {
+    const dir = join(tmp, 'lib-ok')
+    await mkdir(dir)
+    const service = new RefLibService(new Context(), { root: tmp })
+    const session = fakeSession()
+    const entry = await service.add(session, dir)
+    expect(entry.status).toBe('available')
+    expect(entry.checkedAt).toEqual(expect.any(Number))
+    expect(await readSidecar(tmp, session.id)).toEqual([entry])
+  })
+
+  it('删除目录后，下一次 list 即 missing 并写回', async () => {
+    const dir = join(tmp, 'lib-del')
+    await mkdir(dir)
+    const service = new RefLibService(new Context(), { root: tmp })
+    const session = fakeSession()
+    const entry = await service.add(session, dir)
+    // 删除目录
+    await rm(dir, { recursive: true })
+    const listed = service.list(session)
+    expect(listed).toEqual([
+      { ...entry, status: 'missing', checkedAt: expect.any(Number) },
+    ])
+    // 变化已落盘
+    expect(await readSidecar(tmp, session.id)).toEqual([
+      { id: entry.id, path: entry.path, status: 'missing', checkedAt: expect.any(Number) },
+    ])
+  })
+
+  it('恢复目录后，下一次 list 重新 available', async () => {
+    const dir = join(tmp, 'lib-restore')
+    await mkdir(dir)
+    const service = new RefLibService(new Context(), { root: tmp })
+    const session = fakeSession()
+    await service.add(session, dir)
+    await rm(dir, { recursive: true })
+    expect(service.list(session)[0]!.status).toBe('missing')
+    // 恢复目录
+    await mkdir(dir)
+    expect(service.list(session)[0]!.status).toBe('available')
+  })
+
+  it('目录被替换为文件 → not-directory', async () => {
+    const dir = join(tmp, 'lib-file')
+    await mkdir(dir)
+    const service = new RefLibService(new Context(), { root: tmp })
+    const session = fakeSession()
+    const entry = await service.add(session, dir)
+    await rm(dir, { recursive: true })
+    await writeFile(dir, 'now a file')
+    expect(service.list(session)).toEqual([
+      { ...entry, status: 'not-directory', checkedAt: expect.any(Number) },
+    ])
+  })
+
+  it('状态未变化时 list 不写盘（sidecar 内容逐字节不变）', async () => {
+    const dir = join(tmp, 'lib-stable')
+    await mkdir(dir)
+    const service = new RefLibService(new Context(), { root: tmp })
+    const session = fakeSession()
+    await service.add(session, dir)
+    const file = sidecarPath(tmp, session.id)
+    const before = await readFile(file, 'utf8')
+    // 多次 list（目录未变）：探测一致 → 不触发写回
+    service.list(session)
+    service.list(session)
+    expect(await readFile(file, 'utf8')).toBe(before)
+  })
+
+  it('v2 sidecar（条目无 status）首访探测并升版写回 v3', async () => {
+    const dir = join(tmp, 'lib-v2')
+    await mkdir(dir)
+    const session = fakeSession()
+    // 手写 v2 sidecar：条目无 status/checkedAt
+    await writeFile(
+      sidecarPath(tmp, session.id),
+      JSON.stringify({ version: 2, libs: [{ id: 'old', path: dir }] }),
+    )
+    const service = new RefLibService(new Context(), { root: tmp })
+    expect(service.list(session)).toEqual([
+      { id: 'old', path: dir, status: 'available', checkedAt: expect.any(Number) },
+    ])
+    // 已升版写回 v3
+    expect(JSON.parse(await readFile(sidecarPath(tmp, session.id), 'utf8'))).toMatchObject({ version: 3 })
+  })
+
+  it('v2 sidecar 指向已删除目录 → 首访探测 missing 并写回', async () => {
+    const session = fakeSession()
+    await writeFile(
+      sidecarPath(tmp, session.id),
+      JSON.stringify({ version: 2, libs: [{ id: 'old', path: '/no/such/dir' }] }),
+    )
+    const service = new RefLibService(new Context(), { root: tmp })
+    expect(service.list(session)).toEqual([
+      { id: 'old', path: '/no/such/dir', status: 'missing', checkedAt: expect.any(Number) },
+    ])
+  })
+
+  it('失效条目 setNote 拒绝（仅允许移除）', async () => {
+    const dir = join(tmp, 'lib-dead')
+    await mkdir(dir)
+    const service = new RefLibService(new Context(), { root: tmp })
+    const session = fakeSession()
+    const entry = await service.add(session, dir, '原用途')
+    await rm(dir, { recursive: true })
+    // 删除后条目变为 missing
+    expect(service.list(session)[0]!.status).toBe('missing')
+    // 更新用途被拒绝
+    await expect(service.setNote(session, entry.id, '新用途')).rejects.toBeInstanceOf(RefLibUnavailableError)
+    // 移除仍允许
+    await expect(service.remove(session, entry.id)).resolves.toBeUndefined()
+    expect(service.list(session)).toEqual([])
+  })
+
+  it('可用条目 setNote 正常更新', async () => {
+    const dir = join(tmp, 'lib-alive')
+    await mkdir(dir)
+    const service = new RefLibService(new Context(), { root: tmp })
+    const session = fakeSession()
+    const entry = await service.add(session, dir, '旧用途')
+    const updated = await service.setNote(session, entry.id, '新用途')
+    expect(updated.note).toBe('新用途')
   })
 })
 

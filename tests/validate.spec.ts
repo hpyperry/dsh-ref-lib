@@ -8,6 +8,16 @@ describe('isRefLibEntry', () => {
     expect(isRefLibEntry({ id: '1', path: '/lib/a', note: 'core' })).toBe(true)
   })
 
+  it('v2 旧条目（无 status/checkedAt）通过（兼容读）', () => {
+    expect(isRefLibEntry({ id: '1', path: '/lib/a' })).toBe(true)
+  })
+
+  it('v3 条目 status/checkedAt 合法则通过', () => {
+    expect(isRefLibEntry({ id: '1', path: '/lib/a', status: 'available', checkedAt: 123 })).toBe(true)
+    expect(isRefLibEntry({ id: '1', path: '/lib/a', status: 'missing', checkedAt: 123 })).toBe(true)
+    expect(isRefLibEntry({ id: '1', path: '/lib/a', status: 'not-directory', checkedAt: 123 })).toBe(true)
+  })
+
   it('非对象/缺字段/字段类型错误一律拒绝', () => {
     expect(isRefLibEntry(undefined)).toBe(false)
     expect(isRefLibEntry(null)).toBe(false)
@@ -16,6 +26,14 @@ describe('isRefLibEntry', () => {
     expect(isRefLibEntry({ id: 42, path: '/x' })).toBe(false)
     expect(isRefLibEntry({ id: '1', path: '/x', note: 7 })).toBe(false)
     expect(isRefLibEntry({ id: '1' })).toBe(false)
+  })
+
+  it('status 非法值 / checkedAt 非有限数字拒绝', () => {
+    expect(isRefLibEntry({ id: '1', path: '/x', status: 'gone' })).toBe(false)
+    expect(isRefLibEntry({ id: '1', path: '/x', status: 42 })).toBe(false)
+    expect(isRefLibEntry({ id: '1', path: '/x', checkedAt: 'now' })).toBe(false)
+    expect(isRefLibEntry({ id: '1', path: '/x', checkedAt: Number.NaN })).toBe(false)
+    expect(isRefLibEntry({ id: '1', path: '/x', checkedAt: Infinity })).toBe(false)
   })
 })
 

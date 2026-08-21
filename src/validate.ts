@@ -29,10 +29,22 @@ export function sanitizeControlCharacters(text: string): string {
   return text.replace(CONTROL_CHARACTERS_GLOBAL, '\uFFFD')
 }
 
-/** 校验一个未知对象是否为合法条目（宽松：仅要求 id/path 字符串、note 可选字符串）。 */
+/** 可用性字面量集合（status 字段合法值）。 */
+const AVAILABILITY_VALUES = new Set(['available', 'missing', 'not-directory'])
+
+/** 校验一个未知对象是否为合法条目（宽松：id/path 必填字符串，note/status/checkedAt 可选且类型正确）。 */
 export function isRefLibEntry(value: unknown): value is RefLibEntry {
   if (typeof value !== 'object' || value === null) return false
-  const { id, path, note } = value as { id?: unknown; path?: unknown; note?: unknown }
+  const { id, path, note, status, checkedAt } = value as {
+    id?: unknown
+    path?: unknown
+    note?: unknown
+    status?: unknown
+    checkedAt?: unknown
+  }
   if (typeof id !== 'string' || typeof path !== 'string') return false
-  return note === undefined || typeof note === 'string'
+  if (note !== undefined && typeof note !== 'string') return false
+  if (status !== undefined && (typeof status !== 'string' || !AVAILABILITY_VALUES.has(status))) return false
+  if (checkedAt !== undefined && (typeof checkedAt !== 'number' || !Number.isFinite(checkedAt))) return false
+  return true
 }
