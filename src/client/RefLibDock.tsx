@@ -132,8 +132,9 @@ export function RefLibDock(props: RefLibDockProps): ReactElement {
 
   /**
    * 拉取会话参考库列表并更新 UI。
-   * @param silent - 静默模式（轮询用）：失败不写入错误槽（避免后台刷新打扰用户）；
-   * 成功时照常清错误（数据已恢复正常的信号）。
+   * @param silent - 静默模式（轮询用）：失败不写入错误槽；成功也**不碰 error/loading**
+   * ——错误与加载态只由用户操作/打开面板管理，避免后台轮询吞掉操作错误提示或
+   * 提前结束面板加载态（轮询仅更新 libs 数据）。
    */
   const refresh = async (silent = false): Promise<void> => {
     const mine = ++seq.current
@@ -141,12 +142,12 @@ export function RefLibDock(props: RefLibDockProps): ReactElement {
       const next = await load(sessionId)
       if (mine !== seq.current) return
       setLibs(next)
-      setError(null)
+      if (!silent) setError(null)
     } catch (cause) {
       if (mine !== seq.current) return
       if (!silent) setError(formatError(cause, t))
     } finally {
-      if (mine === seq.current) setLoading(false)
+      if (mine === seq.current && !silent) setLoading(false)
     }
   }
 

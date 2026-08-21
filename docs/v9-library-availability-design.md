@@ -267,3 +267,27 @@ export function statusChanged(entry: RefLibEntry, probe: RefLibAvailability): bo
 **剩余可选**（暂不做）：候选方案 2 node half 变更推送（webServer 事件 → client 刷新）、
 候选方案 3 命令执行后 node half 主动通知 client 刷新——轮询已覆盖同场景，推送只在
 需要更低延迟（<30s）或更省请求时再评估。
+
+## 15. 并发与竞态分析（RefLibDock 数据同步）
+
+并发源：挂载预载重试（[sessionId] effect）、打开面板刷新（[open] effect）、30s 轮询
+（[sessionId] effect）、操作后 refresh（add/remove/setNote）、sessionId 切换。
+防护：`seq` 守卫（只接受最后发起的请求结果）、`busy`/`removingId` 禁用 UI（操作串行）、
+effect cleanup（stopped/timer/clearInterval）。
+
+| # | 场景 | 分析 | 风险 |
+| --- | --- | --- | --- |
+| 1 | 响应乱序（先发后至） | seq 丢弃旧发起者，只接受最后发起 | 无 |
+| 2 | 打开面板 vs 轮询 | 数据同源，后发起者接受，结果一致 | 无 |
+| 3 | UI 操作（add/remove/note）vs 轮询 | 操作后必有 refresh（最后发起）→ 轮询的旧快照被 seq 丢弃 | 基本安全；仅操作后 refresh 失败才短暂旧数据（有错误提示，下次轮询纠正） |
+| 4 | `/ref-lib` 命令操作 vs 轮询 | 命令不走 client refresh → 靠轮询 30s 内纠正（轮询的设计意图） | 30s 延迟，可接受 |
+| 5 | sessionId 切换 | cleanup + seq 递增 → 旧会话 in-flight 结果丢弃 | 无 |
+| 6 | 轮询吞操作错误 | **已修复**：轮询（silent）成功不再 `setError(null)`——错误槽只由用户操作/打开面板管理 |
+| 7 | 轮询干扰面板 loading | **已修复**：轮询不碰 loading（`setLoading(false)` 仅非 silent） |
+| 8 | 并发操作 | busy 禁用 UI，串行执行 | 无 |
+
+**架构结论**：所有 fetch 竞态（含启动 404）的根源是"client 拉取"数据通道。官方 dock
+插件（goal/queue）用 **session 投影**（宿主推送 + `useProjection`，零 fetch 零轮询）——
+天然无 404、无轮询、无竞态。`ctx.sessionProjections.register` 为插件可扩展（已查证），
+**v10 候选：node half 注册 `ref-lib` 投影单元 + client 改 `useProjection` 读取**，一次性
+消除 404、延迟重试、30s 轮询与全部 fetch 竞态（数据流单向：host 推 → client 渲染）。
