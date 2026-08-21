@@ -49,9 +49,6 @@ export interface RefLibDockInjected {
 const MOUNT_RETRY_DELAY_MS = 800
 const MOUNT_RETRY_MAX = 5
 
-/** 可见期轮询间隔：外部变更（删除/恢复目录）自动反向同步到 UI。 */
-const POLL_INTERVAL_MS = 30_000
-
 /** 完整 props：input.dock 运行时套件 + 注入面 + 本地化 seat。 */
 export type RefLibDockProps = PropsRuntime<'conversation.input.dock'> & RefLibDockInjected & PropsLocale<'ref-lib'>
 
@@ -195,8 +192,7 @@ export function RefLibDock(props: RefLibDockProps): ReactElement {
 
   // 发消息即刷新（交互钩子）：dock owner 的 `session` 是**响应式会话快照**——用户
   // 发消息必然产生 user 消息节点（`kind: 'user'`），计数 +1 触发静默刷新，UI 在
-  // 发消息后立即同步（不必等 30s 轮询）；流式 assistant 回复不改变 user 计数，
-  // 不会每 token 刷新。外部文件操作仍由下方 30s 轮询兜底。
+  // 发消息后立即同步；流式 assistant 回复不改变 user 计数，不会每 token 刷新。
   const userMessageCount = session.nodes.filter((node) => node.kind === 'user').length
   useEffect(() => {
     void refresh(true)
@@ -205,7 +201,7 @@ export function RefLibDock(props: RefLibDockProps): ReactElement {
   // 命令执行即刷新：`/ref-lib` 命令（add/remove/note）执行必然产生
   // `command/run` → `command/done`，会话快照中的 command 节点从 running
   // （outcome null）变为 settled——settled 计数 +1 触发静默刷新，命令执行后
-  // UI 立即同步，不必等发消息或轮询。与 userMessageCount 同模式（组件内响应式）。
+  // UI 立即同步。与 userMessageCount 同模式（组件内响应式）。
   const refLibCommandDone = session.nodes.filter(
     (node) => node.kind === 'command' && node.name === 'ref-lib' && node.outcome !== null,
   ).length
@@ -213,14 +209,10 @@ export function RefLibDock(props: RefLibDockProps): ReactElement {
     void refresh(true)
   }, [refLibCommandDone])
 
-  // 可见期轮询（v9 遗留 §14 方案 1）：挂载期间每 30s 静默刷新一次——外部删除/
-  // 恢复目录后，胶囊失效角标与面板列表自动反向同步，无需手动刷新。负载：每会话
-  // 每 30s 一次 GET /list（node 端内存缓存 + N 次 statSync，毫秒级；状态变化才写盘），
-  // 多开会话线性叠加，可忽略。
-  useEffect(() => {
-    const timer = window.setInterval(() => { void refresh(true) }, POLL_INTERVAL_MS)
-    return () => window.clearInterval(timer)
-  }, [sessionId])
+  // 后台轮询已移除（2026-08-22 用户决策）：UI 同步改为**交互驱动**——/ref-lib
+  // 命令完成、发消息、面板操作均即时刷新；外部文件操作（删/恢复目录）在下次
+  // GUI 交互时同步。注入侧不受影响：每次模型请求的注入回调仍实时探测
+  // （node half list()），与 UI 刷新完全解耦。详见设计文档 §14。
 
   const handleRemove = async (id: string): Promise<void> => {
     setRemovingId(id)

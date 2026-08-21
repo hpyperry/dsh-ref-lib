@@ -242,52 +242,56 @@ export function statusChanged(entry: RefLibEntry, probe: RefLibAvailability): bo
 4. `status`/`checkedAt` 持久化到 sidecar v3（默认）vs 仅内存缓存（sidecar 格式不变）。
 5. 写盘时机：探测变化即同步写回（默认）vs 仅内存更新、延迟落盘。
 
-## 14. 遗留备注：UI 反向数据同步（已部分实现）
+## 14. UI 反向数据同步（交互驱动，无后台轮询）
 
-**问题**：外部变更（目录被删/恢复）与 `/ref-lib` 命令（add/remove/note）修改不会
-自动反向同步到 Web UI——面板与胶囊仅在挂载、打开面板、或本 UI 内操作后刷新。
+**问题**：外部变更（目录被删/恢复）与 `/ref-lib` 命令（add/remove/note）修改不会自动
+反向同步到 Web UI。
 
-**已实现（2026-08-22）**：候选方案 1——**可见期 30s 静默轮询**（`RefLibDock` 挂载期间
-每 30s `refresh(silent)`，失败不打扰用户；成功清除错误）。外部删除/恢复目录后，胶囊
-失效角标与面板列表**最多 30s 内自动反向同步**，无需手动刷新。
+**最终方案（2026-08-22 用户决策）**：**交互驱动刷新，移除后台轮询**——UI 在以下
+GUI 交互时即时同步：
 
-**负载实测（dev 环境，macOS 本地磁盘）**：
+| 触发 | 机制 | 延迟 |
+| --- | --- | --- |
+| `/ref-lib` 命令完成 | 会话快照中 ref-lib 命令节点 settled 计数 +1（command/run → done） | 即时 |
+| 发消息 | 会话快照中 user 消息节点计数 +1 | 即时 |
+| 面板操作（add/remove/note） | 操作后 refresh | 即时 |
+| 外部文件操作（删/恢复目录） | 下次任意 GUI 交互时同步（无事件源，接受延迟） | 交互时 |
 
-| 指标 | 实测 |
-| --- | --- |
-| 单请求延迟（4 库） | ~0.7ms |
-| 并发 50 请求（模拟 50 会话同刻轮询） | 总耗时 0.101s |
-| `statSync` 单次 | 0.003ms |
-| 折算 100 会话 × 4 库轮询 | 13.3 次 statSync/s ≈ 0.04ms/s CPU（可忽略） |
-| 写盘 | 仅状态变化时（罕见事件） |
+**取舍**：外部文件变化在用户不做任何 GUI 操作时 UI 不更新——低频只读场景可接受。
+**注入侧不受影响**：每次模型请求的注入回调仍实时探测（node half `list()`），与 UI
+刷新完全解耦——核心价值（模型读到最新参考库）零损失。
 
-结论：每会话每 30s 一次 `GET /list`（node 端内存缓存 + N 次 statSync，毫秒级），多开会话
-线性叠加，负载可忽略。
+**过程中的轮询尝试（已废弃）**：曾实现 30s 可见期轮询（挂载期间 `setInterval` 静默
+`refresh(silent)`），负载实测可忽略（单请求 ~0.7ms、并发 50 请求 0.101s、statSync
+0.003ms、100 会话 × 4 库 ≈ 0.04ms/s CPU）——但低频场景不值得保留后台请求，最终
+按用户决策移除，UI 同步回归交互驱动。
 
-**剩余可选**（暂不做）：候选方案 2 node half 变更推送（webServer 事件 → client 刷新）、
-候选方案 3 命令执行后 node half 主动通知 client 刷新——轮询已覆盖同场景，推送只在
-需要更低延迟（<30s）或更省请求时再评估。
+**竞态防护**：所有刷新源（命令/发消息/操作/挂载重试/会话切换）共用 `RefreshGuard`
+（`src/client/refresh-guard.ts`，只接受最后发起的请求结果，`tests/refresh-guard.spec.ts`
+钉死并发/乱序/作废行为）——见 §15。
 
 ## 15. 并发与竞态分析（RefLibDock 数据同步）
 
-并发源：挂载预载重试（[sessionId] effect）、打开面板刷新（[open] effect）、30s 轮询
-（[sessionId] effect）、操作后 refresh（add/remove/setNote）、sessionId 切换。
-防护：`seq` 守卫（只接受最后发起的请求结果）、`busy`/`removingId` 禁用 UI（操作串行）、
+并发源：挂载预载重试（[sessionId] effect）、打开面板刷新（[open] effect）、
+发消息刷新（[userMessageCount] effect）、命令完成刷新（[refLibCommandDone] effect）、
+操作后 refresh（add/remove/setNote）、sessionId 切换。
+防护：`RefreshGuard`（只接受最后发起的请求结果）、`busy`/`removingId` 禁用 UI（操作串行）、
 effect cleanup（stopped/timer/clearInterval）。
 
 | # | 场景 | 分析 | 风险 |
 | --- | --- | --- | --- |
-| 1 | 响应乱序（先发后至） | seq 丢弃旧发起者，只接受最后发起 | 无 |
-| 2 | 打开面板 vs 轮询 | 数据同源，后发起者接受，结果一致 | 无 |
-| 3 | UI 操作（add/remove/note）vs 轮询 | 操作后必有 refresh（最后发起）→ 轮询的旧快照被 seq 丢弃 | 基本安全；仅操作后 refresh 失败才短暂旧数据（有错误提示，下次轮询纠正） |
-| 4 | `/ref-lib` 命令操作 vs 轮询 | 命令不走 client refresh → 靠轮询 30s 内纠正（轮询的设计意图） | 30s 延迟，可接受 |
-| 5 | sessionId 切换 | cleanup + seq 递增 → 旧会话 in-flight 结果丢弃 | 无 |
-| 6 | 轮询吞操作错误 | **已修复**：轮询（silent）成功不再 `setError(null)`——错误槽只由用户操作/打开面板管理 |
-| 7 | 轮询干扰面板 loading | **已修复**：轮询不碰 loading（`setLoading(false)` 仅非 silent） |
+| 1 | 响应乱序（先发后至） | RefreshGuard 丢弃旧发起者，只接受最后发起 | 无 |
+| 2 | 打开面板 vs 发消息/命令刷新 | 数据同源，后发起者接受，结果一致 | 无 |
+| 3 | UI 操作（add/remove/note）vs 发消息/命令刷新 | 操作后必有 refresh（最后发起）→ 其他刷新源的旧快照被丢弃 | 基本安全；仅操作后 refresh 失败才短暂旧数据（有错误提示，下次交互纠正） |
+| 4 | `/ref-lib` 命令操作 | 命令完成 → 快照 command 节点 settled → **即时刷新**（无需发消息/轮询） | 无（已由 refLibCommandDone 钩子覆盖） |
+| 5 | sessionId 切换 | cleanup + RefreshGuard 递增 → 旧会话 in-flight 结果丢弃 | 无 |
+| 6 | 静默刷新吞操作错误 | **已防护**：silent 刷新成功不 `setError(null)`——错误槽只由用户操作/打开面板管理 |
+| 7 | 静默刷新干扰面板 loading | **已防护**：silent 刷新不碰 loading（`setLoading(false)` 仅非 silent） |
 | 8 | 并发操作 | busy 禁用 UI，串行执行 | 无 |
 
 **架构结论**：所有 fetch 竞态（含启动 404）的根源是"client 拉取"数据通道。官方 dock
 插件（goal/queue）用 **session 投影**（宿主推送 + `useProjection`，零 fetch 零轮询）——
 天然无 404、无轮询、无竞态。`ctx.sessionProjections.register` 为插件可扩展（已查证），
-**v10 候选：node half 注册 `ref-lib` 投影单元 + client 改 `useProjection` 读取**，一次性
-消除 404、延迟重试、30s 轮询与全部 fetch 竞态（数据流单向：host 推 → client 渲染）。
+但 ref-lib 数据源在 sidecar（无会话事件）且可用性需实时 statSync，**纯投影不成立**
+（§15 架构结论 2026-08-22 更正）——当前交互驱动刷新 + RefreshGuard 是 pull 模式下
+的务实方案。
