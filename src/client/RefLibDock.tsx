@@ -194,10 +194,18 @@ export function RefLibDock(props: RefLibDockProps): ReactElement {
   // 可见期轮询（v9 遗留 §14 方案 1）：挂载期间每 30s 静默刷新一次——外部删除/
   // 恢复目录后，胶囊失效角标与面板列表自动反向同步，无需手动刷新。负载：每会话
   // 每 30s 一次 GET /list（node 端内存缓存 + N 次 statSync，毫秒级；状态变化才写盘），
-  // 多开会话线性叠加，可忽略。
+  // 多开会话线性叠加，可忽略。另监听 visibilitychange：页面从后台切回时立即刷新
+  // （参照社区 dsh-balance-meter 先例），不必等下一个轮询周期。
   useEffect(() => {
     const timer = window.setInterval(() => { void refresh(true) }, POLL_INTERVAL_MS)
-    return () => window.clearInterval(timer)
+    const onVisibility = (): void => {
+      if (document.visibilityState === 'visible') void refresh(true)
+    }
+    document.addEventListener('visibilitychange', onVisibility)
+    return () => {
+      window.clearInterval(timer)
+      document.removeEventListener('visibilitychange', onVisibility)
+    }
   }, [sessionId])
 
   const handleRemove = async (id: string): Promise<void> => {
