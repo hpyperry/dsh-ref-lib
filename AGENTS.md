@@ -27,7 +27,16 @@
    钩子 `refLibCommandDone` / `userMessageCount`，无后台轮询；外部文件变化在下次
    GUI 交互时同步，注入侧不受影响）；**竞态守卫 `RefreshGuard`**（`src/client/
    refresh-guard.ts`：只接受最后发起的请求结果，`tests/refresh-guard.spec.ts` 钉死
-   并发/乱序/作废行为）；依赖基线保持 dsh 0.1.0-rc.7）。
+   并发/乱序/作废行为）；刷新触发派生提取为纯函数 `refresh-triggers.ts`（单次遍历
+   同时派生两个计数，`tests/refresh-triggers.spec.ts` 钉死信号契约，rc.7 前提查证
+   见设计文档 §16）；依赖基线保持 dsh 0.1.0-rc.7）→
+   v10（**fork 分支会话参考库继承物化**：dsh「分支会话」在宿主创建新会话（新 id +
+   `header.parentSession`）；`session/created` 钩子（`{ global: true }`，与
+   core/tools seed 钩子同款）在 fork 时把父会话有效列表复制到子会话自身 sidecar
+   ——**条目 id 重新铸造**（副本独立身份）、继承时机提前到 fork 时刻（确定性快照）、
+   修复纯惰性继承的链式断口（每级落盘）；UI 无新通道（dock 挂载现有 load() 一次
+   刷新即读到，不新增 webServer 接口）；legacy 子会话惰性兜底同语义（重新铸造
+   id + 落盘，重启后 id 稳定）；设计文档 §17）。
 
 ## 2. 开发规范（必须遵守）
 
