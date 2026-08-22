@@ -29,14 +29,26 @@
    refresh-guard.ts`：只接受最后发起的请求结果，`tests/refresh-guard.spec.ts` 钉死
    并发/乱序/作废行为）；刷新触发派生提取为纯函数 `refresh-triggers.ts`（单次遍历
    同时派生两个计数，`tests/refresh-triggers.spec.ts` 钉死信号契约，rc.7 前提查证
-   见设计文档 §16）；依赖基线保持 dsh 0.1.0-rc.7）→
+   见设计文档 §16）→
    v10（**fork 分支会话参考库继承物化**：dsh「分支会话」在宿主创建新会话（新 id +
    `header.parentSession`）；`session/created` 钩子（`{ global: true }`，与
    core/tools seed 钩子同款）在 fork 时把父会话有效列表复制到子会话自身 sidecar
    ——**条目 id 重新铸造**（副本独立身份）、继承时机提前到 fork 时刻（确定性快照）、
    修复纯惰性继承的链式断口（每级落盘）；UI 无新通道（dock 挂载现有 load() 一次
    刷新即读到，不新增 webServer 接口）；legacy 子会话惰性兜底同语义（重新铸造
-   id + 落盘，重启后 id 稳定）；设计文档 §17）。
+   id + 落盘，重启后 id 稳定）；设计文档 §17）→
+   v11（**依赖基线升级 dsh 0.1.0-rc.7 → 0.1.1-rc.2**：v9 预留的"等新版本稳定后升级"
+   决策落地——peerDeps 11 包与 devDeps 4 包全部对齐 `^0.1.1-rc.2`（官方 npm 发布
+   惯例，peer 范围与宿主版本族同元组）；API 兼容性已逐项核对（ref-lib 所用接口
+   rc.7→rc.2 无破坏：唯一 breaking 是 `CommandRuntime.execute()` 新增必填 `images`
+   参数，ref-lib 不直接调用；`commands.register` / `systemPrompt.context` /
+   `webServer.register` / `session/created` / 两个槽位契约均未变）；客户端平台模块
+   （`dsh-client-ui-primitives` / `dsh-client-ui-slots` / `cordis` / `react`）在
+   rc.2 宿主由 **Vite shell seed 表**内联提供（非模块表 entry），ref-lib bundle
+   external 的 require 命中 seed，运行时吃 rc.2 实现；node half 依赖基线同步后
+   双版本消除（link 开发形态下此前解析到自身 rc.7 副本）；四道门禁全过（typecheck /
+   lint / 147 测试含 L2 harness-roundtrip / build），`scripts/dev-isolate.sh` 以
+   `~/.dsh-dev` + 3090 端口验证插件加载与 `/api/ref-lib/*` 路由）。
 
 ## 2. 开发规范（必须遵守）
 

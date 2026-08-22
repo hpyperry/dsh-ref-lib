@@ -24,6 +24,18 @@
    lineage 槽位等均为纯增量）——**等新版本 dsh 稳定后再评估升级**（届时只需改
    package.json 版本并重跑门禁）。
 
+> **后续更新（v11，2026-08-23）**：上述"暂不采用"决定已落地为升级——依赖基线
+> `0.1.0-rc.7` → `0.1.1-rc.2`（peerDeps/devDeps 全部对齐官方 npm 发布惯例
+> `^0.1.1-rc.2`）。升级前后逐项核对了 ref-lib 所用接口（`commands.register` /
+> `systemPrompt.context` / `webServer.register` / `session/created` / dock 与
+> commandview 槽位契约）在 rc.7→rc.2 均未破坏；唯一 breaking
+> （`CommandRuntime.execute()` 新增必填 `images` 参数）ref-lib 不直接调用。
+> 客户端平台模块（`dsh-client-ui-primitives` / `dsh-client-ui-slots`）在 rc.2 宿主
+> 由 Vite shell seed 表内联提供，ref-lib bundle 的 external require 命中 seed。
+> 门禁全过（typecheck / lint / 147 测试含 L2 harness-roundtrip / build），并以
+> `scripts/dev-isolate.sh`（`~/.dsh-dev` + 3090 端口）验证隔离环境加载与
+> `/api/ref-lib/*` 路由。
+
 ## 1. 背景与目标
 
 参考库目录在注册后可能被外部删除、重命名，或被替换为文件。当前 `RefLibEntry`
