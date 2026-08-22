@@ -268,7 +268,8 @@ GUI 交互时即时同步：
 
 **竞态防护**：所有刷新源（命令/发消息/操作/挂载重试/会话切换）共用 `RefreshGuard`
 （`src/client/refresh-guard.ts`，只接受最后发起的请求结果，`tests/refresh-guard.spec.ts`
-钉死并发/乱序/作废行为）——见 §15。
+钉死并发/乱序/作废行为）——见 §15。信号派生（`userMessageCount` / `refLibCommandDone`）
+的 rc.7 前提查证与脆弱点清单见 **§16**。
 
 ## 15. 并发与竞态分析（RefLibDock 数据同步）
 
@@ -295,3 +296,75 @@ effect cleanup（stopped/timer/clearInterval）。
 但 ref-lib 数据源在 sidecar（无会话事件）且可用性需实时 statSync，**纯投影不成立**
 （§15 架构结论 2026-08-22 更正）——当前交互驱动刷新 + RefreshGuard 是 pull 模式下
 的务实方案。
+
+## 16. 交互驱动刷新：rc.7 前提查证记录与脆弱点清单（2026-08-23）
+
+**背景**：交互驱动刷新（`userMessageCount` / `refLibCommandDone` 两个快照派生钩子）
+的成立依赖若干 harness 行为。为确认「在 rc.7 及以前是否脆弱、是否受其他插件事件流
+影响」，对 deepseek-harness 仓库 `dsh-v0.1.0-rc.7` tag 逐条核对源码，并对
+rc.7 → rc.8 → 0.1.1-rc.1 做了差异比对。
+
+### 16.1 前提核对（rc.7，全部成立）
+
+| # | 前提 | rc.7 源码依据 | 结论 |
+| --- | --- | --- | --- |
+| 1 | dock 槽位的 `session` 是响应式快照，每次会话 store 发布重渲染 | `ui-conversation/src/client/contract/slots.ts`：`InputZone { session: ConversationSnapshot; input: InputState }`（"dispatching skeleton re-renders on either store's change"）；`skeleton/ConversationRoot.tsx`：`useSession(s => s)` → `renderSlot('conversation.input.dock', zone)` | ✅ |
+| 2 | 发消息产生 `kind: 'user'` 节点 | `conversation-nodes/message.ts`：`user/message`（`source.kind==='user'` 且未被收件箱认领）→ `UserMessageNode`；非 user source → `context`；认领 → `steering` | ✅ |
+| 3 | 命令完成体现为 command 节点 running → settled | `interaction/commands/src/index.ts`：`execute()` 先 append log-only `command/run`（`name: parsed.name`、`outcome` 未定），handler 结算后 append `command/done`（`kind: success\|error`）；未匹配命令**不记任何事件**；命令名正则 `^[a-z][a-z0-9_-]*$`、无别名、重名注册 fail loud | ✅ |
+| 4 | 信号事件发布节奏及时 | 两个 Definition 未声明 `publication` → 默认 `'immediate'`（microtask flush，`conversation-assembler.ts`）；流式 chunk 为 `'animation-frame'`（`conversation-nodes/assistant.ts`），不触发 user 计数 | ✅ |
+| 5 | 命令完成时数据已落盘 | ref-lib 命令 handler **await** `refLibs.add/remove` 后才返回 → 客户端看到 settled 时 sidecar 已更新，随后的 GET 必是新数据 | ✅ |
+
+### 16.2 其他插件事件流影响结论
+
+**正确性上不脆弱：其他插件的事件流不会造成假刷新，也不会吞掉刷新。** 依据：
+
+- 所有插件事件（goal/queue/context 注入等）进**同一个会话 store**，dock 确实随每次
+  发布重渲染——但两个 effect 依赖的是**派生计数**而非事件本身；其他插件事件无法
+  改变这两个计数：
+  - goal 续行轮次写成 `user/message` 但 `source: {kind:'goal', …}`
+    （`goal/goal-round-driver/src/index.ts`）→ 客户端折叠为 **`context`** 节点，不增
+    `'user'` 计数；官方插件无任何写 `source.kind === 'user'` 的 `user/message`
+    （那是 agent loop 的人类输入专属通道）；
+  - 其他插件命令（`/goal`、`/plan`）的 `CommandNode.name` 不同；同名注册冲突在
+    注册期 fail loud；
+  - 事件按 seq 顺序进 store，不存在被其他事件流遮蔽的机制。
+- 多余/重叠刷新由 `RefreshGuard` 吸收（只接受最后发起者）。
+
+### 16.3 脆弱点清单（按严重度）
+
+1. **漏刷新窗口（功能层）**
+   - **忙碌期发消息**：宿主在 `core/agent-loop/src/agent.ts` 是 **step 领取消息时才
+     append `user/message`**，非 prompt 受理时——排队消息的计数延迟到进入步骤；
+   - **steer 打断消息**：永远折叠为 `'steering'` 节点，**完全不触发** `userMessageCount`；
+   - **`command/run` 落在窗口外**（压缩/截断把 run 切出窗口）：`CommandNode.name`
+     为 null → `name === 'ref-lib'` 过滤漏掉 → 该次命令完成不刷新；
+   - 外部文件操作无会话事件 → 不刷新（设计已接受的取舍，注入侧不受影响）。
+2. **重渲染耦合（性能层）**：dock 在**每次** store 发布时重渲染（其他插件事件、流式
+   帧、queue 快照变化），组件每次渲染跑节点派生——成本 = 事件率 × 节点数；长会话 +
+   高事件流下需注意（已优化为单次遍历，见 16.4）。
+3. **窗口长度抖动**：loadOlder / 压缩 / 断线补拉重建节点列表，计数可能增减 → 额外
+   静默刷新（RefreshGuard 吸收，良性但要知道）。
+4. **零测试覆盖（已修复，见 16.4）**：钩子派生原在组件内部，harness 对这些表面的
+   改动（node kind / name 语义 / InputZone 响应性 / 发布节奏）不会使任何测试失败。
+
+### 16.4 已落地防护（2026-08-23）
+
+- 派生逻辑提取为**纯函数** `deriveRefreshTriggers(nodes)`（`src/client/
+  refresh-triggers.ts`，单次遍历同时派生两个计数），RefLibDock 的 effect 依赖改为
+  其返回值；
+- 新增 `tests/refresh-triggers.spec.ts` 钉死契约：user 计数、运行中不计、成功/失败
+  结算都计、其他命令隔离、`name: null`（run 出窗口）不计、steer/context/tool 不计、
+  混合场景单次遍历、窗口变化增减计数；
+- 函数签名使用 harness 的 `ConversationNode` 类型——harness 若改动节点形状，
+  **typecheck 即失败**（编译期防线，而非仅运行时行为）。
+
+### 16.5 版本差异说明
+
+- 参考库仓库**最老 tag 即 `dsh-v0.1.0-rc.7`**，rc.6 及更早无法从参考库查证；dock
+  槽位、InputZone 响应式 `session`、会话 Definition 折叠、log-only `command/run+done`
+  配对在 rc.7 全部存在且互相咬合（本插件的开发基线）。
+- rc.7 → rc.8 差异比对：`ConversationRoot` 仅 HeroShell 传参；`message.ts` 仅给
+  user/steering 加可选 `referenceLabels`（kind 不变）；`commands` 执行器仅加图片附件
+  支持（`command/run`/`command/done`、`name`、`source` 语义不变）——**该机制在
+  rc.8 / 0.1.1-rc.1 语义一致**（当前 0.1.1-rc.1 checkout 的 InputZone 契约注释原样
+  保留）。

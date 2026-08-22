@@ -25,6 +25,7 @@ import type { RefLibEntry } from '../spec.ts'
 import { RefLibApiError } from './data.ts'
 import type { RefLibKey } from './locales.ts'
 import { RefreshGuard } from './refresh-guard.ts'
+import { deriveRefreshTriggers } from './refresh-triggers.ts'
 import { RefLibBrowser } from './RefLibBrowser.tsx'
 import { RefLibPanel } from './RefLibPanel.tsx'
 import { ensureRefLibStyles } from './styles.ts'
@@ -190,21 +191,24 @@ export function RefLibDock(props: RefLibDockProps): ReactElement {
     }
   }, [open])
 
-  // 发消息即刷新（交互钩子）：dock owner 的 `session` 是**响应式会话快照**——用户
-  // 发消息必然产生 user 消息节点（`kind: 'user'`），计数 +1 触发静默刷新，UI 在
-  // 发消息后立即同步；流式 assistant 回复不改变 user 计数，不会每 token 刷新。
-  const userMessageCount = session.nodes.filter((node) => node.kind === 'user').length
+  // 发消息即刷新（交互钩子）：dock owner 的 `session` 是**响应式会话快照**
+  // （ConversationRoot `useSession(s => s)`，每次会话 store 发布重渲染）——用户
+  // 发消息落盘后产生 user 消息节点（`kind: 'user'`），计数 +1 触发静默刷新；
+  // 流式 assistant 回复不改变 user 计数，不会每 token 刷新。
+  // 信号盲区（rc.7 查证，见 refresh-triggers.ts 与设计文档 §16）：steer 打断消息
+  // 折叠为 'steering' 节点不触发；忙碌期排队消息的 user 节点在 step 领取时才落盘
+  // （刷新延迟）；外部文件操作无会话事件（下次 GUI 交互同步）。
+  const { userMessageCount, refLibCommandDone } = deriveRefreshTriggers(session.nodes)
   useEffect(() => {
     void refresh(true)
   }, [userMessageCount])
 
-  // 命令执行即刷新：`/ref-lib` 命令（add/remove/note）执行必然产生
+  // 命令执行即刷新：`/ref-lib` 命令（add/remove/note）执行必然产生 log-only
   // `command/run` → `command/done`，会话快照中的 command 节点从 running
-  // （outcome null）变为 settled——settled 计数 +1 触发静默刷新，命令执行后
-  // UI 立即同步。与 userMessageCount 同模式（组件内响应式）。
-  const refLibCommandDone = session.nodes.filter(
-    (node) => node.kind === 'command' && node.name === 'ref-lib' && node.outcome !== null,
-  ).length
+  // （outcome null）变为 settled——settled 计数 +1 触发静默刷新（命令 handler 先
+  // 落盘 sidecar 再结算，故刷新读到的必是新数据）。与其他插件命令隔离：命令名是
+  // typed name（无别名、重名注册 fail loud），`name === 'ref-lib'` 过滤精确。
+  // 盲区：command/run 落在窗口外（压缩/截断）时 name 为 null，本次完成不刷新。
   useEffect(() => {
     void refresh(true)
   }, [refLibCommandDone])
