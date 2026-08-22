@@ -163,16 +163,97 @@ describe('RefLibService v3（per-session sidecar）', () => {
     expect(JSON.parse(await readFile(sidecarPath(tmp, session.id), 'utf8'))).toMatchObject({ version: 3 })
   })
 
-  it('继承：子会话无自身状态时继承父会话列表', async () => {
+  it('惰性兜底：legacy 子会话首次读取时复制父列表并落盘（重新铸造 id）', async () => {
     const dir = join(tmp, 'lib-parent')
     await mkdir(dir)
     const service = new RefLibService(new Context(), { root: tmp })
     const parent = fakeSession()
-    await service.add(parent, dir)
+    const entry = await service.add(parent, dir)
     const child = fakeSession({ parentSession: parent.id })
-    expect(service.list(child).map((entry) => entry.path)).toEqual([dir])
-    // 子会话自身尚未落盘（无独立状态）
-    await expect(readFile(sidecarPath(tmp, child.id), 'utf8')).rejects.toThrow()
+    const childLibs = service.list(child)
+    expect(childLibs.map((item) => item.path)).toEqual([dir])
+    // 副本 id 已重新铸造（不共享父会话身份），已落盘自身 sidecar，再次读取 id 稳定。
+    expect(childLibs[0]!.id).not.toBe(entry.id)
+    const stored = await readSidecar(tmp, child.id)
+    expect(stored[0]!.id).toBe(childLibs[0]!.id)
+    expect(service.list(child).map((item) => item.path)).toEqual([dir])
+  })
+
+  describe('fork 继承物化（session/created 钩子）', () => {
+    /** 真实 Context + 服务（构造时注册 session/created 钩子）。 */
+    function bootService() {
+      const ctx = new Context()
+      const service = new RefLibService(ctx, { root: tmp })
+      const emitCreated = (session: Session) => ctx.emit('session/created', session)
+      return { service, emitCreated }
+    }
+
+    it('fork 触发即物化：子会话继承父列表并落盘自身 sidecar（条目 id 重新铸造）', async () => {
+      const dir = join(tmp, 'lib-fork-materialize')
+      await mkdir(dir)
+      const { service, emitCreated } = bootService()
+      const parent = fakeSession()
+      const entry = await service.add(parent, dir)
+      const child = fakeSession({ parentSession: parent.id })
+      emitCreated(child)
+      // 子会话已落盘自身 sidecar；条目路径一致但 id 已重新铸造（独立身份）。
+      const stored = await readSidecar(tmp, child.id)
+      expect(stored.map((item) => item.path)).toEqual([dir])
+      expect(stored[0]!.id).not.toBe(entry.id)
+      expect(service.list(child).map((item) => item.path)).toEqual([dir])
+    })
+
+    it('fork 链 A→B→C：逐级物化后继承链完整（不再依赖中间会话是否落盘）', async () => {
+      const dir = join(tmp, 'lib-fork-chain')
+      await mkdir(dir)
+      const { service, emitCreated } = bootService()
+      const a = fakeSession()
+      await service.add(a, dir)
+      const b = fakeSession({ parentSession: a.id })
+      emitCreated(b)
+      const c = fakeSession({ parentSession: b.id })
+      emitCreated(c)
+      expect(service.list(b).map((item) => item.path)).toEqual([dir])
+      expect(service.list(c).map((item) => item.path)).toEqual([dir])
+    })
+
+    it('已有自身状态的会话不被物化覆盖（父会话后续变化不回流）', async () => {
+      const dirA = join(tmp, 'lib-fork-own-a')
+      const dirB = join(tmp, 'lib-fork-own-b')
+      const dirC = join(tmp, 'lib-fork-own-c')
+      await mkdir(dirA)
+      await mkdir(dirB)
+      await mkdir(dirC)
+      const { service, emitCreated } = bootService()
+      const parent = fakeSession()
+      const entryA = await service.add(parent, dirA)
+      const child = fakeSession({ parentSession: parent.id })
+      // 子会话先有自身状态：add 时惰性继承父列表后并入自身条目，自身 sidecar 落盘。
+      await service.add(child, dirB)
+      const ownPaths = service.list(child).map((item) => item.path)
+      expect(ownPaths).toEqual([dirA, dirB])
+      // 父会话随后变化（移除 dirA、新增 dirC）→ 重复公告/重放物化不得覆盖子会话。
+      await service.remove(parent, entryA.id)
+      await service.add(parent, dirC)
+      emitCreated(child)
+      expect(service.list(child).map((item) => item.path)).toEqual(ownPaths)
+    })
+
+    it('父无库时子会话不落盘（保持惰性继承路径）', async () => {
+      const { service, emitCreated } = bootService()
+      const parent = fakeSession()
+      const child = fakeSession({ parentSession: parent.id })
+      emitCreated(child)
+      await expect(readFile(sidecarPath(tmp, child.id), 'utf8')).rejects.toThrow()
+      expect(service.list(child)).toEqual([])
+    })
+
+    it('无 parentSession 的普通创建不触发物化', async () => {
+      const { emitCreated } = bootService()
+      const session = fakeSession()
+      emitCreated(session)
+      await expect(readFile(sidecarPath(tmp, session.id), 'utf8')).rejects.toThrow()
+    })
   })
 
   it('add 带 note 时写入 sidecar 并返回', async () => {

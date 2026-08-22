@@ -8,7 +8,20 @@
  * 会话日志被整体拒读（连写它的 harness 自己也读不回，SessionFormatUnsupportedError）。
  * v3 起 per-session 列表存为 dsh home 下的 sidecar JSON
  * （`<dshHome>/plugin-data/ref-lib/<sessionId>.json`）；旧日志中的 `ref-lib/set`
- * 事件仅在冷读时折叠迁移一次，会话隔离与 fork 继承语义保持不变。
+ * 事件仅在冷读时折叠迁移一次。
+ *
+ * **fork 继承（2026-08-23 加固）**：dsh 的「分支会话」在宿主创建**新会话**
+ * （`SessionStore.fork()` 铸造新 id，header 携带 `parentSession`）。本服务在
+ * `session/created`（`{ global: true }`，与 core/tools 的 seed 钩子同款）时
+ * **物化继承**——子会话无自身 sidecar 则把父会话的有效列表复制到子会话自身文件
+ * 并**重新铸造条目 id**（fork 副本拥有独立身份；单次写盘）。这修复了纯惰性继承
+ * 的链式断口（fork 的分支的分支依赖中间会话是否落盘）并把继承时机从「首次读取」
+ * 提前到「fork 时刻」（确定性快照）。复制用「读父列表 + 写子文件」而非逐条 add()：
+ * add() 会重复校验路径并重读 README 提取 note（IO 且可能改变 note），复制等价且
+ * 更省。UI 无需新通道：fork 后打开子会话，dock 挂载的现有 load()（GET /list）
+ * 一次刷新即可读到继承结果（2026-08-23 简化：不新增 webServer 接口）。
+ * 惰性 parentSession 继承路径（loadFromStorage 末段）保留并以同语义（重新铸造
+ * id + 落盘）服务旧版本创建的 legacy 子会话。
  * @module @hpyperry/dsh-ref-lib/src/service
  */
 
@@ -189,6 +202,13 @@ export class RefLibService extends Service {
   constructor(ctx: Context, config: RefLibServiceConfig = {}) {
     super(ctx, 'refLibs')
     this.root = config.root ?? join(dshHomePath('plugin-data', 'ref-lib'))
+    // fork 继承物化：宿主每次创建会话（fork/subagent 带 parentSession）同步公告
+    // `session/created`。`{ global: true }` 忽略上下文过滤（同 core/tools 的
+    // seed 钩子）；监听器绝不抛错——session/created 监听器同步抛错会**回滚会话
+    // 挂载**（core/session 的 announce 契约）。同步文件 IO 可接受：小文件、低频。
+    ctx.on('session/created', (session) => {
+      this.materializeInheritance(session)
+    }, { global: true })
   }
 
   /** 当前会话的参考库列表（内存缓存 → sidecar 文件 → 旧日志迁移 → 父会话继承），
@@ -322,6 +342,51 @@ export class RefLibService extends Service {
     return next.find((item) => item.id === id)!
   }
 
+  /**
+   * fork 继承物化（`session/created` 钩子调用）：子会话（header 带 parentSession）
+   * 无自身 sidecar 时，把父会话的**有效列表**复制到子会话自身文件并**重新铸造条目
+   * id**（fork 副本拥有独立身份，不与父会话共享条目 id）——继承时机从「首次读取」
+   * 提前到「创建时刻」，并修复纯惰性继承的链式断口（中间会话未落盘时后代继承不
+   * 到）。同步执行、绝不抛错（announce 契约：session/created 监听器抛错会回滚
+   * 会话挂载）。
+   * @param session - 新创建的会话。
+   * @returns 物化后的子会话列表（未物化/无父会话时返回当前列表，含空列表）。
+   */
+  materializeInheritance(session: Session): readonly RefLibEntry[] {
+    try {
+      const parentId = session.header.parentSession
+      if (parentId === undefined) return this.list(session)
+      // 已有自身状态（如持久化恢复的会话、或已物化过）不覆盖。
+      if (existsSync(this.pathOf(session.id))) return this.list(session)
+      const parentLibs = this.resolveParentLibs(parentId)
+      if (parentLibs.length === 0) return this.list(session) // 父无有效列表：保持惰性继承路径
+      const owned = this.mintOwnedCopy(parentLibs)
+      this.persistSync(session.id, owned)
+      this.cacheSet(session.id, owned)
+      return owned
+    } catch (error) {
+      this.ctx.logger.warn(`ref-lib: fork 继承物化失败（不阻断会话创建）：${String(error)}`)
+      return this.list(session)
+    }
+  }
+
+  /** 复制父列表并重新铸造条目 id：fork 副本拥有自己的身份（同 id 的「关联价值」是
+   * 瞬时的——任一侧一变更即断裂，留不住；且避免未来跨会话功能/审计混淆）。 */
+  private mintOwnedCopy(libs: readonly RefLibEntry[]): RefLibEntry[] {
+    return libs.map((entry) => ({ ...entry, id: randomUUID() }))
+  }
+
+  /** 解析父会话的有效参考库列表：优先经 live 父会话（覆盖父为 legacy/惰性子会话的
+   * 折叠路径），父会话不可得时兜底直接读其 sidecar 文件。 */
+  private resolveParentLibs(parentId: string): readonly RefLibEntry[] {
+    const sessions = this.ctx.get('sessions') as { get(sessionId: string): Session | undefined } | undefined
+    const parent = sessions?.get(parentId)
+    if (parent !== undefined) return this.list(parent)
+    const file = this.pathOf(parentId)
+    if (!existsSync(file)) return []
+    return this.readSidecar(file) ?? []
+  }
+
   /** 冷读：sidecar 文件 → 旧日志事件迁移 → 父会话继承 → 空列表。 */
   private loadFromStorage(session: Session): readonly RefLibEntry[] {
     const file = this.pathOf(session.id)
@@ -336,13 +401,19 @@ export class RefLibService extends Service {
       this.persistSync(session.id, fromEvents)
       return fromEvents
     }
-    // fork 继承：子会话无自身状态时继承父会话的列表（与旧事件 seed 行为一致）。
+    // fork 继承（legacy 子会话兜底）：复制父列表、重新铸造条目 id 并**落盘自身
+    // sidecar**——与 session/created 物化（materializeInheritance）同一语义：fork
+    // 副本拥有独立身份；落盘保证重启后 id 稳定（不落盘则每次冷读重新铸造导致漂移）。
     const parentId = session.header.parentSession
     if (parentId !== undefined) {
       const parentFile = this.pathOf(parentId)
       if (existsSync(parentFile)) {
         const inherited = this.readSidecar(parentFile)
-        if (inherited !== undefined) return inherited
+        if (inherited !== undefined && inherited.length > 0) {
+          const owned = this.mintOwnedCopy(inherited)
+          this.persistSync(session.id, owned)
+          return owned
+        }
       }
     }
     return []

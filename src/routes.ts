@@ -87,6 +87,10 @@ export interface RefLibRouteDeps {
  * - `GET  /api/ref-lib/list?session=<id>` → `{ libs }`
  * - `POST /api/ref-lib/add    { session, path }` → `{ entry }`
  * - `POST /api/ref-lib/remove { session, id }` → `{ ok: true }`
+ *
+ * 注：fork 继承不在此路由族——`session/created` 钩子（service.materializeInheritance）
+ * 在宿主创建子会话时直接写子会话 sidecar，UI 经现有 /list（dock 挂载 load）一次
+ * 刷新即可读到（2026-08-23 简化，移除原 POST /api/ref-lib/inherit 兜底路由）。
  * @param deps - 依赖面。
  * @returns 待注册到 `ctx.webServer` 的路由数组。
  */

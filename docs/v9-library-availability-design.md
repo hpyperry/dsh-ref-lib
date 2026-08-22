@@ -368,3 +368,48 @@ rc.7 → rc.8 → 0.1.1-rc.1 做了差异比对。
   支持（`command/run`/`command/done`、`name`、`source` 语义不变）——**该机制在
   rc.8 / 0.1.1-rc.1 语义一致**（当前 0.1.1-rc.1 checkout 的 InputZone 契约注释原样
   保留）。
+
+## 17. fork 分支会话：参考库继承物化（2026-08-23）
+
+**背景**：dsh「分支会话」在宿主创建**新会话**——`SessionStore.fork()`（core/session
+`src/index.ts:1081`）铸造新 id（`session-<n>`）、seed 父会话事件 `[0..boundary]`、
+header 写入 `parentSession: 源会话id`（:1091）；客户端聊天「分支」`forkAt(seq)`
+（ui-conversation `apply.ts:419`）→ `sessions.fork`（runtime `manager.ts:588`）→
+RPC `session.fork`。即：**fork 后 session 变化（新 id、新对象）**，参考库不会自动
+跟随。
+
+**发现的问题（v3 惰性继承）**：ref-lib 旧实现只在冷读时经 `header.parentSession`
+读**直接父会话的文件**：
+1. **链式断口（已复现）**：A→B→C 分支链中，若 B 从未落盘自身 sidecar（只读继承 +
+   无变更），C=fork(B) 继承不到 A 的列表（C 得空列表）；
+2. **继承时机漂移**：继承的是父会话**当前**列表（首次读取时），非 fork 边界处的
+   快照；且惰性继承在子会话首次读取前不落盘。
+
+**方案（fork 触发直写文件，无新增 webServer 接口）**：
+1. **`session/created` 钩子（唯一路径）**：`RefLibService` 构造时注册
+   `ctx.on('session/created', ..., { global: true })`（与 core/tools 的 seed 钩子
+   同款，忽略上下文过滤；监听器绝不抛错——announce 契约：session/created 监听器
+   同步抛错会回滚会话挂载）。子会话带 parentSession 且无自身 sidecar 时，把父会话
+   **有效列表**（优先经 live 父会话解析，兜底读其文件）复制到子会话自身文件——
+   继承时机提前到 **fork 时刻**（确定性快照），链式断口修复（每级都落盘）。
+   **不经过 HTTP**：钩子直写 sidecar，UI 无新通道——fork 后打开子会话，dock 挂载的
+   现有 `load()`（GET /list）一次刷新即可读到（2026-08-23 简化决策：曾短暂新增
+   `POST /api/ref-lib/inherit` 兜底路由，确认正常流程用不上后移除）。
+2. **复制而非逐条 list+add**：add() 会重复校验路径、重读 README 提取 note（IO 且
+   可能改变 note）、逐条写盘；复制等价且单次写盘。
+3. **条目 id 重新铸造（2026-08-23 用户决策）**：物化复制时每个条目生成新
+   `randomUUID`——fork 副本拥有**独立身份**，不与父会话共享条目 id。理由：同 id
+   的「关联价值」是瞬时的（任一侧一变更即断裂，留不住），且避免未来跨会话功能/
+   审计混淆；删除互不影响（per-session sidecar 隔离）与 id 无关，保持不变。
+   惰性兜底路径以同一语义（重新铸造 id + 落盘）服务 legacy 子会话——**必须落盘**，
+   否则每次冷读重新铸造会导致重启后 id 漂移。
+4. **惰性 parentSession 兜底保留**：服务旧版本创建的 legacy 子会话（无自身文件）
+   首次读取时按同一语义物化（重新铸造 id + 落盘）；此后与物化过的子会话行为一致。
+
+**语义变化**：继承时机从「首次读取」变为「创建时刻」；子会话创建即落盘（有父库
+时）且条目 id 独立，父会话后续变化不再回流（含未读取过的子会话）。注入侧同路
+（systemPrompt 上下文贡献同样继承）。
+
+**测试**：`tests/service.spec.ts` fork 物化 5 用例（触发即落盘且 **id 重新铸造**、
+链 A→B→C、已有自身状态不被覆盖、父无库不落盘、普通创建不触发）+ 惰性兜底用例
+（重新铸造 id + 落盘 + 再次读取 id 稳定）；路由族测试不变（未新增路由）。
