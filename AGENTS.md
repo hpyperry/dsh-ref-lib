@@ -48,7 +48,27 @@
    external 的 require 命中 seed，运行时吃 rc.2 实现；node half 依赖基线同步后
    双版本消除（link 开发形态下此前解析到自身 rc.7 副本）；四道门禁全过（typecheck /
    lint / 147 测试含 L2 harness-roundtrip / build），`scripts/dev-isolate.sh` 以
-   `~/.dsh-dev` + 3090 端口验证插件加载与 `/api/ref-lib/*` 路由）。
+   `~/.dsh-dev` + 3090 端口验证插件加载与 `/api/ref-lib/*` 路由）→
+   v12（**跨会话导入（手动挑选）**：与 v10 fork 自动继承互补——从其他会话挑选
+   参考库条目导入当前会话。三步状态机（选会话 → 勾条目 → 冲突项处理）：来源
+   会话经 `sessionQuery` 枚举（只列有参考库的，按最近活跃排序；标题取
+   `readTitleSnapshots`，缺失回退"工作区名 · 新会话"）；条目分类纯函数
+   `classifyImport`（规范化绝对路径判定重复）；冲突项并排 diff 对比（用途说明 /
+   可用状态差异按侧高亮：mine 红 / incoming 绿）逐条选择「保留现有 / 采用导入」。
+   **快照语义**：新增条目重新铸造 id、note 保持源值；「采用导入」以导入侧 note
+   替换现有条目（保留现有 id）——不回流，与 v10 一致。源会话读取只读探测
+   可用性、不写回；目标会话导入时重新校验。错误显示在流程弹窗内部（flowError，
+   避免被下层面板遮住）；取消/关闭分层回退（conflicts→picks→sessions→关闭）；
+   默认**反选**起步、全选三态、失效新增条目禁用；`/ref-lib import [会话] [路径...]`
+   命令同语义（id 精确 → 标题模糊匹配，多候选列清单；冲突在命令模式一律跳过）→
+   v13（**导入流程定稿 + 官方会话类型**：`@deepseek-ai/dsh-session-query` peer
+   （`^0.1.1-rc.2`）声明合并 `ctx.sessionQuery`，`attachSessionMeta` 改吃官方
+   `SessionTitleObservationResult`，`SessionId()` 官方工厂替换本地 `as` 断言——cwd
+   三源兜底逻辑不变（③ 观测 → ① live `sessions.get()?.header.cwd` → ②
+   `listSessions()` 记录，最终回退"新会话"），宿主结构变化从此走 typecheck 而非
+   被断言掩盖；冲突页视觉对齐原型（note 标签国际化"用途说明："、diff 高亮按侧
+   红/绿、主面板状态行/详情编辑打磨）；195 测试全过，`docs/prototype-session-
+   import.html` 为 v12 候选原型基准）。
 
 ## 2. 开发规范（必须遵守）
 
