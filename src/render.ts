@@ -138,3 +138,46 @@ export function renderLibList(libs: readonly RefLibEntry[]): string {
     })
     .join('\n')
 }
+
+/**
+ * 渲染 `/ref-lib import <会话>` 的源会话条目清单（无路径参数时列出，供用户挑选路径）。
+ * @param source - 源会话 id。
+ * @param libs - 源会话条目（readSessionLibs 已实时探测）。
+ * @returns 清单文本；无库时提示。
+ */
+export function renderImportSource(source: string, libs: readonly RefLibEntry[]): string {
+  if (libs.length === 0) return `会话 ${source} 没有参考库。`
+  const lines = libs
+    .map((entry) => {
+      const note = entry.note === undefined || entry.note === '' ? '' : `（${sanitizeControlCharacters(entry.note)}）`
+      const status = entry.status === 'missing'
+        ? ' [已失效]'
+        : entry.status === 'not-directory' ? ' [不是目录]' : ' [可用]'
+      return `- ${sanitizeControlCharacters(entry.path)}${status}${note}`
+    })
+    .join('\n')
+  return `会话 ${source} 的参考库（${libs.length} 个）：\n${lines}\n用 /ref-lib import ${source} <路径> 导入指定条目（与当前重复的自动跳过）。`
+}
+
+/**
+ * 渲染 `/ref-lib import`（无参）的会话清单：id + 标题 + 条目数——让会话 id 可发现，
+ * 用户据此用 `/ref-lib import <id> [路径...]` 继续。
+ * @param sessions - 有参考库的源会话清单（listSessions 结果）。
+ * @returns 清单文本。
+ */
+export function renderImportSessions(sessions: readonly { sessionId: string; title?: string; cwd?: string; count: number }[]): string {
+  if (sessions.length === 0) return '其他会话还没有参考库。'
+  const lines = sessions
+    .map((session) => {
+      // 无标题会话：与 UI 一致的「工作区名 · 新会话」回退（cwd 也缺则只显示"新会话"）。
+      const label =
+        session.title !== undefined && session.title !== ''
+          ? session.title
+          : session.cwd !== undefined && session.cwd !== ''
+            ? `${basename(session.cwd)} · 新会话`
+            : '新会话'
+      return `- ${session.sessionId} 「${sanitizeControlCharacters(label)}」（${session.count} 个条目）`
+    })
+    .join('\n')
+  return `配置过参考库的会话：\n${lines}\n用 /ref-lib import <上面的会话id或标题> [路径...] 查看并导入。`
+}

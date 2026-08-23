@@ -131,6 +131,23 @@ export function RefLibPanel(props: RefLibPanelProps): ReactElement {
       className="reflib-modal"
     >
       <div className="reflib-panel">
+        {/* v13 对齐原型：顶部状态行——可用数（绿点）/ 失效数（红点，仅存在时显示） */}
+        {!loading && libs.length > 0 && (
+          <div className="reflib-statusline" role="status">
+            <span className="reflib-statuslineItem">
+              <span className="reflib-statuslineDot" data-tone="ok" />
+              {t('panel.available', { count: String(libs.filter((entry) => entry.status === 'available').length) })}
+            </span>
+            {libs.some((entry) => entry.status !== undefined && entry.status !== 'available') && (
+              <span className="reflib-statuslineItem">
+                <span className="reflib-statuslineDot" data-tone="err" />
+                {t('panel.unavailable', {
+                  count: String(libs.filter((entry) => entry.status !== undefined && entry.status !== 'available').length),
+                })}
+              </span>
+            )}
+          </div>
+        )}
         {error !== null && (
           <div className="reflib-error" role="alert">
             <IconWarningOutline16 size={14} className="reflib-errorIcon" />
@@ -173,17 +190,17 @@ export function RefLibPanel(props: RefLibPanelProps): ReactElement {
                       <span className="reflib-rowPath" title={entry.path}>
                         {entry.path}
                       </span>
-                      {unavailable && (
-                        <span className="reflib-rowStatus" role="status">
-                          {t(entry.status === 'missing' ? 'status.missing' : 'status.notDirectory')}
-                        </span>
-                      )}
                       {entry.note !== undefined && entry.note !== '' && (
                         <span className="reflib-rowNote" title={entry.note}>
                           {entry.note.replace(/\s+/g, ' ')}
                         </span>
                       )}
                     </div>
+                    {unavailable && (
+                      <span className="reflib-rowBadge" role="status" title={t(entry.status === 'missing' ? 'status.missing' : 'status.notDirectory')}>
+                        {t('status.badge')}
+                      </span>
+                    )}
                     <Tooltip label={t('detail.open')} side="top" delayMs={400}>
                       <button
                         type="button"
@@ -309,6 +326,28 @@ export function RefLibPanel(props: RefLibPanelProps): ReactElement {
             >
               {t('add.browse')}
             </Button>
+            <Button
+              variant="primary"
+              size="sm"
+              className="reflib-addSubmit"
+              icon={<IconPlusOutline16 size={14} />}
+              disabled={busy || picking || draft.trim() === ''}
+              onClick={() => {
+                void handleSubmit()
+              }}
+            >
+              {t('add.submit')}
+            </Button>
+            <Button
+              variant="primary"
+              size="sm"
+              className="reflib-importOpen"
+              icon={<IconFolderOpen16 size={14} />}
+              disabled={busy || picking}
+              onClick={onImportOpen}
+            >
+              {t('import.open')}
+            </Button>
           </div>
           <div className="reflib-noteWrap">
             <textarea
@@ -327,28 +366,6 @@ export function RefLibPanel(props: RefLibPanelProps): ReactElement {
               {noteDraft.length}/{NOTE_MAX_LENGTH}
             </span>
           </div>
-          <Button
-            variant="primary"
-            className="reflib-addSubmit"
-            icon={<IconPlusOutline16 size={14} />}
-            disabled={busy || picking || draft.trim() === ''}
-            onClick={() => {
-              void handleSubmit()
-            }}
-          >
-            {t('add.submit')}
-          </Button>
-          <span className="reflib-addHint">{t('add.hint')}</span>
-          <Button
-            variant="outline"
-            size="sm"
-            className="reflib-importOpen"
-            icon={<IconFolderOpen16 size={14} />}
-            disabled={busy || picking}
-            onClick={onImportOpen}
-          >
-            {t('import.open')}
-          </Button>
         </div>
       </div>
     </Modal>

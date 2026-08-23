@@ -97,12 +97,26 @@ describe('makeRefLibRoutes', () => {
     return { calls, byPath }
   }
 
-  it('GET list 返回 { libs }', async () => {
-    const { byPath } = boot()
+  it('GET list 返回 { libs }（展示倒序：最近添加在前）', async () => {
+    const refLibs = {
+      list: () => [
+        { id: 'e1', path: '/lib/old' },
+        { id: 'e2', path: '/lib/new' },
+      ],
+    } as unknown as RefLibService
+    const resolveSession = (sessionId: string): Session | undefined =>
+      sessionId === 'session-live' ? fakeSession : undefined
+    const routes = makeRefLibRoutes({ refLibs, resolveSession, log: () => {} })
+    const byPath = (path: string) => routes.find((route) => route.path === path)!
     const { res, out } = fakeRes()
     await byPath('/api/ref-lib/list').handler(fakeReq({ url: '/api/ref-lib/list?session=session-live' }), res)
     expect(out.status).toBe(200)
-    expect(JSON.parse(out.body)).toEqual({ libs: [{ id: 'e1', path: '/lib/a' }] })
+    expect(JSON.parse(out.body)).toEqual({
+      libs: [
+        { id: 'e2', path: '/lib/new' },
+        { id: 'e1', path: '/lib/old' },
+      ],
+    })
   })
 
   it('list 对非 live 会话返回 404', async () => {
@@ -404,17 +418,27 @@ describe('makeRefLibRoutes（v12 跨会话导入）', () => {
 })
 
 describe('makeRefLibRoutes（v12 只读 source 路由）', () => {
-  it('GET source 读取历史会话 sidecar（不要求 live）', async () => {
+  it('GET source 读取历史会话 sidecar（不要求 live，展示倒序）', async () => {
     const refLibs = {
       readSessionLibs: (sessionId: string) =>
-        sessionId === 'session-history' ? [{ id: 'h1', path: '/lib/history' }] : [],
+        sessionId === 'session-history'
+          ? [
+              { id: 'h1', path: '/lib/old' },
+              { id: 'h2', path: '/lib/new' },
+            ]
+          : [],
     } as unknown as RefLibService
     const routes = makeRefLibRoutes({ refLibs, resolveSession: () => undefined, log: () => {} })
     const route = routes.find((r) => r.path === '/api/ref-lib/source')!
     const { res, out } = fakeRes()
     await route.handler(fakeReq({ url: '/api/ref-lib/source?session=session-history' }), res)
     expect(out.status).toBe(200)
-    expect(JSON.parse(out.body)).toEqual({ libs: [{ id: 'h1', path: '/lib/history' }] })
+    expect(JSON.parse(out.body)).toEqual({
+      libs: [
+        { id: 'h2', path: '/lib/new' },
+        { id: 'h1', path: '/lib/old' },
+      ],
+    })
   })
 
   it('GET source 无 sidecar 会话返回空列表', async () => {

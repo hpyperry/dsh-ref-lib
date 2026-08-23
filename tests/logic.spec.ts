@@ -173,10 +173,21 @@ describe('attachSessionMeta（v12 标题与工作区补全）', () => {
     { sessionId: 's2', count: 1, available: 1, updatedAt: 200 },
   ]
 
+  /** 官方 SessionHeader 最小构造（version/id/createdAt 必填 + 可选 cwd）。 */
+  const header = (cwd?: string): { version: number; id: string; createdAt: number; cwd?: string } => ({
+    version: 0,
+    id: 's',
+    createdAt: 0,
+    ...(cwd === undefined ? {} : { cwd }),
+  })
+  /** 官方 SessionTitleSnapshot 最小构造（title 必填）。 */
+  const snap = (title: string): { title: string; messageSeqs: number[]; source: { kind: 'fallback' }; eventSeq: number; updatedAt: number } =>
+    ({ title, messageSeqs: [], source: { kind: 'fallback' }, eventSeq: 1, updatedAt: 1 })
+
   it('fulfilled 且带标题 → 补全 title；带 cwd → 补全 cwd', () => {
     const result = attachSessionMeta(sources, [
-      { status: 'fulfilled', value: { title: { title: '会话 A' }, session: { cwd: '/w/a' } } },
-      { status: 'fulfilled', value: { title: { title: '会话 B' } } },
+      { sessionId: 's1', status: 'fulfilled', value: { session: header('/w/a'), title: snap('会话 A') } },
+      { sessionId: 's2', status: 'fulfilled', value: { session: header(), title: snap('会话 B') } },
     ])
     expect(result[0]).toMatchObject({ sessionId: 's1', title: '会话 A', cwd: '/w/a' })
     expect(result[1]).toMatchObject({ sessionId: 's2', title: '会话 B' })
@@ -184,8 +195,8 @@ describe('attachSessionMeta（v12 标题与工作区补全）', () => {
 
   it('rejected / 无标题 / 空标题 → 保持无 title（cwd 仍补全）', () => {
     const result = attachSessionMeta(sources, [
-      { status: 'rejected' },
-      { status: 'fulfilled', value: { session: { cwd: '/w/b' } } },
+      { sessionId: 's1', status: 'rejected' },
+      { sessionId: 's2', status: 'fulfilled', value: { session: header('/w/b') } },
     ])
     expect(result[0]?.title).toBeUndefined()
     expect(result[0]?.cwd).toBeUndefined()
@@ -194,13 +205,15 @@ describe('attachSessionMeta（v12 标题与工作区补全）', () => {
   })
 
   it('观测数量不足/多余都容忍', () => {
-    const short = attachSessionMeta(sources, [{ status: 'fulfilled', value: { title: { title: 'A' } } }])
+    const short = attachSessionMeta(sources, [
+      { sessionId: 's1', status: 'fulfilled', value: { session: header(), title: snap('A') } },
+    ])
     expect(short[0]?.title).toBe('A')
     expect(short[1]?.title).toBeUndefined()
     const long = attachSessionMeta(sources, [
-      { status: 'fulfilled', value: { title: { title: 'A' } } },
-      { status: 'fulfilled', value: { title: { title: 'B' } } },
-      { status: 'fulfilled', value: { title: { title: 'C' } } },
+      { sessionId: 's1', status: 'fulfilled', value: { session: header(), title: snap('A') } },
+      { sessionId: 's2', status: 'fulfilled', value: { session: header(), title: snap('B') } },
+      { sessionId: 's3', status: 'fulfilled', value: { session: header(), title: snap('C') } },
     ])
     expect(long).toHaveLength(2)
   })

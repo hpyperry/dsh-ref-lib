@@ -31,9 +31,12 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, statSync,
 import { dirname, join } from 'node:path'
 import { dshHomePath } from '@deepseek-ai/dsh-home-paths'
 import { Context, Service } from '@deepseek-ai/cordis'
-import type { Session } from '@deepseek-ai/dsh-session'
+import { SessionId, type Session } from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-session'
-import { attachSessionMeta, foldRefLibs, probeLibs, removeLib, upsertLib, type ImportPlan, type RefLibSourceSessionRow, type SessionTitleObservation } from './logic.ts'
+// 官方声明合并：加载 ctx.sessionQuery（SessionQueryEngine）与观测/记录类型。
+import type {} from '@deepseek-ai/dsh-session-query'
+import type { SessionTitleObservationResult } from '@deepseek-ai/dsh-session-query'
+import { attachSessionMeta, foldRefLibs, probeLibs, removeLib, upsertLib, type ImportPlan, type RefLibSourceSessionRow } from './logic.ts'
 import type { RefLibAvailability, RefLibEntry } from './spec.ts'
 import { hasControlCharacters, isRefLibEntry } from './validate.ts'
 
@@ -216,14 +219,6 @@ function decodeSegment(encoded: string): string {
     i += 4
   }
   return out
-}
-
-/** 宿主 `ctx.sessionQuery` 服务的最小接口面（SessionQueryEngine 的子集，避免依赖其包类型）。 */
-interface SessionQueryLike {
-  readTitleSnapshots(
-    sessionIds: readonly string[],
-    signal?: AbortSignal,
-  ): Promise<readonly SessionTitleObservation[]>
 }
 
 /** re-export：源会话清单行（跨会话导入来源，含标题补全字段）。 */
@@ -424,14 +419,34 @@ export class RefLibService extends Service {
     }
     sources.sort((a, b) => b.updatedAt - a.updatedAt)
     if (sources.length === 0) return sources
-    // 标题补全：宿主 sessionQuery 服务（精确读取走 persistence，不受 openAt: never 限制）。
+    // 标题/工作区补全（v13.1）：cwd 多源兜底——
+    // 1) live 会话直接读 header.cwd（sessions.get，不依赖 sessionQuery 观测时序）；
+    // 2) sessionQuery.listSessions 的全量记录 header（persistence corpus）；
+    // 3) readTitleSnapshots 观测的 value.session（与 title 同源）。
     try {
-      const query = this.ctx.get('sessionQuery') as SessionQueryLike | undefined
-      if (query === undefined) return sources
-      const observations = await query.readTitleSnapshots(sources.map((source) => source.sessionId))
-      return attachSessionMeta(sources, observations)
+      // 官方类型：ctx.sessionQuery（SessionQueryEngine，dsh-session-query 声明合并）
+      // 与 ctx.sessions（SessionStore，dsh-session 声明合并）——不再用本地结构断言。
+      const query = this.ctx.get('sessionQuery')
+      const live = this.ctx.get('sessions')
+      if (query === undefined && live === undefined) return sources
+      const [records, observations] = await Promise.all([
+        query === undefined ? Promise.resolve([]) : query.listSessions(),
+        query === undefined
+          ? Promise.resolve([] as readonly SessionTitleObservationResult[])
+          : query.readTitleSnapshots(sources.map((source) => SessionId(source.sessionId))),
+      ])
+      const cwdBySession = new Map<string, string | undefined>()
+      for (const record of records) cwdBySession.set(record.header.id, record.header.cwd)
+      return attachSessionMeta(sources, observations).map((source) => {
+        // cwd 兜底：live header → sessionQuery 记录 → 观测（attachSessionMeta 已填）。
+        if (source.cwd !== undefined && source.cwd !== '') return source
+        const liveCwd = live?.get(SessionId(source.sessionId))?.header.cwd
+        const recordCwd = cwdBySession.get(source.sessionId)
+        const cwd = liveCwd ?? recordCwd
+        return cwd === undefined || cwd === '' ? source : { ...source, cwd }
+      })
     } catch (error) {
-      // 标题是展示性信息：宿主服务异常时降级为无标题（UI 回退显示 id），不阻断导入。
+      // 标题/工作区是展示性信息：宿主服务异常时降级（UI 回退显示"新会话"或 id），不阻断导入。
       this.ctx.logger.warn(`ref-lib: 会话标题读取失败（降级显示会话 id）：${String(error)}`)
       return sources
     }

@@ -4,6 +4,7 @@
  */
 
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
+import type { SessionTitleObservationResult } from '@deepseek-ai/dsh-session-query'
 import type { RefLibAvailability, RefLibEntry } from './spec.ts'
 import { isRefLibEntry } from './validate.ts'
 
@@ -138,16 +139,6 @@ export interface RefLibSourceSessionRow {
   readonly updatedAt: number
 }
 
-/** sessionQuery.readTitleSnapshots 单条观测结果的 wire 形状（宿主导出类型的窄子集）。 */
-export interface SessionTitleObservation {
-  readonly status: 'fulfilled' | 'rejected'
-  readonly value?: {
-    /** 会话 header（readTitleSnapshots 的 value.session 即 header——含工作区 cwd）。 */
-    readonly session?: { readonly cwd?: string }
-    readonly title?: { readonly title?: string }
-  }
-}
-
 /**
  * 把宿主 `sessionQuery.readTitleSnapshots` 的结果合并进源会话清单（v12 标题补全，
  * 与宿主 `@session` 引用同源——`session/title` 事件折叠，冷会话同样可读）。
@@ -159,13 +150,14 @@ export interface SessionTitleObservation {
  */
 export function attachSessionMeta(
   sources: readonly RefLibSourceSessionRow[],
-  observations: readonly SessionTitleObservation[],
+  observations: readonly SessionTitleObservationResult[],
 ): RefLibSourceSessionRow[] {
   return sources.map((source, index) => {
     const observation = observations[index]
     if (observation?.status !== 'fulfilled') return source
-    const title = observation.value?.title?.title
-    const cwd = observation.value?.session?.cwd
+    // 官方类型下 value.session（SessionHeader）必填；optional chain 防御运行时异常观测。
+    const title = observation.value.title?.title
+    const cwd = observation.value.session?.cwd
     const next = { ...source }
     if (title !== undefined && title !== '') next.title = title
     if (cwd !== undefined && cwd !== '') next.cwd = cwd

@@ -56,14 +56,25 @@ export interface RefLibImportProps {
   onImport: (plan: ImportPlan) => Promise<void>
 }
 
+/** 相对时间（原型：更新于 10 分钟前）。 */
+function timeAgo(updatedAt: number, t: RefLibImportProps['t']): string {
+  const delta = Date.now() - updatedAt
+  if (delta < 60_000) return t('import.time.justNow')
+  const minutes = Math.floor(delta / 60_000)
+  if (minutes < 60) return t('import.time.minutes', { n: String(minutes) })
+  const hours = Math.floor(minutes / 60)
+  if (hours < 24) return t('import.time.hours', { n: String(hours) })
+  return t('import.time.days', { n: String(Math.floor(hours / 24)) })
+}
+
 /** 源会话显示名：标题优先；无标题时显示"工作区名 · 新会话"（工作区 = cwd 基名）；
- * 无工作区信息时回退会话 id（仍可辨识）。 */
+ * 连工作区信息都没有时显示"新会话"（v13.1：不裸展示 id——id 在会话清单中始终可见）。 */
 function sessionTitle(session: RefLibSourceSession, t: RefLibImportProps['t']): string {
   if (session.title !== undefined && session.title !== '') return session.title
   if (session.cwd !== undefined && session.cwd !== '') {
     return `${libBasename(session.cwd)} · ${t('import.session.new')}`
   }
-  return session.sessionId
+  return t('import.session.new')
 }
 
 /** 可用状态徽标文案。 */
@@ -260,14 +271,14 @@ export function RefLibImport(props: RefLibImportProps): ReactElement {
       ? t('import.title')
       : step === 'picks'
         ? t('import.picks.title')
-        : t('import.conflicts.title', { count: String(dupCount) })
+        : t('import.conflicts.title')
 
   const description =
     step === 'sessions'
       ? t('import.hint')
       : step === 'picks' && source !== null
         ? t('import.picks.source', { session: sessionTitle(source, t) })
-        : t('import.conflicts.hint')
+        : t('import.conflicts.count', { count: String(dupCount) })
 
   return (
     <Modal
@@ -291,6 +302,7 @@ export function RefLibImport(props: RefLibImportProps): ReactElement {
             <span>{flowError}</span>
           </div>
         )}
+        <div className="reflib-importScroll">
         {step === 'sessions' && (
           <>
             {sessions === null ? (
@@ -322,6 +334,14 @@ export function RefLibImport(props: RefLibImportProps): ReactElement {
                         <span className="reflib-importSessionTitle">{name}</span>
                         <span className="reflib-importSessionMeta">
                           {t('import.sessions.count', { count: String(session.count), available: String(session.available) })}
+                          {session.count - session.available > 0 && (
+                            <span className="reflib-importSessionUnavailable">
+                              {' · '}
+                              {t('import.sessions.unavailable', { count: String(session.count - session.available) })}
+                            </span>
+                          )}
+                          {' · '}
+                          {t('import.updated', { time: timeAgo(session.updatedAt, t) })}
                         </span>
                       </span>
                     </button>
@@ -523,6 +543,7 @@ export function RefLibImport(props: RefLibImportProps): ReactElement {
           </div>
         )}
 
+        </div>
         <div className="reflib-divider" />
         <div className="reflib-importFoot">
           {step === 'picks' && (

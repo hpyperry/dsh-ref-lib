@@ -184,7 +184,8 @@ export function makeRefLibRoutes(deps: RefLibRouteDeps): WebRoute[] {
           const url = new URL(req.url ?? '/', 'http://localhost')
           const session = requireSession(res, url.searchParams.get('session'))
           if (session === undefined) return
-          writeJson(res, 200, { libs: refLibs.list(session) })
+          // v13：展示倒序（最近添加在前）；存储仍为添加正序（fork 继承确定性快照不受影响）。
+          writeJson(res, 200, { libs: [...refLibs.list(session)].reverse() })
         } catch (error) {
           writeError(res, error)
         }
@@ -310,7 +311,7 @@ export function makeRefLibRoutes(deps: RefLibRouteDeps): WebRoute[] {
           }
           // 跨会话导入的**源**读取：只读 sidecar，**不要求会话 live**（历史会话的
           // 参考库同样可导入）。与 GET /list（当前 live 会话、实时探测）区分。
-          writeJson(res, 200, { libs: refLibs.readSessionLibs(sessionId) })
+          writeJson(res, 200, { libs: [...refLibs.readSessionLibs(sessionId)].reverse() })
         } catch (error) {
           writeError(res, error)
         }

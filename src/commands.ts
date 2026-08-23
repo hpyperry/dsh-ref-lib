@@ -11,6 +11,7 @@ export type RefLibCommand =
   | { readonly kind: 'list' }
   | { readonly kind: 'add'; readonly path: string; readonly note?: string }
   | { readonly kind: 'remove'; readonly id: string }
+  | { readonly kind: 'import'; readonly source: string; readonly paths: readonly string[] }
 
 /** 解析失败的结果（含给用户看的错误文案）。 */
 export interface RefLibCommandError {
@@ -22,7 +23,7 @@ export interface RefLibCommandError {
 export type RefLibCommandResult = RefLibCommand | RefLibCommandError
 
 /** 用法提示，供 help 与错误文案复用。 */
-export const REF_LIB_USAGE = '用法：/ref-lib add <path> [--note <用途>] | /ref-lib list | /ref-lib remove <id>'
+export const REF_LIB_USAGE = '用法：/ref-lib add <path> [--note <用途>] | /ref-lib list | /ref-lib remove <id> | /ref-lib import [会话] [路径...]'
 
 /**
  * 把用户输入的路径解析为绝对路径：展开 `~`/`~/`，相对路径基于给定基准目录
@@ -67,7 +68,42 @@ export function parseRefLibCommand(rawInput: string): RefLibCommandResult {
       return rest === ''
         ? { kind: 'error', text: `remove 需要条目 id。${REF_LIB_USAGE}` }
         : { kind: 'remove', id: rest }
+    case 'import': {
+      // `import [会话] [路径...]`：首个空白前为会话查询（id 或标题片段），其余为路径。
+      // 无参数 = 列出所有有参考库的会话清单（id 可发现）。
+      if (rest === '') return { kind: 'import', source: '', paths: [] }
+      const sourceAt = rest.search(/\s/)
+      const source = sourceAt === -1 ? rest : rest.slice(0, sourceAt)
+      const paths = sourceAt === -1 ? [] : rest.slice(sourceAt).trim().split(/\s+/).filter(Boolean)
+      return { kind: 'import', source, paths }
+    }
     default:
       return { kind: 'error', text: `未知子命令 "${verb}"。${REF_LIB_USAGE}` }
   }
+}
+
+
+/** 源会话概览行（listSessions 结果的命令层视角：id/title/count）。 */
+export interface SourceSessionLike {
+  readonly sessionId: string
+  readonly title?: string
+  readonly count: number
+}
+
+/**
+ * 解析 import 的会话查询（v13.1）：**id 精确匹配优先**；否则按标题包含匹配
+ * （不区分大小写）。返回所有匹配（调用方据数量分支：0 报错 / 1 直接 / 多列候选）。
+ * @param sources - 有参考库的源会话清单。
+ * @param query - 用户输入的查询（id 或标题片段）。
+ * @returns 匹配的会话（按输入顺序）。
+ */
+export function resolveSourceSessions(
+  sources: readonly SourceSessionLike[],
+  query: string,
+): SourceSessionLike[] {
+  const needle = query.trim().toLocaleLowerCase()
+  if (needle === '') return []
+  const byId = sources.filter((source) => source.sessionId === query.trim())
+  if (byId.length > 0) return byId
+  return sources.filter((source) => source.title?.toLocaleLowerCase().includes(needle) === true)
 }

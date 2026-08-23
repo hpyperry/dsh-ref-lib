@@ -281,32 +281,66 @@ const CSS = `
   min-width: 0;
 }
 
+/* 顶部状态行（对齐原型）：可用数绿点 / 失效数红点 */
+.reflib-statusline {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--dsw-alias-label-secondary);
+}
+.reflib-statuslineItem {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.reflib-statuslineDot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex: none;
+}
+.reflib-statuslineDot[data-tone='ok'] {
+  background: var(--dsw-alias-state-success-primary);
+}
+.reflib-statuslineDot[data-tone='err'] {
+  background: var(--dsw-alias-state-error-primary, var(--dsw-alias-state-error-primary));
+}
+
 /* 列表：固定最大高度 + 内滚动（旧实现整个面板滚动、无设计，此处分层） */
 .reflib-list {
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  max-height: 264px;
+  gap: 8px;
+  max-height: 320px;
   min-height: 0;
   overflow-y: auto;
   margin: 0 -8px;
   padding: 0 8px;
 }
 
+/* 条目行卡片（对齐原型 .row）：带边框 + 底色 + 圆角，hover 边框变亮 */
 .reflib-listItem {
   display: flex;
   flex-direction: column;
   min-width: 0;
+  border: 1px solid var(--dsw-alias-border-l1);
+  border-radius: 8px;
+  transition: border-color 120ms ease;
+}
+
+.reflib-listItem:hover {
+  border-color: var(--dsw-alias-border-l2);
 }
 
 .reflib-row {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   min-width: 0;
-  padding: 7px 8px;
-  border-radius: 10px;
-  background: transparent;
+  padding: 9px 10px;
+  border-radius: 8px;
   transition: background-color 120ms ease;
 }
 
@@ -368,13 +402,15 @@ const CSS = `
   white-space: nowrap;
 }
 
-/* 失效条目状态行（v9）：红色警示文案，位于路径之下 */
-.reflib-rowStatus {
-  overflow: hidden;
+/* 失效条目徽标（v13 UI 打磨）：名称旁红色胶囊，替代整行状态文字（减少三重表达） */
+.reflib-rowBadge {
+  flex: none;
+  padding: 1px 7px;
+  border: 1px solid var(--dsw-alias-state-error-primary);
+  border-radius: 9px;
   color: var(--dsw-alias-state-error-primary);
-  font-size: 12px;
-  line-height: 16px;
-  text-overflow: ellipsis;
+  font-size: 10px;
+  line-height: 14px;
   white-space: nowrap;
 }
 
@@ -439,7 +475,7 @@ const CSS = `
   margin: 2px 0 6px;
   padding: 8px 10px 10px;
   border-radius: 10px;
-  background: var(--dsw-alias-surface-inset, var(--dsw-alias-surface-raised));
+  background: var(--dsw-alias-bg-layer-1);
   min-width: 0;
 }
 
@@ -487,7 +523,7 @@ const CSS = `
   padding: 6px 8px;
   border: 1px solid var(--dsw-alias-border-l2);
   border-radius: 8px;
-  background: var(--dsw-alias-surface-field);
+  background: var(--dsw-alias-bg-layer-1);
   color: var(--dsw-alias-label-primary);
   font: inherit;
   font-size: 13px;
@@ -511,7 +547,7 @@ const CSS = `
   bottom: 6px;
   padding: 0 4px;
   border-radius: 4px;
-  background: var(--dsw-alias-surface-field);
+  background: var(--dsw-alias-bg-layer-1);
   font-size: 10px;
   line-height: 14px;
   color: var(--dsw-alias-label-caption);
@@ -587,7 +623,7 @@ const CSS = `
    宽度放宽到约 1/3 屏（上限 560px）；进入动画为柔和缓出（easeOutQuint 风格：
    280ms 浮起 + 淡入，位移 12px→0、scale 0.96→1），无回弹——更从容、高级感。 */
 .reflib-modal {
-  width: min(33vw, 560px);
+  width: min(52vw, 720px);
   animation: reflib-pop 280ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
@@ -619,7 +655,7 @@ const CSS = `
 .reflib-add {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 8px;
   min-width: 0;
 }
 
@@ -653,13 +689,12 @@ const CSS = `
 
 /* 全宽「添加」主按钮 */
 .reflib-addSubmit {
-  width: 100%;
+  flex: none;
 }
 
-.reflib-addHint {
-  font-size: 11px;
-  line-height: 16px;
-  color: var(--dsw-alias-label-caption);
+/* 从会话导入：与添加按钮同排（对齐原型：输入 + 添加 + 从会话导入 一行） */
+.reflib-importOpen {
+  flex: none;
 }
 
 /* ── /ref-lib 命令结果卡片（conversation.chat.commandview）── */
@@ -765,14 +800,23 @@ const CSS = `
   flex-direction: column;
   gap: 10px;
   min-width: 0;
-  max-height: 60vh;
+}
+
+/* v13：仅内容区滚动（会话/条目/diff 列表），错误条与底部操作固定 */
+.reflib-importScroll {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+  min-height: 0;
+  max-height: 52vh;
   overflow-y: auto;
 }
 
 .reflib-importList {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 8px;
 }
 
 /* 会话选择行 */
@@ -782,8 +826,8 @@ const CSS = `
   gap: 12px;
   padding: 12px 14px;
   border: 1px solid var(--dsw-alias-border-l1);
-  border-radius: var(--dsw-radius-sm, 6px);
-  background: var(--dsw-alias-bg-2, transparent);
+  border-radius: var(--dsw-radius-sm, 8px);
+  background: transparent;
   color: var(--dsw-alias-label-primary);
   font: inherit;
   font-size: 13px;
@@ -792,7 +836,7 @@ const CSS = `
   transition: border-color 120ms ease, background-color 120ms ease;
 }
 .reflib-importSession:hover {
-  border-color: var(--dsw-alias-interactive-bg-hover);
+  border-color: var(--dsw-alias-border-l2);
   background: var(--dsw-alias-interactive-bg-hover);
 }
 .reflib-importSession:disabled {
@@ -818,6 +862,9 @@ const CSS = `
   font-size: 12px;
   color: var(--dsw-alias-label-secondary);
 }
+.reflib-importSessionUnavailable {
+  color: var(--dsw-alias-state-error-primary);
+}
 
 /* 全选行（三态） */
 .reflib-importSelectAll {
@@ -827,7 +874,11 @@ const CSS = `
   padding: 8px 12px;
   border: 1px dashed var(--dsw-alias-border-l2);
   border-radius: var(--dsw-radius-sm, 6px);
-  background: color-mix(in srgb, var(--dsw-accent, #4d9fff) 6%, transparent);
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  /* 吸顶时背景需不透明（品牌 6% 混合 Modal 内容背景 bg-layer-2），否则下方条目透出 */
+  background: color-mix(in srgb, var(--dsw-alias-state-business-primary) 6%, var(--dsw-alias-bg-layer-2));
   color: var(--dsw-alias-label-primary);
   font: inherit;
   font-size: 12px;
@@ -835,7 +886,7 @@ const CSS = `
   cursor: pointer;
 }
 .reflib-importSelectAll:hover {
-  border-color: var(--dsw-accent, #4d9fff);
+  border-color: var(--dsw-alias-state-business-primary);
 }
 .reflib-importSelectAll:disabled {
   opacity: 0.55;
@@ -865,19 +916,19 @@ const CSS = `
   justify-content: center;
   font-size: 10px;
   line-height: 1;
-  color: #0b1020;
+  color: var(--dsw-alias-label-primary-foreground);
 }
 .reflib-importCheckbox[data-state='checked'] {
-  background: var(--dsw-accent, #4d9fff);
-  border-color: var(--dsw-accent, #4d9fff);
+  background: var(--dsw-alias-state-business-primary);
+  border-color: var(--dsw-alias-state-business-primary);
 }
 .reflib-importCheckbox[data-state='indet'] {
-  background: color-mix(in srgb, var(--dsw-accent, #4d9fff) 30%, transparent);
-  border-color: var(--dsw-accent, #4d9fff);
+  background: color-mix(in srgb, var(--dsw-alias-state-business-primary) 30%, transparent);
+  border-color: var(--dsw-alias-state-business-primary);
 }
 .reflib-importCheckbox[data-state='indet']::after {
   content: '–';
-  color: #0b1020;
+  color: var(--dsw-alias-label-primary-foreground);
   font-size: 12px;
 }
 
@@ -888,8 +939,8 @@ const CSS = `
   gap: 12px;
   padding: 11px 14px;
   border: 1px solid var(--dsw-alias-border-l1);
-  border-radius: var(--dsw-radius-sm, 6px);
-  background: var(--dsw-alias-bg-2, transparent);
+  border-radius: var(--dsw-radius-sm, 8px);
+  background: transparent;
   color: var(--dsw-alias-label-primary);
   font: inherit;
   font-size: 12px;
@@ -898,9 +949,10 @@ const CSS = `
 }
 .reflib-importPick:hover {
   border-color: var(--dsw-alias-border-l2);
+  background: var(--dsw-alias-interactive-bg-hover);
 }
 .reflib-importPick[data-selected] {
-  border-color: var(--dsw-accent, #4d9fff);
+  border-color: var(--dsw-alias-state-business-primary);
 }
 .reflib-importPickBody {
   display: flex;
@@ -927,8 +979,8 @@ const CSS = `
 .reflib-importDup {
   flex-shrink: 0;
   font-size: 10px;
-  color: var(--dsw-warning, #d29922);
-  border: 1px solid var(--dsw-warning, #d29922);
+  color: var(--dsw-alias-state-warn-primary);
+  border: 1px solid var(--dsw-alias-state-warn-primary);
   border-radius: 9px;
   padding: 1px 7px;
   white-space: nowrap;
@@ -943,8 +995,8 @@ const CSS = `
   white-space: nowrap;
 }
 .reflib-importStatusBadge[data-tone='err'] {
-  color: var(--dsw-alias-state-error-primary, var(--dsw-danger, #e5534b));
-  border: 1px solid var(--dsw-alias-state-error-primary, var(--dsw-danger, #e5534b));
+  color: var(--dsw-alias-state-error-primary, var(--dsw-alias-state-error-primary));
+  border: 1px solid var(--dsw-alias-state-error-primary, var(--dsw-alias-state-error-primary));
 }
 
 /* 冲突 diff */
@@ -972,7 +1024,7 @@ const CSS = `
   border-bottom: 1px solid var(--dsw-alias-border-l1);
 }
 .reflib-importConflictWarn {
-  color: var(--dsw-warning, #d29922);
+  color: var(--dsw-alias-state-warn-primary);
   flex-shrink: 0;
 }
 .reflib-importConflictPath {
@@ -1012,12 +1064,12 @@ const CSS = `
   align-self: flex-start;
 }
 .reflib-importSide[data-side='mine'] .reflib-importSideTag {
-  color: var(--dsw-accent, #4d9fff);
-  border-color: var(--dsw-accent, #4d9fff);
+  color: var(--dsw-alias-state-business-primary);
+  border-color: var(--dsw-alias-state-business-primary);
 }
 .reflib-importSide[data-side='incoming'] .reflib-importSideTag {
-  color: var(--dsw-success, #3fb96a);
-  border-color: var(--dsw-success, #3fb96a);
+  color: var(--dsw-alias-state-success-primary);
+  border-color: var(--dsw-alias-state-success-primary);
 }
 .reflib-importSidePath {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
@@ -1029,19 +1081,26 @@ const CSS = `
   color: var(--dsw-alias-label-secondary);
   word-break: break-word;
 }
+/* diff 高亮：仅差异字段着色——mine 侧红（对应原型 .hl-mine / git diff 减号）、
+   import 侧绿（对应原型 .hl-imp / git diff 加号）。 */
 .reflib-importSideNote[data-diff] {
-  background: color-mix(in srgb, var(--dsw-accent, #4d9fff) 12%, transparent);
   border-radius: 3px;
+}
+.reflib-importSide[data-side='mine'] .reflib-importSideNote[data-diff] {
+  background: color-mix(in srgb, var(--dsw-alias-state-error-primary) 12%, transparent);
+}
+.reflib-importSide[data-side='incoming'] .reflib-importSideNote[data-diff] {
+  background: color-mix(in srgb, var(--dsw-alias-state-success-primary) 12%, transparent);
 }
 .reflib-importSideStatus {
   font-size: 12px;
   color: var(--dsw-alias-label-secondary);
 }
 .reflib-importSideStatus[data-tone='ok'] {
-  color: var(--dsw-success, #3fb96a);
+  color: var(--dsw-alias-state-success-primary);
 }
 .reflib-importSideStatus[data-tone='err'] {
-  color: var(--dsw-danger, #e5534b);
+  color: var(--dsw-alias-state-error-primary);
 }
 .reflib-importVs {
   display: flex;
@@ -1073,14 +1132,14 @@ const CSS = `
   cursor: pointer;
 }
 .reflib-importChoice[data-active][data-tone='mine'] {
-  border-color: var(--dsw-danger, #e5534b);
-  color: var(--dsw-danger, #e5534b);
-  background: color-mix(in srgb, var(--dsw-danger, #e5534b) 10%, transparent);
+  border-color: var(--dsw-alias-state-error-primary);
+  color: var(--dsw-alias-state-error-primary);
+  background: color-mix(in srgb, var(--dsw-alias-state-error-primary) 10%, transparent);
 }
 .reflib-importChoice[data-active][data-tone='import'] {
-  border-color: var(--dsw-success, #3fb96a);
-  color: var(--dsw-success, #3fb96a);
-  background: color-mix(in srgb, var(--dsw-success, #3fb96a) 10%, transparent);
+  border-color: var(--dsw-alias-state-success-primary);
+  color: var(--dsw-alias-state-success-primary);
+  background: color-mix(in srgb, var(--dsw-alias-state-success-primary) 10%, transparent);
 }
 .reflib-importChoice:disabled {
   opacity: 0.6;
@@ -1093,6 +1152,7 @@ const CSS = `
   align-items: center;
   justify-content: space-between;
   gap: 10px;
+  flex: none;
 }
 .reflib-importSummary {
   font-size: 12px;
@@ -1144,12 +1204,12 @@ const CSS = `
   align-self: flex-start;
 }
 .reflib-duplicateSide[data-side='mine'] .reflib-duplicateTag {
-  color: var(--dsw-accent, #4d9fff);
-  border-color: var(--dsw-accent, #4d9fff);
+  color: var(--dsw-alias-state-business-primary);
+  border-color: var(--dsw-alias-state-business-primary);
 }
 .reflib-duplicateSide[data-side='new'] .reflib-duplicateTag {
-  color: var(--dsw-success, #3fb96a);
-  border-color: var(--dsw-success, #3fb96a);
+  color: var(--dsw-alias-state-success-primary);
+  border-color: var(--dsw-alias-state-success-primary);
 }
 .reflib-duplicateNote {
   font-size: 12px;

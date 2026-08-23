@@ -29,8 +29,9 @@ import type {} from '@deepseek-ai/dsh-commands'
 import type {} from '@deepseek-ai/dsh-system-prompt'
 import type {} from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-host-webserver'
-import { parseRefLibCommand, REF_LIB_USAGE, resolveRefLibPath } from './commands.ts'
-import { renderLibList, renderRefLibs } from './render.ts'
+import { parseRefLibCommand, REF_LIB_USAGE, resolveRefLibPath, resolveSourceSessions } from './commands.ts'
+import { planImport } from './logic.ts'
+import { renderImportSessions, renderImportSource, renderLibList, renderRefLibs } from './render.ts'
 import { makeRefLibRoutes } from './routes.ts'
 import { RefLibDuplicateError, RefLibService, type RefLibServiceConfig } from './service.ts'
 
@@ -61,15 +62,15 @@ export class RefLibPlugin extends Service {
     ctx.inject(['commands'], (commandsCtx) => {
       commandsCtx.commands.register({
         name: 'ref-lib',
-        description: '管理本会话的只读参考库（add <path> [--note <用途>] / list / remove <id>）',
-        input: { hint: 'add <path> [--note <用途>] | list | remove <id>' },
+        description: '管理本会话的只读参考库（add <path> [--note <用途>] / list / remove <id> / import <会话> [路径...]）',
+        input: { hint: 'add <path> [--note <用途>] | list | remove <id> | import <会话> [路径...]' },
         handler: async (invocation) => {
           const parsed = parseRefLibCommand(invocation.rawInput)
           if (parsed.kind === 'error') return { kind: 'error', text: parsed.text }
           try {
             const session = invocation.agent.session
             if (parsed.kind === 'list') {
-              return { kind: 'success', text: renderLibList(refLibs.list(session)) }
+              return { kind: 'success', text: renderLibList([...refLibs.list(session)].reverse()) }
             }
             if (parsed.kind === 'add') {
               // 相对路径基于当前会话工作区解析（`~` 亦展开）。
@@ -77,6 +78,49 @@ export class RefLibPlugin extends Service {
               const entry = await refLibs.add(session, resolveRefLibPath(parsed.path, base), parsed.note)
               const note = entry.note === undefined ? '' : `（${entry.note}）`
               return { kind: 'success', text: `已添加只读参考库：${entry.path}${note}` }
+            }
+            if (parsed.kind === 'import') {
+              // 无会话参数：列出所有有参考库的会话（id + 标题 + 条目数），让 id 可发现。
+              const sources = await refLibs.listSessions(session.id)
+              if (parsed.source === '') {
+                return { kind: 'success', text: renderImportSessions(sources) }
+              }
+              // 会话解析：id 精确优先，否则标题模糊；多匹配时列候选让用户挑。
+              const matched = resolveSourceSessions(sources, parsed.source)
+              if (matched.length === 0) {
+                return {
+                  kind: 'error',
+                  text: `未找到会话 "${parsed.source}"（可用 /ref-lib import 查看有参考库的会话清单）。${REF_LIB_USAGE}`,
+                }
+              }
+              if (matched.length > 1) {
+                return { kind: 'success', text: renderImportSessions(matched) }
+              }
+              const sourceId = matched[0]!.sessionId
+              const mine = refLibs.list(session)
+              const sourceLibs = refLibs.readSessionLibs(sourceId)
+              if (sourceLibs.length === 0) {
+                return { kind: 'error', text: `源会话没有参考库：${sourceId}` }
+              }
+              // 无路径参数：列出源会话条目清单（供挑选后按路径导入）。
+              if (parsed.paths.length === 0) {
+                return { kind: 'success', text: renderImportSource(sourceId, sourceLibs) }
+              }
+              const requested = sourceLibs.filter((entry) => parsed.paths.includes(entry.path))
+              if (requested.length === 0) {
+                return {
+                  kind: 'error',
+                  text: `源会话中未找到匹配的路径（可用 /ref-lib import ${sourceId} 查看清单）。${REF_LIB_USAGE}`,
+                }
+              }
+              // 命令无法交互决策：冲突条目（当前会话同路径）一律保留现有、跳过。
+              const plan = planImport(mine, requested, () => 'mine')
+              const { added } = await refLibs.importEntries(session, plan)
+              const skipped = requested.length - added.length
+              return {
+                kind: 'success',
+                text: `已导入 ${added.length} 个参考库${skipped > 0 ? `（跳过 ${skipped} 个与当前会话重复的条目，覆盖请用参考库面板）` : ''}`,
+              }
             }
             await refLibs.remove(session, parsed.id)
             return { kind: 'success', text: `已移除参考库条目：${parsed.id}` }
@@ -100,7 +144,7 @@ export class RefLibPlugin extends Service {
         order: 150,
         text: (context) => {
           const session = context.agent?.session
-          return session === undefined ? '' : renderRefLibs(refLibs.list(session))
+          return session === undefined ? '' : renderRefLibs([...refLibs.list(session)].reverse())
         },
       })
     })
