@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import {
   extractReadmeTitle,
   NOTE_MAX_LENGTH,
+  RefLibDuplicateError,
   RefLibNoteError,
   RefLibPathError,
   RefLibService,
@@ -285,13 +286,17 @@ describe('RefLibService v3（per-session sidecar）', () => {
     expect(entry.note).toBeUndefined()
   })
 
-  it('add 同路径带不同 note 时更新用途说明', async () => {
+  it('add 同路径带不同 note 时抛 RefLibDuplicateError（v12：不再静默覆盖；改用途走 setNote）', async () => {
     const dir = join(tmp, 'lib-update')
     await mkdir(dir)
     const service = new RefLibService(new Context(), { root: tmp })
     const session = fakeSession()
     const first = await service.add(session, dir, '旧用途')
-    const updated = await service.add(session, dir, '新用途')
+    const error = await service.add(session, dir, '新用途').catch((e: unknown) => e)
+    expect(error).toBeInstanceOf(RefLibDuplicateError)
+    expect((error as RefLibDuplicateError).entry).toEqual(first)
+    // 显式改用途入口：setNote
+    const updated = await service.setNote(session, first.id, '新用途')
     expect(updated.id).toBe(first.id)
     expect(updated.note).toBe('新用途')
     expect(service.list(session)).toHaveLength(1)
@@ -536,5 +541,240 @@ describe('extractReadmeTitle', () => {
   it('超长标题截断到 NOTE_MAX_LENGTH', () => {
     const long = 't'.repeat(NOTE_MAX_LENGTH + 10)
     expect(extractReadmeTitle(`# ${long}`)).toBe('t'.repeat(NOTE_MAX_LENGTH))
+  })
+})
+
+describe('RefLibService v12（跨会话导入）', () => {
+  let tmp: string
+
+  beforeEach(async () => {
+    tmp = await mkdtemp(join(process.cwd(), 'tests/.tmp-'))
+  })
+
+  afterEach(async () => {
+    await rm(tmp, { recursive: true, force: true })
+  })
+
+  it('importEntries：新增条目重新铸造 id、note 保持源值、一次写盘', async () => {
+    const dir = join(tmp, 'lib-a')
+    await mkdir(dir)
+    await writeFile(join(dir, 'README.md'), '# 自动标题（不应被采用）\n')
+    const service = new RefLibService(new Context(), { root: tmp })
+    const session = fakeSession()
+    const result = await service.importEntries(session, {
+      additions: [{ path: dir, note: '源会话的 note' }],
+      replacements: [],
+    })
+    expect(result.added).toHaveLength(1)
+    const entry = result.added[0]!
+    // 快照语义：note 用源值（不提取 README 标题）；id 为重新铸造的 UUID。
+    expect(entry.note).toBe('源会话的 note')
+    expect(entry.path).toBe(dir)
+    expect(entry.status).toBe('available')
+    expect(entry.id).toMatch(/^[0-9a-f-]{36}$/)
+    const stored = await readSidecar(tmp, session.id)
+    expect(stored).toHaveLength(1)
+    expect(stored[0]).toEqual(entry)
+  })
+
+  it('importEntries：新增条目路径当前不可用 → RefLibPathError', async () => {
+    const service = new RefLibService(new Context(), { root: tmp })
+    const session = fakeSession()
+    await expect(
+      service.importEntries(session, { additions: [{ path: join(tmp, 'missing') }], replacements: [] }),
+    ).rejects.toBeInstanceOf(RefLibPathError)
+  })
+
+  it('importEntries：replacements 以导入侧 note 更新现有条目（保留现有 id），undefined 清除 note', async () => {
+    const dir = join(tmp, 'lib-a')
+    await mkdir(dir)
+    const service = new RefLibService(new Context(), { root: tmp })
+    const session = fakeSession()
+    const original = await service.add(session, dir, '原始 note')
+    // 替换 note
+    const withNote = await service.importEntries(session, {
+      additions: [],
+      replacements: [{ existingId: original.id, note: '导入的 note' }],
+    })
+    expect(withNote.replaced[0]).toMatchObject({ id: original.id, path: dir, note: '导入的 note' })
+    // 清除 note（导入侧无 note）
+    const cleared = await service.importEntries(session, {
+      additions: [],
+      replacements: [{ existingId: original.id }],
+    })
+    expect(cleared.replaced[0]?.note).toBeUndefined()
+    const stored = await readSidecar(tmp, session.id)
+    expect(stored).toHaveLength(1)
+    expect(stored[0]?.id).toBe(original.id)
+    expect(stored[0]?.note).toBeUndefined()
+  })
+
+  it('importEntries：replacements 未知 id → RefLibUnknownError；additions 与现有重复 → 幂等跳过', async () => {
+    const dir = join(tmp, 'lib-a')
+    await mkdir(dir)
+    const service = new RefLibService(new Context(), { root: tmp })
+    const session = fakeSession()
+    await expect(
+      service.importEntries(session, { additions: [], replacements: [{ existingId: 'nope' }] }),
+    ).rejects.toBeInstanceOf(RefLibUnknownError)
+    await service.add(session, dir)
+    const dup = await service.importEntries(session, { additions: [{ path: dir }], replacements: [] })
+    expect(dup.added).toHaveLength(0)
+  })
+
+  it('listSessions：只列有参考库的其他会话，排除当前，按 mtime 倒序', async () => {
+    const dir = join(tmp, 'lib-a')
+    await mkdir(dir)
+    const service = new RefLibService(new Context(), { root: tmp })
+    const sessionA = fakeSession()
+    const sessionB = fakeSession()
+    const current = fakeSession()
+    await service.add(sessionA, dir)
+    await service.add(sessionB, dir)
+    await service.add(current, dir)
+    const sources = await service.listSessions(current.id)
+    expect(sources.map((s) => s.sessionId).sort()).toEqual([sessionA.id, sessionB.id].sort())
+    for (const source of sources) {
+      expect(source.count).toBe(1)
+      expect(source.available).toBe(1)
+      expect(source.updatedAt).toBeGreaterThan(0)
+    }
+    // 无 sidecar 的会话（从未配置过）不出现
+    const none = await service.listSessions(fakeSession().id)
+    expect(none).toHaveLength(3)
+  })
+
+  it('listSessions：无 sessionQuery 服务时无标题（回退显示 id），标题异常不阻断', async () => {
+    const dir = join(tmp, 'lib-a')
+    await mkdir(dir)
+    const service = new RefLibService(new Context(), { root: tmp })
+    const sessionA = fakeSession()
+    await service.add(sessionA, dir)
+    const sources = await service.listSessions()
+    expect(sources).toHaveLength(1)
+    expect(sources[0]?.title).toBeUndefined()
+  })
+})
+
+describe('RefLibService v12（只读源读取）', () => {
+  let tmp: string
+
+  beforeEach(async () => {
+    tmp = await mkdtemp(join(process.cwd(), 'tests/.tmp-'))
+  })
+
+  afterEach(async () => {
+    await rm(tmp, { recursive: true, force: true })
+  })
+
+  it('readSessionLibs：无 sidecar 返回空列表；有 sidecar 原样返回（不探测不写盘）', async () => {
+    const dir = join(tmp, 'lib-a')
+    await mkdir(dir)
+    const service = new RefLibService(new Context(), { root: tmp })
+    const session = fakeSession()
+    expect(service.readSessionLibs(session.id)).toEqual([])
+    await service.add(session, dir)
+    const libs = service.readSessionLibs(session.id)
+    expect(libs).toHaveLength(1)
+    expect(libs[0]?.path).toBe(dir)
+    // 非 live 会话（未挂载）同样可读——模拟：直接写 sidecar 文件。
+    const other = fakeSession()
+    await service.add(other, dir)
+    const cold = service.readSessionLibs(other.id)
+    expect(cold).toHaveLength(1)
+  })
+})
+
+describe('RefLibService v12（add 重复不再静默覆盖）', () => {
+  let tmp: string
+
+  beforeEach(async () => {
+    tmp = await mkdtemp(join(process.cwd(), 'tests/.tmp-'))
+  })
+
+  afterEach(async () => {
+    await rm(tmp, { recursive: true, force: true })
+  })
+
+  it('同路径再次 add（无显式 note）→ 幂等返回现有条目，不覆盖 note', async () => {
+    const dir = join(tmp, 'lib-a')
+    await mkdir(dir)
+    await writeFile(join(dir, 'README.md'), '# README 标题\n')
+    const service = new RefLibService(new Context(), { root: tmp })
+    const session = fakeSession()
+    const first = await service.add(session, dir, '手动 note')
+    // 再次 add 不带 note：自动提取 README 标题，但**不覆盖**现有手动 note。
+    const again = await service.add(session, dir)
+    expect(again).toEqual(first)
+    expect(again.note).toBe('手动 note')
+    const stored = await readSidecar(tmp, session.id)
+    expect(stored).toHaveLength(1)
+    expect(stored[0]?.note).toBe('手动 note')
+  })
+
+  it('同路径 add 且显式 note 相同 → 幂等返回', async () => {
+    const dir = join(tmp, 'lib-a')
+    await mkdir(dir)
+    const service = new RefLibService(new Context(), { root: tmp })
+    const session = fakeSession()
+    await service.add(session, dir, 'same')
+    const again = await service.add(session, dir, 'same')
+    expect(again.note).toBe('same')
+  })
+
+  it('同路径 add 且显式 note 不同 → 抛 RefLibDuplicateError（携带现有条目）', async () => {
+    const dir = join(tmp, 'lib-a')
+    await mkdir(dir)
+    const service = new RefLibService(new Context(), { root: tmp })
+    const session = fakeSession()
+    const first = await service.add(session, dir, '原始 note')
+    const error = await service.add(session, dir, '新 note').catch((e: unknown) => e)
+    expect(error).toBeInstanceOf(RefLibDuplicateError)
+    expect((error as RefLibDuplicateError).entry).toEqual(first)
+    // 抛错后不落盘（现有条目未被修改）
+    const stored = await readSidecar(tmp, session.id)
+    expect(stored[0]?.note).toBe('原始 note')
+  })
+})
+
+describe('RefLibService v12.1（源读取实时探测、不写盘）', () => {
+  let tmp: string
+
+  beforeEach(async () => {
+    tmp = await mkdtemp(join(process.cwd(), 'tests/.tmp-'))
+  })
+
+  afterEach(async () => {
+    await rm(tmp, { recursive: true, force: true })
+  })
+
+  it('readSessionLibs 实时探测：目录删除后返回 missing（且不写回源 sidecar）', async () => {
+    const dir = join(tmp, 'lib-a')
+    await mkdir(dir)
+    const service = new RefLibService(new Context(), { root: tmp })
+    const session = fakeSession()
+    await service.add(session, dir)
+    // 模拟"从未打开过该会话"：目录被外部删除后，sidecar 仍记录 available。
+    await rm(dir, { recursive: true, force: true })
+    const libs = service.readSessionLibs(session.id)
+    expect(libs).toHaveLength(1)
+    expect(libs[0]?.status).toBe('missing')
+    // 不写回：sidecar 文件仍保持旧值（跨会话导入是只读参照）。
+    const stored = await readSidecar(tmp, session.id)
+    expect(stored[0]?.status).toBe('available')
+  })
+
+  it('listSessions 的 available 计数用实时探测结果', async () => {
+    const dir = join(tmp, 'lib-a')
+    await mkdir(dir)
+    const service = new RefLibService(new Context(), { root: tmp })
+    const sessionA = fakeSession()
+    const sessionB = fakeSession()
+    await service.add(sessionA, dir)
+    await service.add(sessionB, dir)
+    await rm(dir, { recursive: true, force: true })
+    const sources = await service.listSessions()
+    expect(sources).toHaveLength(2)
+    for (const source of sources) expect(source.available).toBe(0)
   })
 })

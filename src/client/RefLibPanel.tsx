@@ -59,6 +59,8 @@ export interface RefLibPanelProps {
   onUpdateNote: (id: string, note: string) => Promise<void>
   /** 唤起目录选择（browse/native），返回选中路径或 null（取消）——由面板填入路径字段，不直接添加。 */
   onBrowse: () => Promise<string | null>
+  /** 打开跨会话导入流程（v12：从其他会话挑选参考库条目）。 */
+  onImportOpen: () => void
 }
 
 /**
@@ -67,7 +69,7 @@ export interface RefLibPanelProps {
  * @returns 对话框元素（关闭时 Modal 返回 null）。
  */
 export function RefLibPanel(props: RefLibPanelProps): ReactElement {
-  const { open, onClose, libs, loading, busy, picking, removingId, error, t, onRemove, onAddPath, onUpdateNote, onBrowse } = props
+  const { open, onClose, libs, loading, busy, picking, removingId, error, t, onRemove, onAddPath, onUpdateNote, onBrowse, onImportOpen } = props
   const [draft, setDraft] = useState('')
   const [noteDraft, setNoteDraft] = useState('')
   // 详情展开：正在查看/编辑的条目 id + 编辑中的用途草稿。
@@ -337,6 +339,16 @@ export function RefLibPanel(props: RefLibPanelProps): ReactElement {
             {t('add.submit')}
           </Button>
           <span className="reflib-addHint">{t('add.hint')}</span>
+          <Button
+            variant="outline"
+            size="sm"
+            className="reflib-importOpen"
+            icon={<IconFolderOpen16 size={14} />}
+            disabled={busy || picking}
+            onClick={onImportOpen}
+          >
+            {t('import.open')}
+          </Button>
         </div>
       </div>
     </Modal>

@@ -27,13 +27,13 @@
 
 import { randomUUID } from 'node:crypto'
 import { readFile, realpath, stat } from 'node:fs/promises'
-import { existsSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { dshHomePath } from '@deepseek-ai/dsh-home-paths'
 import { Context, Service } from '@deepseek-ai/cordis'
 import type { Session } from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-session'
-import { foldRefLibs, removeLib, statusChanged, upsertLib } from './logic.ts'
+import { attachSessionMeta, foldRefLibs, probeLibs, removeLib, upsertLib, type ImportPlan, type RefLibSourceSessionRow, type SessionTitleObservation } from './logic.ts'
 import type { RefLibAvailability, RefLibEntry } from './spec.ts'
 import { hasControlCharacters, isRefLibEntry } from './validate.ts'
 
@@ -116,6 +116,18 @@ export class RefLibUnavailableError extends Error {
   }
 }
 
+/** add 的路径已注册（同 realpath 路径）且显式 note 不同：不再静默覆盖，
+ * 由调用方提示用户选择「保留现有 / 更新用途」（v12 修复历史静默覆盖行为）。 */
+export class RefLibDuplicateError extends Error {
+  /**
+   * @param entry - 现有条目（调用方据此展示 diff 或确认覆盖）。
+   */
+  constructor(readonly entry: RefLibEntry) {
+    super(`该目录已是参考库：${entry.path}`)
+    this.name = 'RefLibDuplicateError'
+  }
+}
+
 /** 从 README 文本提取首个 Markdown 标题（去 `#`、trim、限长）；无标题返回 undefined。 */
 export function extractReadmeTitle(content: string): string | undefined {
   for (const line of content.split('\n')) {
@@ -186,6 +198,37 @@ function encodeSegment(raw: string): string {
   return out
 }
 
+/** encodeSegment 的逆：把 sidecar 文件名还原为会话 id（畸形序列按原样保留）。 */
+function decodeSegment(encoded: string): string {
+  let out = ''
+  for (let i = 0; i < encoded.length; i++) {
+    const ch = encoded[i]!
+    if (ch !== '~') {
+      out += ch
+      continue
+    }
+    const hex = encoded.slice(i + 1, i + 5)
+    if (hex.length !== 4 || !/^[0-9A-Fa-f]{4}$/.test(hex)) {
+      out += ch
+      continue
+    }
+    out += String.fromCharCode(Number.parseInt(hex, 16))
+    i += 4
+  }
+  return out
+}
+
+/** 宿主 `ctx.sessionQuery` 服务的最小接口面（SessionQueryEngine 的子集，避免依赖其包类型）。 */
+interface SessionQueryLike {
+  readTitleSnapshots(
+    sessionIds: readonly string[],
+    signal?: AbortSignal,
+  ): Promise<readonly SessionTitleObservation[]>
+}
+
+/** re-export：源会话清单行（跨会话导入来源，含标题补全字段）。 */
+export type RefLibSourceSession = RefLibSourceSessionRow
+
 /**
  * 只读参考库注册表（**per-session**）：列表存为 dsh home 下 sidecar JSON
  * （`<dshHome>/plugin-data/ref-lib/<sessionId>.json`），会话隔离、随重启持久。
@@ -231,21 +274,18 @@ export class RefLibService extends Service {
    */
   private refreshAvailability(sessionId: string, libs: readonly RefLibEntry[]): readonly RefLibEntry[] {
     if (libs.length === 0) return libs
-    const now = Date.now()
-    let changed = false
-    const next = libs.map((entry) => {
-      const probe = probeAvailability(entry.path)
-      if (!statusChanged(entry, probe)) return entry
-      changed = true
-      return { ...entry, status: probe, checkedAt: now }
-    })
+    const { next, changed } = probeLibs(libs, probeAvailability, Date.now())
+    // 状态变化才写盘（v9：无变化零写盘）。
     if (changed) this.persistSync(sessionId, next)
     return next
   }
 
   /**
-   * 为当前会话注册一个只读参考库：realpath 规范化并校验为存在的目录；
-   * 同路径已注册时幂等返回现有条目。
+   * 为当前会话注册一个只读参考库：realpath 规范化并校验为存在的目录。
+   * 同路径已注册时**幂等返回现有条目**，不覆盖；若用户**显式**提供了与该条目
+   * 不同的 note，抛 {@link RefLibDuplicateError}（携带现有条目）——由调用方提示
+   * 用户选择「保留现有 / 更新用途」，不再静默覆盖（v12 修复历史行为；改用途的
+   * 显式入口是 `setNote` / 面板详情编辑）。
    * @param session - 目标会话。
    * @param path - 目录路径（相对路径按宿主 cwd 解析）。
    * @param note - 可选用途说明（注入上下文时展示）；空/undefined 时尝试自动提取
@@ -253,6 +293,7 @@ export class RefLibService extends Service {
    * @returns 新增（或已存在）的条目。
    * @throws {RefLibPathError} 路径不存在或不是目录。
    * @throws {RefLibNoteError} note 含控制字符。
+   * @throws {RefLibDuplicateError} 同路径已注册且显式 note 与现有不同（需用户确认）。
    */
   async add(session: Session, path: string, note?: string): Promise<RefLibEntry> {
     const canonical = await realpath(path).catch(() => {
@@ -265,20 +306,19 @@ export class RefLibService extends Service {
       throw new RefLibPathError(path, 'missing')
     })
     if (!info.isDirectory()) throw new RefLibPathError(path, 'not-directory')
-    // note：显式提供优先；否则自动提取 README 标题（IO 失败/无标题则 undefined）。
-    const noteValue = normalizeNote(note) ?? (await readReadmeTitle(canonical))
+    // 显式 note（用户提供）与自动 note（README 提取）分离：重复判定只看显式值。
+    const explicitNote = normalizeNote(note)
     const current = this.list(session)
     const existing = current.find((entry) => entry.path === canonical)
     if (existing !== undefined) {
-      // 同路径再次 add 且带不同 note：更新用途说明（兼作改用途入口）。
-      if (noteValue !== undefined && noteValue !== existing.note) {
-        const next = current.map((entry) => (entry.id === existing.id ? { ...entry, note: noteValue } : entry))
-        this.persistSync(session.id, next)
-        this.cacheSet(session.id, next)
-        return { ...existing, note: noteValue }
-      }
-      return existing
+      // 幂等：无显式 note（或与现有相同）→ 返回现有条目，不覆盖（README 自动
+      // 提取结果同样不覆盖现有 note——重复添加不应悄悄改变现有配置）。
+      if (explicitNote === undefined || explicitNote === existing.note) return existing
+      // 显式 note 与现有不同：不再静默覆盖，抛错由调用方提示用户确认。
+      throw new RefLibDuplicateError(existing)
     }
+    // 自动 note 仅在新增条目时提取（重复添加不重新提取，保持"添加即幂等"直觉）。
+    const noteValue = explicitNote ?? (await readReadmeTitle(canonical))
     const entry: RefLibEntry = {
       id: randomUUID(),
       path: canonical,
@@ -340,6 +380,138 @@ export class RefLibService extends Service {
     this.persistSync(session.id, next)
     this.cacheSet(session.id, next)
     return next.find((item) => item.id === id)!
+  }
+
+  /**
+   * 列出**配置过参考库**的其他会话（v12 跨会话导入的来源清单）。
+   * 枚举本插件的 sidecar 目录（`<root>/*.json`）——不扫描全部会话，只列有参考库的；
+   * 空列表会话不出现。会话标题经宿主 `ctx.sessionQuery.readTitleSnapshots` 补全
+   * （与宿主 `@session` 引用同源：`session/title` 事件折叠，**冷会话同样可读**）；
+   * 宿主无 sessionQuery 服务（非 web 组合）或读取失败时该会话无标题（UI 回退显示 id）。
+   * @param excludeSessionId - 排除的会话 id（通常是当前会话——导入给自己无意义）。
+   * @returns 按 sidecar 修改时间倒序（最近活跃在前）。
+   */
+  async listSessions(excludeSessionId?: string): Promise<RefLibSourceSession[]> {
+    const sources: RefLibSourceSession[] = []
+    let names: string[]
+    try {
+      names = readdirSync(this.root)
+    } catch {
+      return [] // root 尚未创建（没有任何会话配置过参考库）
+    }
+    for (const name of names) {
+      if (!name.endsWith('.json')) continue
+      const sessionId = decodeSegment(name.slice(0, -'.json'.length))
+      if (sessionId === excludeSessionId) continue
+      const file = join(this.root, name)
+      let mtime = 0
+      try {
+        mtime = statSync(file).mtimeMs
+      } catch {
+        continue
+      }
+      const libs = this.readSidecar(file)
+      if (libs === undefined || libs.length === 0) continue
+      // v12.1：available 计数用**实时探测**结果（未打开过的会话其 sidecar status 可能
+      // 停留在旧值——目录已删除仍记 available）。探测不写盘（跨会话导入是只读参照）。
+      const { next } = probeLibs(libs, probeAvailability, Date.now())
+      sources.push({
+        sessionId,
+        count: libs.length,
+        available: next.filter((entry) => entry.status === 'available').length,
+        updatedAt: mtime,
+      })
+    }
+    sources.sort((a, b) => b.updatedAt - a.updatedAt)
+    if (sources.length === 0) return sources
+    // 标题补全：宿主 sessionQuery 服务（精确读取走 persistence，不受 openAt: never 限制）。
+    try {
+      const query = this.ctx.get('sessionQuery') as SessionQueryLike | undefined
+      if (query === undefined) return sources
+      const observations = await query.readTitleSnapshots(sources.map((source) => source.sessionId))
+      return attachSessionMeta(sources, observations)
+    } catch (error) {
+      // 标题是展示性信息：宿主服务异常时降级为无标题（UI 回退显示 id），不阻断导入。
+      this.ctx.logger.warn(`ref-lib: 会话标题读取失败（降级显示会话 id）：${String(error)}`)
+      return sources
+    }
+  }
+
+  /**
+   * 只读读取某会话 sidecar 中的参考库条目（v12 跨会话导入的**源**读取）。
+   * 与 `list()` 不同：**不要求会话 live、不实时探测、不写盘**——源条目只作展示与
+   * 导入参照，导入到目标会话时才会重新校验/探测（importEntries）。历史会话
+   * （重启后未挂载）的参考库同样可导入。
+   * @param sessionId - 源会话 id。
+   * @returns 条目列表；无 sidecar 或文件畸形时返回空列表（与 listSessions 的
+   * 枚举口径一致——只列有参考库的会话）。
+   */
+  readSessionLibs(sessionId: string): readonly RefLibEntry[] {
+    const file = this.pathOf(sessionId)
+    if (!existsSync(file)) return []
+    const libs = this.readSidecar(file)
+    if (libs === undefined || libs.length === 0) return []
+    // v12.1：源读取**实时探测**（未打开过的会话其 status 可能停留在旧值）——
+    // 探测结果用于 UI 展示（失效徽标）与导入前置判断，**不写回源 sidecar**
+    // （跨会话导入是只读参照，不污染源数据；导入到目标时仍会重新校验）。
+    return probeLibs(libs, probeAvailability, Date.now()).next
+  }
+
+  /**
+   * 跨会话导入（v12）：把源会话的条目按用户决策写入当前会话。**快照语义、不回流**
+   * ——与 v10 fork 继承一致：新增条目**重新铸造 id**（副本独立身份）、note 保持源值
+   * （不重新提取 README）、冲突条目按「使用导入的」决策以导入侧 note 替换现有条目
+   * （保留现有 id，路径相同无需变更）。一次计算 + 一次原子写盘。
+   * @param session - 目标会话。
+   * @param plan - 导入规划（client 经 `planImport` 产生：additions 新增 / replacements 替换）。
+   * @returns 新增与替换后的条目（调用方用于刷新 UI）。
+   * @throws {RefLibPathError} 新增条目路径当前不可用（源会话配置后目录已删除/变更）。
+   * @throws {RefLibNoteError} note 含不允许的控制字符。
+   */
+  async importEntries(session: Session, plan: ImportPlan): Promise<{ added: RefLibEntry[]; replaced: RefLibEntry[] }> {
+    const current = this.list(session)
+    const added: RefLibEntry[] = []
+    const replaced: RefLibEntry[] = []
+    let next = current
+    for (const item of plan.additions) {
+      // 快照语义：路径仍须可用（当前环境校验），note 保持源值、不自动提取 README。
+      const canonical = await realpath(item.path).catch(() => {
+        throw new RefLibPathError(item.path, 'missing')
+      })
+      if (hasControlCharacters(canonical)) throw new RefLibPathError(canonical, 'unsafe')
+      const info = await stat(canonical).catch(() => {
+        throw new RefLibPathError(item.path, 'missing')
+      })
+      if (!info.isDirectory()) throw new RefLibPathError(item.path, 'not-directory')
+      const noteValue = normalizeNote(item.note)
+      // 防呆：与现有条目重复的 add 请求直接跳过（client 已分类，这里兜底幂等）。
+      if (next.some((entry) => entry.path === canonical)) continue
+      const entry: RefLibEntry = {
+        id: randomUUID(),
+        path: canonical,
+        status: 'available',
+        checkedAt: Date.now(),
+        ...(noteValue === undefined ? {} : { note: noteValue }),
+      }
+      next = upsertLib(next, entry)
+      added.push(entry)
+      continue
+    }
+    for (const item of plan.replacements) {
+      // replace：路径已存在，仅采纳导入侧 note（undefined 清除现有 note）。
+      const existing = next.find((entry) => entry.id === item.existingId)
+      if (existing === undefined) throw new RefLibUnknownError(item.existingId)
+      const noteValue = normalizeNote(item.note)
+      const updated = { ...existing, ...(noteValue === undefined ? {} : { note: noteValue }) }
+      if (noteValue === undefined) delete (updated as { note?: string }).note
+      next = next.map((entry) => (entry.id === existing.id ? updated : entry))
+      replaced.push(updated)
+    }
+    if (added.length > 0 || replaced.length > 0) {
+      this.persistSync(session.id, next)
+      this.cacheSet(session.id, next)
+    }
+    return { added, replaced }
   }
 
   /**

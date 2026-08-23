@@ -7,7 +7,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { Session } from '@deepseek-ai/dsh-session'
 import { describe, expect, it } from 'vitest'
 import { isLoopbackRequest, makeRefLibRoutes, MAX_JSON_BODY_BYTES } from '../src/routes.ts'
-import { RefLibNoteError, RefLibPathError, RefLibUnavailableError, RefLibUnknownError, type RefLibService } from '../src/service.ts'
+import { RefLibDuplicateError, RefLibNoteError, RefLibPathError, RefLibUnavailableError, RefLibUnknownError, type RefLibService } from '../src/service.ts'
 
 /** 假响应：捕获状态码与 body。 */
 function fakeRes(): { res: ServerResponse; out: { status: number; body: string } } {
@@ -315,5 +315,146 @@ describe('makeRefLibRoutes', () => {
     const { res, out } = fakeRes()
     await byPath('/api/ref-lib/add').handler(fakeReq({ method: 'GET', url: '/api/ref-lib/add' }), res)
     expect(out.status).toBe(405)
+  })
+})
+
+describe('makeRefLibRoutes（v12 跨会话导入）', () => {
+  const fakeSession = { id: 'session-live', header: { id: 'session-live', cwd: '/workspace' } } as unknown as Session
+
+  function boot() {
+    const listSessionsCalls: string[] = []
+    const importCalls: unknown[] = []
+    const refLibs = {
+      listSessions: (exclude?: string) => {
+        listSessionsCalls.push(exclude ?? '')
+        return [
+          { sessionId: 'session-other', count: 2, available: 1, updatedAt: 1000 },
+          { sessionId: 'session-old', count: 1, available: 1, updatedAt: 500 },
+        ]
+      },
+      importEntries: async (_session: unknown, plan: unknown) => {
+        importCalls.push(plan)
+        return { added: [{ id: 'new-1', path: '/lib/a', status: 'available' }], replaced: [] }
+      },
+    } as unknown as RefLibService
+    const resolveSession = (sessionId: string): Session | undefined =>
+      sessionId === 'session-live' ? fakeSession : undefined
+    const routes = makeRefLibRoutes({ refLibs, resolveSession, log: () => {} })
+    const byPath = (path: string) => routes.find((route) => route.path === path)!
+    return { listSessionsCalls, importCalls, byPath }
+  }
+
+  it('GET sessions 返回来源清单并排除当前会话', async () => {
+    const { listSessionsCalls, byPath } = boot()
+    const { res, out } = fakeRes()
+    await byPath('/api/ref-lib/sessions').handler(
+      fakeReq({ url: '/api/ref-lib/sessions?session=session-live' }),
+      res,
+    )
+    expect(out.status).toBe(200)
+    expect(listSessionsCalls).toEqual(['session-live'])
+    expect(JSON.parse(out.body)).toEqual({
+      sessions: [
+        { sessionId: 'session-other', count: 2, available: 1, updatedAt: 1000 },
+        { sessionId: 'session-old', count: 1, available: 1, updatedAt: 500 },
+      ],
+    })
+  })
+
+  it('GET sessions 缺当前会话参数 → 400', async () => {
+    const { byPath } = boot()
+    const { res, out } = fakeRes()
+    await byPath('/api/ref-lib/sessions').handler(fakeReq({ url: '/api/ref-lib/sessions' }), res)
+    expect(out.status).toBe(400)
+  })
+
+  it('POST import 提交规划并返回 { added, replaced }', async () => {
+    const { importCalls, byPath } = boot()
+    const { res, out } = fakeRes()
+    await byPath('/api/ref-lib/import').handler(
+      fakeReq({
+        method: 'POST',
+        body: {
+          session: 'session-live',
+          plan: { additions: [{ path: '/lib/a', note: 'x' }], replacements: [{ existingId: 'e1' }] },
+        },
+      }),
+      res,
+    )
+    expect(out.status).toBe(200)
+    expect(importCalls).toEqual([
+      { additions: [{ path: '/lib/a', note: 'x' }], replacements: [{ existingId: 'e1' }] },
+    ])
+    expect(JSON.parse(out.body)).toEqual({ added: [{ id: 'new-1', path: '/lib/a', status: 'available' }], replaced: [] })
+  })
+
+  it('POST import 畸形 plan → 400', async () => {
+    const { byPath } = boot()
+    for (const body of [
+      { session: 'session-live', plan: { additions: 'x', replacements: [] } },
+      { session: 'session-live', plan: { additions: [{ path: 42 }], replacements: [] } },
+      { session: 'session-live', plan: { additions: [], replacements: [{ existingId: 42 }] } },
+      { session: 'session-live' },
+    ]) {
+      const { res, out } = fakeRes()
+      await byPath('/api/ref-lib/import').handler(fakeReq({ method: 'POST', body }), res)
+      expect(out.status).toBe(400)
+    }
+  })
+})
+
+describe('makeRefLibRoutes（v12 只读 source 路由）', () => {
+  it('GET source 读取历史会话 sidecar（不要求 live）', async () => {
+    const refLibs = {
+      readSessionLibs: (sessionId: string) =>
+        sessionId === 'session-history' ? [{ id: 'h1', path: '/lib/history' }] : [],
+    } as unknown as RefLibService
+    const routes = makeRefLibRoutes({ refLibs, resolveSession: () => undefined, log: () => {} })
+    const route = routes.find((r) => r.path === '/api/ref-lib/source')!
+    const { res, out } = fakeRes()
+    await route.handler(fakeReq({ url: '/api/ref-lib/source?session=session-history' }), res)
+    expect(out.status).toBe(200)
+    expect(JSON.parse(out.body)).toEqual({ libs: [{ id: 'h1', path: '/lib/history' }] })
+  })
+
+  it('GET source 无 sidecar 会话返回空列表', async () => {
+    const refLibs = { readSessionLibs: () => [] } as unknown as RefLibService
+    const routes = makeRefLibRoutes({ refLibs, resolveSession: () => undefined, log: () => {} })
+    const route = routes.find((r) => r.path === '/api/ref-lib/source')!
+    const { res, out } = fakeRes()
+    await route.handler(fakeReq({ url: '/api/ref-lib/source?session=session-none' }), res)
+    expect(out.status).toBe(200)
+    expect(JSON.parse(out.body)).toEqual({ libs: [] })
+  })
+
+  it('GET source 缺 session 参数 → 400', async () => {
+    const refLibs = { readSessionLibs: () => [] } as unknown as RefLibService
+    const routes = makeRefLibRoutes({ refLibs, resolveSession: () => undefined, log: () => {} })
+    const route = routes.find((r) => r.path === '/api/ref-lib/source')!
+    const { res, out } = fakeRes()
+    await route.handler(fakeReq({ url: '/api/ref-lib/source' }), res)
+    expect(out.status).toBe(400)
+  })
+})
+
+describe('makeRefLibRoutes（v12 add 重复 400）', () => {
+  it('duplicate 错误映射为 400 + code + entry', async () => {
+    const refLibs = {
+      add: async () => {
+        throw new RefLibDuplicateError({ id: 'e1', path: '/lib/a', note: '现有' })
+      },
+    } as unknown as RefLibService
+    const resolveSession = (id: string): Session | undefined =>
+      id === 'session-live' ? ({ id: 'session-live', header: { id: 'session-live', cwd: '/w' } } as unknown as Session) : undefined
+    const routes = makeRefLibRoutes({ refLibs, resolveSession, log: () => {} })
+    const route = routes.find((r) => r.path === '/api/ref-lib/add')!
+    const { res, out } = fakeRes()
+    await route.handler(fakeReq({ method: 'POST', body: { session: 'session-live', path: '/lib/a', note: '新' } }), res)
+    expect(out.status).toBe(400)
+    expect(JSON.parse(out.body)).toEqual({
+      error: '该目录已是参考库：/lib/a',
+      code: 'ref-lib/duplicate',
+      entry: { id: 'e1', path: '/lib/a', note: '现有' },
+    })
   })
 })

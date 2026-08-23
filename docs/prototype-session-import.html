@@ -1,0 +1,531 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ref-lib 原型：从其他会话导入参考库</title>
+<style>
+  /* ── 仿 dsh 暗色主题（--dsw-* 令牌近似值） ───────────────────── */
+  :root {
+    --bg-page: #18181c;
+    --bg-panel: #212127;
+    --bg-row-hover: #2a2a32;
+    --bg-input: #17171b;
+    --border: #383842;
+    --border-strong: #4a4a55;
+    --text-1: #e8e8ea;
+    --text-2: #9b9ba4;
+    --text-3: #6c6c75;
+    --accent: #4d9fff;
+    --accent-dim: #2b4a75;
+    --ok: #3fb96a;
+    --warn: #d29922;
+    --err: #e5534b;
+    --radius: 8px;
+    --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Microsoft YaHei", sans-serif;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--bg-page); color: var(--text-1);
+    font: 13px/1.6 var(--font);
+    min-height: 100vh;
+    display: flex; flex-direction: column; align-items: center;
+    padding: 32px 16px 64px;
+  }
+  h1 { font-size: 16px; font-weight: 600; margin-bottom: 4px; }
+  .sub { color: var(--text-2); font-size: 12px; margin-bottom: 24px; }
+  .sub code { background: var(--bg-input); border: 1px solid var(--border); padding: 1px 6px; border-radius: 4px; }
+
+  /* ── 面板卡片（模拟 ref-lib Modal） ─────────────────────────── */
+  .panel {
+    width: 720px; max-width: 100%;
+    background: var(--bg-panel);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    box-shadow: 0 12px 40px rgba(0,0,0,.45);
+    overflow: hidden;
+  }
+  .panel-head {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 14px 16px; border-bottom: 1px solid var(--border);
+  }
+  .panel-title { font-size: 14px; font-weight: 600; }
+  .panel-title .count { color: var(--text-2); font-weight: 400; margin-left: 6px; }
+  .close { background: none; border: none; color: var(--text-2); font-size: 16px; cursor: pointer; }
+  .close:hover { color: var(--text-1); }
+
+  .panel-body { padding: 12px 16px 16px; }
+
+  /* 状态行 */
+  .statusline { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--text-2); margin-bottom: 12px; }
+  .statusline .dot { width: 7px; height: 7px; border-radius: 50%; }
+  .dot.ok { background: var(--ok); } .dot.err { background: var(--err); } .dot.warn { background: var(--warn); }
+
+  /* 条目行 */
+  .row {
+    display: flex; align-items: center; gap: 10px;
+    padding: 9px 10px; border: 1px solid var(--border); border-radius: var(--radius);
+    margin-bottom: 8px; background: var(--bg-input);
+  }
+  .row:hover { border-color: var(--border-strong); }
+  .row .main { flex: 1; min-width: 0; }
+  .row .name { font-weight: 500; }
+  .row .path { color: var(--text-2); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .row .note { color: var(--text-3); font-size: 11px; font-style: italic; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .badge {
+    flex-shrink: 0; font-size: 10px; padding: 1px 7px; border-radius: 9px;
+    border: 1px solid; background: transparent;
+  }
+  .badge.ok { color: var(--ok); border-color: var(--ok); }
+  .badge.err { color: var(--err); border-color: var(--err); }
+  .badge.warn { color: var(--warn); border-color: var(--warn); }
+  .badge.mine { color: var(--accent); border-color: var(--accent); }
+
+  .btn {
+    flex-shrink: 0; font-size: 12px; padding: 5px 12px; border-radius: 6px;
+    border: 1px solid var(--border-strong); background: var(--bg-row-hover); color: var(--text-1);
+    cursor: pointer; transition: filter 120ms ease;
+  }
+  .btn:hover { filter: brightness(1.15); }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: #0b1020; font-weight: 600; }
+  .btn.ghost { background: transparent; border-color: transparent; color: var(--text-2); }
+  .btn:disabled { opacity: .45; cursor: not-allowed; }
+
+  /* ── 弹窗 ──────────────────────────────────────────────────── */
+  .overlay {
+    position: fixed; inset: 0; background: rgba(8,8,10,.62);
+    display: flex; align-items: center; justify-content: center; z-index: 50;
+  }
+  .overlay[hidden] { display: none; }
+  .dialog {
+    width: 680px; max-width: 94vw; max-height: 84vh;
+    background: var(--bg-panel); border: 1px solid var(--border-strong);
+    border-radius: 12px; box-shadow: 0 16px 60px rgba(0,0,0,.55);
+    display: flex; flex-direction: column; overflow: hidden;
+  }
+  .dialog-head { padding: 14px 16px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; }
+  .dialog-title { font-size: 14px; font-weight: 600; }
+  .dialog-title .hint { display: block; font-size: 11px; font-weight: 400; color: var(--text-2); margin-top: 2px; }
+  .dialog-body { padding: 12px 16px; overflow-y: auto; }
+
+  /* 会话选择列表 */
+  .session-item {
+    display: flex; align-items: center; gap: 10px;
+    padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius);
+    margin-bottom: 8px; cursor: pointer; background: var(--bg-input);
+  }
+  .session-item:hover { border-color: var(--border-strong); }
+  .session-item.selected { border-color: var(--accent); }
+  .session-item .meta { flex: 1; min-width: 0; }
+  .session-item .title { font-weight: 500; }
+  .session-item .sub2 { color: var(--text-2); font-size: 11px; }
+  .session-item .radio {
+    width: 14px; height: 14px; border-radius: 50%; border: 1.5px solid var(--border-strong);
+    flex-shrink: 0; display: flex; align-items: center; justify-content: center;
+  }
+  .session-item.selected .radio { border-color: var(--accent); }
+  .session-item.selected .radio::after { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); }
+
+  /* 条目多选 */
+  .pick-row { display: flex; align-items: flex-start; gap: 10px; padding: 9px 10px; border: 1px solid var(--border); border-radius: var(--radius); margin-bottom: 8px; background: var(--bg-input); }
+  .pick-row:hover { border-color: var(--border-strong); }
+  .pick-row.selected { border-color: var(--accent); }
+  .checkbox {
+    width: 15px; height: 15px; border-radius: 4px; border: 1.5px solid var(--border-strong);
+    flex-shrink: 0; margin-top: 2px; display: flex; align-items: center; justify-content: center;
+    font-size: 10px; color: #0b1020; cursor: pointer;
+  }
+  .pick-row.selected .checkbox { background: var(--accent); border-color: var(--accent); }
+  .pick-row .main { flex: 1; min-width: 0; }
+  .pick-row .path { color: var(--text-2); font-size: 11px; word-break: break-all; }
+  .pick-row .note { color: var(--text-3); font-size: 11px; font-style: italic; }
+  .pick-row .dup-flag { color: var(--warn); font-size: 10px; flex-shrink: 0; }
+
+  /* 全选行 */
+  .select-all-row {
+    display: flex; align-items: center; gap: 10px;
+    padding: 8px 10px; margin-bottom: 10px;
+    border: 1px dashed var(--border-strong); border-radius: var(--radius);
+    background: rgba(77,159,255,.05); cursor: pointer;
+  }
+  .select-all-row:hover { border-color: var(--accent); }
+  .select-all-row .checkbox { margin-top: 0; }
+  .checkbox.indet { background: rgba(77,159,255,.30); border-color: var(--accent); }
+  .checkbox.indet::after { content: "–"; color: #0b1020; font-size: 12px; }
+  .sa-label { font-size: 12px; font-weight: 500; }
+  .sa-sub { color: var(--text-2); font-size: 11px; font-weight: 400; margin-left: 6px; }
+
+  .dialog-foot {
+    padding: 12px 16px; border-top: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: flex-end; gap: 10px;
+  }
+  .dialog-foot .summary { margin-right: auto; font-size: 12px; color: var(--text-2); }
+
+  /* ── 冲突 diff 弹窗（重点） ─────────────────────────────────── */
+  .diff-head-note {
+    font-size: 12px; color: var(--text-2); background: var(--bg-input);
+    border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 8px 12px; margin-bottom: 12px;
+  }
+  .conflict {
+    border: 1px solid var(--border); border-radius: 10px; overflow: hidden; margin-bottom: 12px;
+    background: var(--bg-input);
+  }
+  .conflict-head {
+    display: flex; align-items: center; gap: 8px;
+    padding: 8px 12px; border-bottom: 1px solid var(--border);
+    font-size: 11px; color: var(--text-2);
+    background: #26262d;
+  }
+  .conflict-head .warn-icon { color: var(--warn); font-weight: 700; }
+  .conflict-head .same-path { color: var(--text-2); font-family: ui-monospace, Menlo, monospace; font-size: 10.5px; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .compare {
+    display: grid; grid-template-columns: 1fr 34px 1fr; align-items: stretch;
+  }
+  .side { padding: 10px 12px; min-width: 0; }
+  .side .tag { font-size: 10px; letter-spacing: .4px; text-transform: uppercase; margin-bottom: 6px; display: inline-block; padding: 1px 7px; border-radius: 9px; border: 1px solid; }
+  .side.mine .tag { color: var(--accent); border-color: var(--accent); }
+  .side.import .tag { color: var(--ok); border-color: var(--ok); }
+  .side .p { font-family: ui-monospace, Menlo, monospace; font-size: 10.5px; color: var(--text-1); word-break: break-all; margin-bottom: 4px; }
+  .side .n { font-size: 11px; color: var(--text-2); }
+  .side .n em { color: var(--text-3); font-style: normal; }
+  .vs {
+    display: flex; align-items: center; justify-content: center;
+    color: var(--text-3); font-size: 10px; border-left: 1px dashed var(--border); border-right: 1px dashed var(--border);
+  }
+  /* diff 高亮：仅一侧有的字段 */
+  .hl { background: rgba(77,159,255,.12); border-radius: 3px; padding: 0 3px; }
+  .hl-imp { background: rgba(63,185,106,.14); border-radius: 3px; padding: 0 3px; }
+  .hl-mine { background: rgba(229,83,75,.14); border-radius: 3px; padding: 0 3px; }
+
+  .conflict-foot {
+    display: flex; align-items: center; gap: 8px;
+    padding: 8px 12px; border-top: 1px solid var(--border);
+  }
+  .conflict-foot .pick-label { font-size: 12px; color: var(--text-2); margin-right: 2px; }
+  .choice {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-size: 12px; padding: 4px 12px; border-radius: 15px; border: 1px solid var(--border-strong);
+    cursor: pointer; background: transparent; color: var(--text-2);
+  }
+  .choice.active { border-color: var(--accent); color: var(--text-1); background: rgba(77,159,255,.10); }
+  .choice.mine.active { border-color: var(--err); color: var(--err); background: rgba(229,83,75,.10); }
+  .choice.import.active { border-color: var(--ok); color: var(--ok); background: rgba(63,185,106,.10); }
+
+  .toast {
+    position: fixed; bottom: 28px; left: 50%; transform: translateX(-50%);
+    background: var(--bg-panel); border: 1px solid var(--border-strong); border-radius: 8px;
+    padding: 10px 18px; font-size: 12px; box-shadow: 0 8px 30px rgba(0,0,0,.5); z-index: 99;
+    display: none;
+  }
+  .toast.show { display: block; }
+  .toast .ok { color: var(--ok); }
+</style>
+</head>
+<body>
+
+  <h1>ref-lib 原型：从其他会话导入参考库</h1>
+  <div class="sub">v12 候选方案 · 手动挑选导入（与 v10 fork 自动继承互补）· 冲突时 diff 对比选择 · 点击下方各按钮走完整流程</div>
+
+  <!-- ── 主面板（模拟 ref-lib Modal） ─────────────────────────── -->
+  <div class="panel">
+    <div class="panel-head">
+      <div class="panel-title">参考库<span class="count" id="libCount">2 个条目</span></div>
+      <button class="close" title="关闭">✕</button>
+    </div>
+    <div class="panel-body">
+      <div class="statusline"><span class="dot ok"></span> 2 个可用 &nbsp;<span class="dot err"></span> 1 个已失效</div>
+
+      <div class="row">
+        <div class="main"><div class="name">deepseek-harness</div>
+          <div class="path">/Users/hpy/dev/PROJECTS/deepseek-harness</div>
+          <div class="note">dsh 官方库，查验代码架构细节</div></div>
+        <span class="badge ok">可用</span>
+        <button class="btn ghost" title="详情">详情</button>
+        <button class="btn ghost" title="移除">移除</button>
+      </div>
+
+      <div class="row">
+        <div class="main"><div class="name">docs</div>
+          <div class="path">/Users/hpy/dev/PROJECTS/ref-lib/docs</div>
+          <div class="note">设计文档</div></div>
+        <span class="badge ok">可用</span>
+        <button class="btn ghost" title="详情">详情</button>
+        <button class="btn ghost" title="移除">移除</button>
+      </div>
+
+      <div class="row">
+        <div class="main"><div class="name">removed-project</div>
+          <div class="path">/Users/hpy/old/removed-project</div>
+          <div class="note">已删除的项目</div></div>
+        <span class="badge err">已失效</span>
+        <button class="btn ghost" disabled title="失效条目仅允许移除">详情</button>
+        <button class="btn ghost" title="移除">移除</button>
+      </div>
+
+      <div style="display:flex; gap:8px; margin-top:14px;">
+        <input class="add-input" style="flex:1; background:var(--bg-input); border:1px solid var(--border); border-radius:6px; color:var(--text-1); padding:7px 10px; font-size:12px;" placeholder="添加路径（add <path> [--note <用途>]）">
+        <button class="btn" title="添加">添加</button>
+        <button class="btn primary" id="btnImport" title="从其他会话挑选已有条目，一键导入">从会话导入</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── 会话选择弹窗 ─────────────────────────────────────────── -->
+  <div class="overlay" id="ovSessions" hidden>
+    <div class="dialog" style="width:560px;">
+      <div class="dialog-head">
+        <div class="dialog-title">选择来源会话
+          <span class="hint">只列出配置过参考库的会话；导入为快照副本，之后不随源会话变化</span></div>
+        <button class="close" data-close>✕</button>
+      </div>
+      <div class="dialog-body">
+        <div class="session-item" data-session="s1">
+          <div class="radio"></div>
+          <div class="meta"><div class="title">dsh-plugins 联调 · 分支 A</div>
+            <div class="sub2">3 个条目 · 2 可用 · 1 已失效 · 更新于 10 分钟前</div></div>
+        </div>
+        <div class="session-item" data-session="s2">
+          <div class="radio"></div>
+          <div class="meta"><div class="title">参考库插件开发</div>
+            <div class="sub2">5 个条目 · 5 可用 · 更新于 2 小时前</div></div>
+        </div>
+        <div class="session-item" data-session="s3">
+          <div class="radio"></div>
+          <div class="meta"><div class="title">web 前端重构讨论</div>
+            <div class="sub2">1 个条目 · 1 可用 · 更新于 1 天前</div></div>
+        </div>
+      </div>
+      <div class="dialog-foot">
+        <span class="summary" id="sessionSummary">选择一个会话</span>
+        <button class="btn" data-close>取消</button>
+        <button class="btn primary" id="btnNext" disabled>下一步：选择条目</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── 条目选择弹窗 ─────────────────────────────────────────── -->
+  <div class="overlay" id="ovPicks" hidden>
+    <div class="dialog">
+      <div class="dialog-head">
+        <div class="dialog-title">选择要导入的条目
+          <span class="hint" id="pickHint">来源：参考库插件开发（5 个条目）</span></div>
+        <button class="close" data-close>✕</button>
+      </div>
+      <div class="dialog-body">
+        <div class="select-all-row" id="selectAllRow">
+          <div class="checkbox" id="selectAllBox"></div>
+          <div class="sa-label">全选本会话全部条目<span class="sa-sub">（5 个，其中 2 个与当前会话重复，将进入冲突处理）</span></div>
+        </div>
+        <div class="pick-row" data-dup="1">
+          <div class="checkbox">✓</div>
+          <div class="main">
+            <div class="path">/Users/hpy/dev/PROJECTS/deepseek-harness</div>
+            <div class="note">dsh 官方库（与当前会话路径重复）</div>
+          </div>
+          <span class="dup-flag">⚠ 与当前会话重复</span>
+        </div>
+        <div class="pick-row" data-dup="1">
+          <div class="checkbox">✓</div>
+          <div class="main">
+            <div class="path">/Users/hpy/dev/PROJECTS/ref-lib/docs</div>
+            <div class="note">——</div>
+          </div>
+          <span class="dup-flag">⚠ 与当前会话重复</span>
+        </div>
+        <div class="pick-row">
+          <div class="checkbox">✓</div>
+          <div class="main">
+            <div class="path">/Users/hpy/dev/PROJECTS/dsh-plugins</div>
+            <div class="note">插件容器目录</div>
+          </div>
+        </div>
+        <div class="pick-row">
+          <div class="checkbox"></div>
+          <div class="main">
+            <div class="path">/Users/hpy/dev/PROJECTS/ref-lib/tests</div>
+            <div class="note">测试基线参考</div>
+          </div>
+        </div>
+      </div>
+      <div class="dialog-foot">
+        <span class="summary" id="pickSummary">已选 2 / 4 个条目（2 个与当前会话重复）</span>
+        <button class="btn" data-close>取消</button>
+        <button class="btn primary" id="btnDiff">导入（先处理重复项）</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── 冲突 diff 弹窗（重点） ───────────────────────────────── -->
+  <div class="overlay" id="ovDiff" hidden>
+    <div class="dialog" style="width:760px;">
+      <div class="dialog-head">
+        <div class="dialog-title">2 个条目与当前会话重复
+          <span class="hint">逐条选择保留哪一份；不冲突的条目将直接导入</span></div>
+        <button class="close" data-close>✕</button>
+      </div>
+      <div class="dialog-body">
+        <div class="diff-head-note">
+          <b>说明：</b>导入为快照副本（不回流）。重复判定按 realpath 规范化后的路径；
+          note / 可用状态不同的字段会高亮标出。
+        </div>
+
+        <!-- 冲突 1：note 不同 -->
+        <div class="conflict">
+          <div class="conflict-head">
+            <span class="warn-icon">⚠</span> 路径相同 · note 不同
+            <span class="same-path">/Users/hpy/dev/PROJECTS/deepseek-harness</span>
+          </div>
+          <div class="compare">
+            <div class="side mine">
+              <span class="tag">当前会话</span>
+              <div class="p">/Users/hpy/dev/PROJECTS/deepseek-harness</div>
+              <div class="n">note：<em class="hl-mine">dsh 官方库，查验代码架构细节</em></div>
+              <div class="n">状态：<span style="color:var(--ok)">可用</span> · 刚刚探测</div>
+            </div>
+            <div class="vs">vs</div>
+            <div class="side import">
+              <span class="tag">导入</span>
+              <div class="p">/Users/hpy/dev/PROJECTS/deepseek-harness</div>
+              <div class="n">note：<em class="hl-imp">dsh 官方源码（rc.2 基线）</em></div>
+              <div class="n">状态：<span style="color:var(--ok)">可用</span> · 2 小时前探测</div>
+            </div>
+          </div>
+          <div class="conflict-foot">
+            <span class="pick-label">这份冲突：</span>
+            <button class="choice mine active" data-c="mine" data-i="0">保留我的</button>
+            <button class="choice import" data-c="import" data-i="0">使用导入的</button>
+          </div>
+        </div>
+
+        <!-- 冲突 2：状态不同（我的已失效，导入的可用） -->
+        <div class="conflict">
+          <div class="conflict-head">
+            <span class="warn-icon">⚠</span> 路径相同 · 状态不同
+            <span class="same-path">/Users/hpy/dev/PROJECTS/ref-lib/docs</span>
+          </div>
+          <div class="compare">
+            <div class="side mine">
+              <span class="tag">当前会话</span>
+              <div class="p">/Users/hpy/dev/PROJECTS/ref-lib/docs</div>
+              <div class="n">note：<em>设计文档</em></div>
+              <div class="n">状态：<span style="color:var(--err)">已失效（missing）</span> · 10 分钟前探测</div>
+            </div>
+            <div class="vs">vs</div>
+            <div class="side import">
+              <span class="tag">导入</span>
+              <div class="p">/Users/hpy/dev/PROJECTS/ref-lib/docs</div>
+              <div class="n">note：<em class="hl-imp">——</em></div>
+              <div class="n">状态：<span style="color:var(--ok)">可用</span> · 2 小时前探测</div>
+            </div>
+          </div>
+          <div class="conflict-foot">
+            <span class="pick-label">这份冲突：</span>
+            <button class="choice mine active" data-c="mine" data-i="1">保留我的</button>
+            <button class="choice import" data-c="import" data-i="1">使用导入的</button>
+          </div>
+        </div>
+      </div>
+      <div class="dialog-foot">
+        <span class="summary" id="diffSummary">保留我的 × 2 · 使用导入的 × 0；另有 1 个新条目将直接导入</span>
+        <button class="btn" data-close>取消</button>
+        <button class="btn primary" id="btnConfirm">确认导入</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+<script>
+  const $ = s => document.querySelector(s);
+  const $$ = s => [...document.querySelectorAll(s)];
+  const show = id => $(id).hidden = false;
+  const hide = id => $(id).hidden = true;
+  const toast = (html) => { const t = $('#toast'); t.innerHTML = html; t.classList.add('show'); setTimeout(() => t.classList.remove('show'), 2600); };
+
+  // 流程状态
+  let chosenSession = null;
+  let choices = { 0: 'mine', 1: 'mine' };
+
+  // 1. 面板 → 会话选择
+  $('#btnImport').onclick = () => show('#ovSessions');
+
+  // 2. 会话单选
+  $$('.session-item').forEach(el => el.onclick = () => {
+    $$('.session-item').forEach(x => x.classList.remove('selected'));
+    el.classList.add('selected');
+    chosenSession = el.dataset.session;
+    const n = { s1: 3, s2: 5, s3: 1 }[chosenSession];
+    $('#sessionSummary').textContent = '已选「' + el.querySelector('.title').textContent + '」· ' + n + ' 个条目';
+    $('#btnNext').disabled = false;
+  });
+
+  // 3. 下一步 → 条目选择
+  $('#btnNext').onclick = () => {
+    hide('#ovSessions'); show('#ovPicks');
+    $('#pickHint').textContent = '来源：参考库插件开发（5 个条目，已选 2 个与本会话重复）';
+    refreshPicks();
+  };
+
+  // 条目勾选
+  const rows = () => $$('.pick-row');
+  const selRows = () => rows().filter(r => r.classList.contains('selected'));
+
+  function refreshPicks() {
+    const sel = selRows().length;
+    const dup = selRows().filter(r => r.dataset.dup).length;
+    $('#pickSummary').textContent = `已选 ${sel} / ${rows().length} 个条目（${dup} 个与当前会话重复）`;
+    $('#btnDiff').textContent = dup > 0 ? '导入（先处理重复项）' : '确认导入';
+    // 全选框三态：全选 / 部分 / 空
+    const box = $('#selectAllBox');
+    box.className = 'checkbox';
+    box.textContent = '';
+    if (sel === 0) { /* 空 */ }
+    else if (sel === rows().length) { box.textContent = '✓'; }
+    else { box.classList.add('indet'); }
+  }
+
+  rows().forEach(el => el.onclick = () => {
+    el.classList.toggle('selected');
+    refreshPicks();
+  });
+
+  // 全选/取消全选
+  $('#selectAllRow').onclick = () => {
+    const all = rows().length === selRows().length;
+    rows().forEach(r => r.classList.toggle('selected', !all));
+    refreshPicks();
+  };
+
+  // 4. → 冲突 diff
+  $('#btnDiff').onclick = () => { hide('#ovPicks'); show('#ovDiff'); updateDiff(); };
+
+  // 冲突单项选择
+  $$('.choice').forEach(el => el.onclick = () => {
+    const i = el.dataset.i; const c = el.dataset.c;
+    choices[i] = c;
+    el.parentElement.querySelectorAll('.choice').forEach(x => x.classList.remove('active'));
+    el.classList.add('active');
+    updateDiff();
+  });
+
+  function updateDiff() {
+    const mine = $$('.choice[data-c="mine"].active').length;
+    const imp = $$('.choice[data-c="import"].active').length;
+    $('#diffSummary').textContent = `保留我的 × ${mine} · 使用导入的 × ${imp}；另有 1 个新条目将直接导入`;
+  }
+
+  // 5. 确认导入 → 回到面板，更新计数
+  $('#btnConfirm').onclick = () => {
+    const imp = $$('.choice[data-c="import"].active').length;
+    hide('#ovDiff');
+    $('#libCount').textContent = '3 个条目';
+    $('#statusline')?.remove();
+    toast('✅ 已导入 ' + (1 + imp) + ' 个条目' + (imp > 0 ? '（替换了 ' + imp + ' 条重复项）' : '，重复项保留现有'));
+  };
+
+  // 关闭弹窗
+  $$('[data-close]').forEach(el => el.onclick = () => el.closest('.overlay').hidden = true);
+</script>
+</body>
+</html>

@@ -70,3 +70,145 @@ export function filterAvailable(libs: readonly RefLibEntry[]): RefLibEntry[] {
 export function statusChanged(entry: RefLibEntry, probe: RefLibAvailability): boolean {
   return entry.status === undefined || entry.status !== probe
 }
+
+/** 跨会话导入：一条「新增」请求（路径在源会话已规范化，note 保持源值、快照语义）。 */
+export interface ImportAddRequest {
+  readonly path: string
+  readonly note?: string
+}
+
+/** 跨会话导入：一条「替换」请求（冲突且用户选择使用导入版本；路径已存在，仅采纳导入的 note）。 */
+export interface ImportReplaceRequest {
+  /** 现有条目 id（替换目标）。 */
+  readonly existingId: string
+  /** 导入侧 note（undefined 表示清除现有 note）。 */
+  readonly note?: string
+}
+
+/** 跨会话导入的规划结果：新增条目 + 替换条目。 */
+export interface ImportPlan {
+  readonly additions: readonly ImportAddRequest[]
+  readonly replacements: readonly ImportReplaceRequest[]
+}
+
+/**
+ * 规划跨会话导入（v12）：把「当前列表 + 源会话条目 + 冲突决策」映射为最终写入动作。
+ * 语义与 v10 fork 继承一致——导入即快照：新条目重新铸造 id（由 service 执行），
+ * 冲突条目按用户逐条决策（保留我的 = 跳过；使用导入的 = 以导入侧 note 替换现有）。
+ * 纯函数：不触碰文件系统/session，便于单元测试。
+ * @param mine - 当前会话条目列表。
+ * @param incoming - 源会话条目列表（全部，含无冲突与冲突）。
+ * @param resolveConflict - 对每条重复（path 相同）的冲突返回用户决策；
+ *   `'mine'` 保留现有条目，`'import'` 用导入条目替换。
+ * @returns 新增与替换请求；无冲突且未决策的条目一律视为新增。
+ */
+export function planImport(
+  mine: readonly RefLibEntry[],
+  incoming: readonly RefLibEntry[],
+  resolveConflict: (mineEntry: RefLibEntry, incomingEntry: RefLibEntry) => 'mine' | 'import',
+): ImportPlan {
+  const additions: ImportAddRequest[] = []
+  const replacements: ImportReplaceRequest[] = []
+  for (const entry of incoming) {
+    const existing = mine.find((candidate) => candidate.path === entry.path)
+    if (existing === undefined) {
+      additions.push({ path: entry.path, ...(entry.note === undefined ? {} : { note: entry.note }) })
+      continue
+    }
+    if (resolveConflict(existing, entry) === 'import') {
+      replacements.push({ existingId: existing.id, ...(entry.note === undefined ? {} : { note: entry.note }) })
+    }
+  }
+  return { additions, replacements }
+}
+
+/** 跨会话导入：源会话概览（sidecar 枚举 + 宿主 sessionQuery 标题补全后的行）。 */
+export interface RefLibSourceSessionRow {
+  /** 源会话 id。 */
+  readonly sessionId: string
+  /** 宿主 sessionQuery 读到的标题（`session/title` 事件折叠）；缺省时 UI 回退显示 id。 */
+  readonly title?: string
+  /** 会话工作区目录（header.cwd，宿主 sessionQuery 观测）；缺省时 UI 无工作区回退。 */
+  readonly cwd?: string
+  /** 条目数。 */
+  readonly count: number
+  /** 可用条目数。 */
+  readonly available: number
+  /** sidecar mtime（epoch ms）。 */
+  readonly updatedAt: number
+}
+
+/** sessionQuery.readTitleSnapshots 单条观测结果的 wire 形状（宿主导出类型的窄子集）。 */
+export interface SessionTitleObservation {
+  readonly status: 'fulfilled' | 'rejected'
+  readonly value?: {
+    /** 会话 header（readTitleSnapshots 的 value.session 即 header——含工作区 cwd）。 */
+    readonly session?: { readonly cwd?: string }
+    readonly title?: { readonly title?: string }
+  }
+}
+
+/**
+ * 把宿主 `sessionQuery.readTitleSnapshots` 的结果合并进源会话清单（v12 标题补全，
+ * 与宿主 `@session` 引用同源——`session/title` 事件折叠，冷会话同样可读）。
+ * 同时补全会话工作区 cwd（无标题会话的 UI 显示回退"工作区名 · 新会话"）。
+ * 纯函数：观测缺省/失败/字段缺失时该会话保持原值（UI 逐级回退）。
+ * @param sources - sidecar 枚举的源会话清单。
+ * @param observations - 按源清单 id 顺序对应的观测结果（数量不足/多余都容忍）。
+ * @returns 补全标题与工作区后的清单（id 顺序与入参一致）。
+ */
+export function attachSessionMeta(
+  sources: readonly RefLibSourceSessionRow[],
+  observations: readonly SessionTitleObservation[],
+): RefLibSourceSessionRow[] {
+  return sources.map((source, index) => {
+    const observation = observations[index]
+    if (observation?.status !== 'fulfilled') return source
+    const title = observation.value?.title?.title
+    const cwd = observation.value?.session?.cwd
+    const next = { ...source }
+    if (title !== undefined && title !== '') next.title = title
+    if (cwd !== undefined && cwd !== '') next.cwd = cwd
+    return next
+  })
+}
+
+/**
+ * 对一条目应用探测结果（v12.1 源读取实时探测）：状态未变（或从未检测）时返回
+ * **原引用**，变化时返回带新 status/checkedAt 的新对象。纯函数（探测函数注入，
+ * logic 层不触碰文件系统）。
+ * @param entry - 条目。
+ * @param probe - 探测函数（路径 → 可用性）。
+ * @param now - 探测时间（epoch ms）。
+ * @returns 探测后的条目（无变化时引用不变）。
+ */
+export function applyProbe(
+  entry: RefLibEntry,
+  probe: (path: string) => RefLibAvailability,
+  now: number,
+): RefLibEntry {
+  const result = probe(entry.path)
+  if (!statusChanged(entry, result)) return entry
+  return { ...entry, status: result, checkedAt: now }
+}
+
+/**
+ * 批量探测条目（v12.1）：逐条 applyProbe，返回探测后的列表与是否有变化。
+ * @param libs - 条目列表。
+ * @param probe - 探测函数（路径 → 可用性）。
+ * @param now - 探测时间（epoch ms）。
+ * @returns 探测后列表（无变化时引用不变）+ 是否有条目状态变化。
+ */
+export function probeLibs(
+  libs: readonly RefLibEntry[],
+  probe: (path: string) => RefLibAvailability,
+  now: number,
+): { next: readonly RefLibEntry[]; changed: boolean } {
+  let changed = false
+  const next = libs.map((entry) => {
+    const probed = applyProbe(entry, probe, now)
+    if (probed !== entry) changed = true
+    return probed
+  })
+  return { next, changed }
+}

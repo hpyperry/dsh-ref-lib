@@ -15,7 +15,14 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { Session } from '@deepseek-ai/dsh-session'
 import type { WebRoute } from '@deepseek-ai/dsh-host-webserver'
 import { resolveRefLibPath } from './commands.ts'
-import { RefLibNoteError, RefLibPathError, RefLibUnavailableError, RefLibUnknownError, type RefLibService } from './service.ts'
+import {
+  RefLibDuplicateError,
+  RefLibNoteError,
+  RefLibPathError,
+  RefLibUnavailableError,
+  RefLibUnknownError,
+  type RefLibService,
+} from './service.ts'
 
 /** 请求体大小上限（管理载荷都很小）。 */
 export const MAX_JSON_BODY_BYTES = 64 * 1024
@@ -87,6 +94,11 @@ export interface RefLibRouteDeps {
  * - `GET  /api/ref-lib/list?session=<id>` → `{ libs }`
  * - `POST /api/ref-lib/add    { session, path }` → `{ entry }`
  * - `POST /api/ref-lib/remove { session, id }` → `{ ok: true }`
+ * - `POST /api/ref-lib/note   { session, id, note }` → `{ entry }`
+ * - `GET  /api/ref-lib/sessions?session=<当前 id>` → `{ sessions: RefLibSourceSession[] }`
+ *   （v12 跨会话导入来源清单；排除当前会话自身）
+ * - `POST /api/ref-lib/import { session, plan: { additions, replacements } }` → `{ added, replaced }`
+ *   （v12 跨会话导入：快照语义、重新铸造 id、冲突按用户决策替换 note）
  *
  * 注：fork 继承不在此路由族——`session/created` 钩子（service.materializeInheritance）
  * 在宿主创建子会话时直接写子会话 sidecar，UI 经现有 /list（dock 挂载 load）一次
@@ -151,6 +163,11 @@ export function makeRefLibRoutes(deps: RefLibRouteDeps): WebRoute[] {
     }
     if (error instanceof RefLibUnavailableError) {
       writeJson(res, 400, { error: error.message, code: 'ref-lib/unavailable', path: error.path })
+      return
+    }
+    if (error instanceof RefLibDuplicateError) {
+      // 同路径已注册且显式 note 不同：携带现有条目，client 据此弹「保留/覆盖」确认。
+      writeJson(res, 400, { error: error.message, code: 'ref-lib/duplicate', entry: error.entry })
       return
     }
     log(`ref-lib route error: ${error instanceof Error ? error.message : String(error)}`)
@@ -253,6 +270,99 @@ export function makeRefLibRoutes(deps: RefLibRouteDeps): WebRoute[] {
           }
           const entry = await refLibs.setNote(session, body.id, body.note)
           writeJson(res, 200, { entry })
+        } catch (error) {
+          writeError(res, error)
+        }
+      },
+    },
+
+    {
+      kind: 'exact',
+      path: '/api/ref-lib/sessions',
+      handler: async (req, res) => {
+        if (!guard(req, res, 'GET')) return
+        try {
+          const url = new URL(req.url ?? '/', 'http://localhost')
+          const current = url.searchParams.get('session')
+          if (typeof current !== 'string' || current === '') {
+            writeJson(res, 400, { error: 'missing session id' })
+            return
+          }
+          // 来源清单不需要当前会话 live——枚举的是 sidecar 文件；current 仅用于排除自身。
+          writeJson(res, 200, { sessions: await refLibs.listSessions(current) })
+        } catch (error) {
+          writeError(res, error)
+        }
+      },
+    },
+
+    {
+      kind: 'exact',
+      path: '/api/ref-lib/source',
+      handler: async (req, res) => {
+        if (!guard(req, res, 'GET')) return
+        try {
+          const url = new URL(req.url ?? '/', 'http://localhost')
+          const sessionId = url.searchParams.get('session')
+          if (typeof sessionId !== 'string' || sessionId === '') {
+            writeJson(res, 400, { error: 'missing session id' })
+            return
+          }
+          // 跨会话导入的**源**读取：只读 sidecar，**不要求会话 live**（历史会话的
+          // 参考库同样可导入）。与 GET /list（当前 live 会话、实时探测）区分。
+          writeJson(res, 200, { libs: refLibs.readSessionLibs(sessionId) })
+        } catch (error) {
+          writeError(res, error)
+        }
+      },
+    },
+
+    {
+      kind: 'exact',
+      path: '/api/ref-lib/import',
+      handler: async (req, res) => {
+        if (!guard(req, res, 'POST')) return
+        try {
+          const body = await readJsonBody(req)
+          if (body === undefined) {
+            writeJson(res, 400, { error: 'invalid JSON body' })
+            return
+          }
+          const session = requireSession(res, body.session)
+          if (session === undefined) return
+          const plan = body.plan
+          if (typeof plan !== 'object' || plan === null) {
+            writeJson(res, 400, { error: 'missing plan' })
+            return
+          }
+          const { additions, replacements } = plan as { additions?: unknown; replacements?: unknown }
+          if (!Array.isArray(additions) || !Array.isArray(replacements)) {
+            writeJson(res, 400, { error: 'plan must have additions and replacements arrays' })
+            return
+          }
+          for (const item of additions) {
+            if (typeof item !== 'object' || item === null || typeof (item as { path?: unknown }).path !== 'string') {
+              writeJson(res, 400, { error: 'addition items must have a string path' })
+              return
+            }
+          }
+          for (const item of replacements) {
+            if (
+              typeof item !== 'object' || item === null
+              || typeof (item as { existingId?: unknown }).existingId !== 'string'
+            ) {
+              writeJson(res, 400, { error: 'replacement items must have an existingId' })
+              return
+            }
+          }
+          const result = await refLibs.importEntries(
+            session,
+            {
+              additions: additions as { path: string; note?: string }[],
+              replacements: replacements as { existingId: string; note?: string }[],
+            },
+          )
+          writeJson(res, 200, result)
         } catch (error) {
           writeError(res, error)
         }

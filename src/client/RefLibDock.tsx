@@ -21,12 +21,14 @@ import type { ReactElement } from 'react'
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { DirectoryListing, SessionId } from '@deepseek-ai/dsh-client-runtime/client'
 import { IconFolderOpen16 } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Button, Modal } from '@deepseek-ai/dsh-client-ui-primitives'
+import type { ImportPlan } from '../logic.ts'
 import type { RefLibEntry } from '../spec.ts'
-import { RefLibApiError } from './data.ts'
-import type { RefLibKey } from './locales.ts'
+import { formatRefLibError, RefLibApiError, type RefLibSourceSession } from './data.ts'
 import { RefreshGuard } from './refresh-guard.ts'
 import { deriveRefreshTriggers } from './refresh-triggers.ts'
 import { RefLibBrowser } from './RefLibBrowser.tsx'
+import { RefLibImport } from './RefLibImport.tsx'
 import { RefLibPanel } from './RefLibPanel.tsx'
 import { ensureRefLibStyles } from './styles.ts'
 
@@ -40,6 +42,12 @@ export interface RefLibDockInjected {
   remove: (sessionId: SessionId, id: string) => Promise<void>
   /** 更新一个条目的用途说明（POST /api/ref-lib/note，静默；空串清除）。 */
   setNote: (sessionId: SessionId, id: string, note: string) => Promise<void>
+  /** 列出配置过参考库的其他会话（GET /api/ref-lib/sessions，排除当前会话）。 */
+  listSessions: (sessionId: SessionId) => Promise<RefLibSourceSession[]>
+  /** 只读拉取某会话的参考库条目（GET /api/ref-lib/source——源会话不要求 live）。 */
+  loadEntries: (sessionId: SessionId) => Promise<RefLibEntry[]>
+  /** 跨会话导入（POST /api/ref-lib/import，静默；plan 由导入流程构建）。 */
+  importEntries: (sessionId: SessionId, plan: ImportPlan) => Promise<void>
   /** 唤起系统原生"选择文件夹"对话框；取消时返回 null。 */
   pickDirectory: () => Promise<string | null>
   /** 列出一层目录（browse 后端）；缺省路径 = 宿主主目录；signal 中止扫描。 */
@@ -53,40 +61,6 @@ const MOUNT_RETRY_MAX = 5
 /** 完整 props：input.dock 运行时套件 + 注入面 + 本地化 seat。 */
 export type RefLibDockProps = PropsRuntime<'conversation.input.dock'> & RefLibDockInjected & PropsLocale<'ref-lib'>
 
-/** wire 错误码 → 本地化文案键（未知码回退原始消息）。 */
-const ERROR_KEYS: Record<string, RefLibKey> = {
-  'ref-lib/missing': 'error.missing',
-  'ref-lib/not-directory': 'error.notDirectory',
-  'ref-lib/unsafe': 'error.unsafe',
-  'ref-lib/unknown-id': 'error.unknownId',
-  'ref-lib/unavailable': 'error.unavailable',
-}
-
-/** 把未知错误规整为可展示文案。 */
-function messageOf(cause: unknown): string {
-  return cause instanceof Error ? cause.message : String(cause)
-}
-
-/**
- * 把 API 错误本地化：已知 wire code 映射为当前语言文案（带 path/id 参数），
- * 其余错误原样展示服务端消息。
- */
-function formatError(cause: unknown, t: RefLibDockProps['t']): string {
-  if (cause instanceof RefLibApiError) {
-    const key = ERROR_KEYS[cause.code]
-    if (key !== undefined) {
-      const params =
-        cause.details.path !== undefined
-          ? { path: cause.details.path }
-          : cause.details.id !== undefined
-            ? { id: cause.details.id }
-            : undefined
-      return t(key, params)
-    }
-  }
-  return messageOf(cause)
-}
-
 // 模块装载即注入样式（幂等）；组件挂载后再兜底一次（覆盖装载早于 DOM 的情况）。
 ensureRefLibStyles()
 
@@ -97,14 +71,18 @@ ensureRefLibStyles()
  * @returns 胶囊入口（+ 打开时的管理面板）。
  */
 export function RefLibDock(props: RefLibDockProps): ReactElement {
-  const { sessionId, session, load, add, remove, setNote, pickDirectory, listDirectory, t } = props
+  const { sessionId, session, load, add, remove, setNote, listSessions, loadEntries, importEntries, pickDirectory, listDirectory, t } = props
   const [open, setOpen] = useState(false)
+  const [importOpen, setImportOpen] = useState(false)
   const [libs, setLibs] = useState<RefLibEntry[]>([])
   const [loading, setLoading] = useState(false)
   const [busy, setBusy] = useState(false)
   const [picking, setPicking] = useState(false)
   const [removingId, setRemovingId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  // add 重复确认（v12）：同路径已注册且显式 note 不同 → 弹「保留现有 / 更新用途」，
+  // 不再静默覆盖（历史行为缺陷修复）。newNote 为用户提交时的显式 note。
+  const [duplicate, setDuplicate] = useState<{ entry: RefLibEntry; newNote: string } | null>(null)
   // 并发读守卫（竞态控制）：仅采纳最新一次 refresh 的结果（挂载预载/开面板/轮询/
   // 操作后刷新可能重叠）；详见 src/client/refresh-guard.ts 与 tests/refresh-guard.spec.ts。
   const guard = useRef(new RefreshGuard())
@@ -145,7 +123,7 @@ export function RefLibDock(props: RefLibDockProps): ReactElement {
       if (!silent) setError(null)
     } catch (cause) {
       if (!guard.current.isLatest(mine)) return
-      if (!silent) setError(formatError(cause, t))
+      if (!silent) setError(formatRefLibError(cause, t))
     } finally {
       if (guard.current.isLatest(mine) && !silent) setLoading(false)
     }
@@ -173,7 +151,7 @@ export function RefLibDock(props: RefLibDockProps): ReactElement {
           timer = window.setTimeout(() => { void attempt() }, MOUNT_RETRY_DELAY_MS)
           return
         }
-        setError(formatError(cause, t))
+        setError(formatRefLibError(cause, t))
       } finally {
         if (!stopped && guard.current.isLatest(mine)) setLoading(false)
       }
@@ -226,7 +204,7 @@ export function RefLibDock(props: RefLibDockProps): ReactElement {
       await remove(sessionId, id)
       await refresh()
     } catch (cause) {
-      setError(formatError(cause, t))
+      setError(formatRefLibError(cause, t))
     } finally {
       setRemovingId(null)
       setBusy(false)
@@ -240,12 +218,25 @@ export function RefLibDock(props: RefLibDockProps): ReactElement {
       await add(sessionId, path, note)
       await refresh()
     } catch (cause) {
-      setError(formatError(cause, t))
+      // 同路径重复且显式 note 不同：不落入错误槽，弹确认（保留现有 / 更新用途）。
+      if (cause instanceof RefLibApiError && cause.code === 'ref-lib/duplicate' && cause.details.entry !== undefined) {
+        setDuplicate({ entry: cause.details.entry, newNote: note ?? '' })
+        return
+      }
+      setError(formatRefLibError(cause, t))
       // 失败时重新抛出：让面板保留输入内容供修正
       throw cause
     } finally {
       setBusy(false)
     }
+  }
+
+  /** add 重复确认：保留现有（不更新）→ 关闭确认即可；更新用途 → setNote 显式更新。 */
+  const handleDuplicateReplace = async (): Promise<void> => {
+    if (duplicate === null) return
+    const { entry, newNote } = duplicate
+    setDuplicate(null)
+    await handleUpdateNote(entry.id, newNote)
   }
 
   /** 更新条目用途说明（编辑详情保存）；失败入错误槽、不抛出（编辑区保持打开）。 */
@@ -256,7 +247,7 @@ export function RefLibDock(props: RefLibDockProps): ReactElement {
       await setNote(sessionId, id, note)
       await refresh()
     } catch (cause) {
-      setError(formatError(cause, t))
+      setError(formatRefLibError(cause, t))
     } finally {
       setBusy(false)
     }
@@ -271,7 +262,7 @@ export function RefLibDock(props: RefLibDockProps): ReactElement {
     try {
       mode = await detectPicker()
     } catch (cause) {
-      setError(formatError(cause, t))
+      setError(formatRefLibError(cause, t))
       return null
     }
     if (mode === 'browse') {
@@ -284,7 +275,7 @@ export function RefLibDock(props: RefLibDockProps): ReactElement {
     try {
       return await pickDirectory()
     } catch (cause) {
-      setError(formatError(cause, t))
+      setError(formatRefLibError(cause, t))
       return null
     } finally {
       setPicking(false)
@@ -365,6 +356,23 @@ export function RefLibDock(props: RefLibDockProps): ReactElement {
         onAddPath={handleAddPath}
         onUpdateNote={handleUpdateNote}
         onBrowse={pickPath}
+        onImportOpen={() => {
+          setImportOpen(true)
+        }}
+      />
+      <RefLibImport
+        open={importOpen}
+        onClose={() => {
+          setImportOpen(false)
+        }}
+        currentLibs={libs}
+        t={t}
+        listSessions={() => listSessions(sessionId)}
+        loadEntries={loadEntries}
+        onImport={async (plan) => {
+          await importEntries(sessionId, plan)
+          await refresh()
+        }}
       />
       <RefLibBrowser
         open={browserOpen}
@@ -373,6 +381,56 @@ export function RefLibDock(props: RefLibDockProps): ReactElement {
         t={t}
         onOpen={handleBrowserPick}
       />
+      <Modal
+        open={duplicate !== null}
+        onClose={() => {
+          setDuplicate(null)
+        }}
+        title={t('duplicate.title')}
+        closeLabel={t('duplicate.cancel')}
+        description={t('duplicate.text', { path: duplicate?.entry.path ?? '' })}
+        className="reflib-modal"
+      >
+        <div className="reflib-duplicate">
+          <div className="reflib-duplicateCompare">
+            <div className="reflib-duplicateSide" data-side="mine">
+              <span className="reflib-duplicateTag">{t('duplicate.current')}</span>
+              <span className="reflib-duplicateNote">
+                {duplicate?.entry.note === undefined || duplicate?.entry.note === ''
+                  ? t('import.noteEmpty')
+                  : duplicate.entry.note.replace(/\s+/g, ' ')}
+              </span>
+            </div>
+            <div className="reflib-importVs">vs</div>
+            <div className="reflib-duplicateSide" data-side="new">
+              <span className="reflib-duplicateTag">{t('duplicate.new')}</span>
+              <span className="reflib-duplicateNote">{duplicate?.newNote ?? ''}</span>
+            </div>
+          </div>
+          <div className="reflib-duplicateActions">
+            <Button
+              variant="ghost"
+              size="sm"
+              disabled={busy}
+              onClick={() => {
+                setDuplicate(null)
+              }}
+            >
+              {t('duplicate.keep')}
+            </Button>
+            <Button
+              variant="primary"
+              size="sm"
+              disabled={busy}
+              onClick={() => {
+                void handleDuplicateReplace()
+              }}
+            >
+              {t('duplicate.replace')}
+            </Button>
+          </div>
+        </div>
+      </Modal>
     </>
   )
 }

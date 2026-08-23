@@ -591,6 +591,17 @@ const CSS = `
   animation: reflib-pop 280ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
+/* v12 导入流程弹窗宽度（按步骤贴近原型：会话选择 560 / 条目选择 680 / 冲突 diff 760） */
+.reflib-modal.reflib-import-modal {
+  width: min(40vw, 560px);
+}
+.reflib-modal.reflib-import-modal-mid {
+  width: min(50vw, 680px);
+}
+.reflib-modal.reflib-import-modal-wide {
+  width: min(58vw, 760px);
+}
+
 @keyframes reflib-pop {
   0% {
     opacity: 0;
@@ -744,6 +755,410 @@ const CSS = `
   .reflib-addRow > button:last-child {
     margin-left: auto;
   }
+}
+
+/* ── 跨会话导入流程（v12）──
+   三步状态机弹窗：会话选择 / 条目选择（含全选三态）/ 冲突 diff。复用 reflib- 前缀，
+   全部走 --dsw-* 设计令牌。冲突 diff 三栏：当前会话 vs 导入，差异字段高亮。 */
+.reflib-import {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+  max-height: 60vh;
+  overflow-y: auto;
+}
+
+.reflib-importList {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* 会话选择行 */
+.reflib-importSession {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--dsw-alias-border-l1);
+  border-radius: var(--dsw-radius-sm, 6px);
+  background: var(--dsw-alias-bg-2, transparent);
+  color: var(--dsw-alias-label-primary);
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 120ms ease, background-color 120ms ease;
+}
+.reflib-importSession:hover {
+  border-color: var(--dsw-alias-interactive-bg-hover);
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+.reflib-importSession:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+.reflib-importSessionRadio {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 1.5px solid var(--dsw-alias-border-l2);
+  flex-shrink: 0;
+}
+.reflib-importSessionBody {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.reflib-importSessionTitle {
+  font-weight: 500;
+}
+.reflib-importSessionMeta {
+  font-size: 12px;
+  color: var(--dsw-alias-label-secondary);
+}
+
+/* 全选行（三态） */
+.reflib-importSelectAll {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border: 1px dashed var(--dsw-alias-border-l2);
+  border-radius: var(--dsw-radius-sm, 6px);
+  background: color-mix(in srgb, var(--dsw-accent, #4d9fff) 6%, transparent);
+  color: var(--dsw-alias-label-primary);
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+.reflib-importSelectAll:hover {
+  border-color: var(--dsw-accent, #4d9fff);
+}
+.reflib-importSelectAll:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  border-color: var(--dsw-alias-border-l1);
+  background: transparent;
+}
+.reflib-importSelectAllLabel {
+  font-weight: 500;
+}
+.reflib-importSelectAllSub {
+  font-weight: 400;
+  font-size: 11px;
+  color: var(--dsw-alias-label-secondary);
+  margin-left: 6px;
+}
+
+/* 勾选框（全选行 + 条目行共用） */
+.reflib-importCheckbox {
+  width: 15px;
+  height: 15px;
+  border-radius: 4px;
+  border: 1.5px solid var(--dsw-alias-border-l2);
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  line-height: 1;
+  color: #0b1020;
+}
+.reflib-importCheckbox[data-state='checked'] {
+  background: var(--dsw-accent, #4d9fff);
+  border-color: var(--dsw-accent, #4d9fff);
+}
+.reflib-importCheckbox[data-state='indet'] {
+  background: color-mix(in srgb, var(--dsw-accent, #4d9fff) 30%, transparent);
+  border-color: var(--dsw-accent, #4d9fff);
+}
+.reflib-importCheckbox[data-state='indet']::after {
+  content: '–';
+  color: #0b1020;
+  font-size: 12px;
+}
+
+/* 条目选择行 */
+.reflib-importPick {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 11px 14px;
+  border: 1px solid var(--dsw-alias-border-l1);
+  border-radius: var(--dsw-radius-sm, 6px);
+  background: var(--dsw-alias-bg-2, transparent);
+  color: var(--dsw-alias-label-primary);
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+.reflib-importPick:hover {
+  border-color: var(--dsw-alias-border-l2);
+}
+.reflib-importPick[data-selected] {
+  border-color: var(--dsw-accent, #4d9fff);
+}
+.reflib-importPickBody {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1;
+}
+.reflib-importPickName {
+  font-weight: 500;
+}
+.reflib-importPickPath {
+  font-size: 12px;
+  color: var(--dsw-alias-label-secondary);
+  word-break: break-all;
+}
+.reflib-importPickNote {
+  font-size: 12px;
+  font-style: italic;
+  color: var(--dsw-alias-label-tertiary, var(--dsw-alias-label-secondary));
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.reflib-importDup {
+  flex-shrink: 0;
+  font-size: 10px;
+  color: var(--dsw-warning, #d29922);
+  border: 1px solid var(--dsw-warning, #d29922);
+  border-radius: 9px;
+  padding: 1px 7px;
+  white-space: nowrap;
+}
+
+/* 失效条目徽标（v12.1：源读取实时探测后，失效新增条目禁用勾选并红色提示） */
+.reflib-importStatusBadge {
+  flex-shrink: 0;
+  font-size: 10px;
+  border-radius: 9px;
+  padding: 1px 7px;
+  white-space: nowrap;
+}
+.reflib-importStatusBadge[data-tone='err'] {
+  color: var(--dsw-alias-state-error-primary, var(--dsw-danger, #e5534b));
+  border: 1px solid var(--dsw-alias-state-error-primary, var(--dsw-danger, #e5534b));
+}
+
+/* 冲突 diff */
+.reflib-importDiffNote {
+  font-size: 12px;
+  color: var(--dsw-alias-label-secondary);
+  background: var(--dsw-alias-bg-2, transparent);
+  border: 1px solid var(--dsw-alias-border-l1);
+  border-radius: var(--dsw-radius-sm, 6px);
+  padding: 8px 12px;
+}
+.reflib-importConflict {
+  border: 1px solid var(--dsw-alias-border-l1);
+  border-radius: var(--dsw-radius-md, 8px);
+  overflow: hidden;
+}
+.reflib-importConflictHead {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 14px;
+  font-size: 12px;
+  color: var(--dsw-alias-label-secondary);
+  background: var(--dsw-alias-bg-3, transparent);
+  border-bottom: 1px solid var(--dsw-alias-border-l1);
+}
+.reflib-importConflictWarn {
+  color: var(--dsw-warning, #d29922);
+  flex-shrink: 0;
+}
+.reflib-importConflictPath {
+  flex: 1;
+  min-width: 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.reflib-importConflictCompare {
+  display: grid;
+  grid-template-columns: 1fr 40px 1fr;
+  align-items: stretch;
+}
+.reflib-importSide {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px 14px;
+  min-width: 0;
+}
+.reflib-importSide[data-side='mine'] {
+  border-right: 1px dashed var(--dsw-alias-border-l2);
+}
+.reflib-importSide[data-side='incoming'] {
+  border-left: 1px dashed var(--dsw-alias-border-l2);
+}
+.reflib-importSideTag {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  padding: 1px 7px;
+  border-radius: 9px;
+  border: 1px solid;
+  align-self: flex-start;
+}
+.reflib-importSide[data-side='mine'] .reflib-importSideTag {
+  color: var(--dsw-accent, #4d9fff);
+  border-color: var(--dsw-accent, #4d9fff);
+}
+.reflib-importSide[data-side='incoming'] .reflib-importSideTag {
+  color: var(--dsw-success, #3fb96a);
+  border-color: var(--dsw-success, #3fb96a);
+}
+.reflib-importSidePath {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11.5px;
+  word-break: break-all;
+}
+.reflib-importSideNote {
+  font-size: 12px;
+  color: var(--dsw-alias-label-secondary);
+  word-break: break-word;
+}
+.reflib-importSideNote[data-diff] {
+  background: color-mix(in srgb, var(--dsw-accent, #4d9fff) 12%, transparent);
+  border-radius: 3px;
+}
+.reflib-importSideStatus {
+  font-size: 12px;
+  color: var(--dsw-alias-label-secondary);
+}
+.reflib-importSideStatus[data-tone='ok'] {
+  color: var(--dsw-success, #3fb96a);
+}
+.reflib-importSideStatus[data-tone='err'] {
+  color: var(--dsw-danger, #e5534b);
+}
+.reflib-importVs {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  color: var(--dsw-alias-label-tertiary, var(--dsw-alias-label-secondary));
+}
+.reflib-importConflictFoot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  border-top: 1px solid var(--dsw-alias-border-l1);
+}
+.reflib-importPickLabel {
+  font-size: 12px;
+  color: var(--dsw-alias-label-secondary);
+  margin-right: 2px;
+}
+.reflib-importChoice {
+  font: inherit;
+  font-size: 12px;
+  padding: 4px 12px;
+  border-radius: 15px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  cursor: pointer;
+}
+.reflib-importChoice[data-active][data-tone='mine'] {
+  border-color: var(--dsw-danger, #e5534b);
+  color: var(--dsw-danger, #e5534b);
+  background: color-mix(in srgb, var(--dsw-danger, #e5534b) 10%, transparent);
+}
+.reflib-importChoice[data-active][data-tone='import'] {
+  border-color: var(--dsw-success, #3fb96a);
+  color: var(--dsw-success, #3fb96a);
+  background: color-mix(in srgb, var(--dsw-success, #3fb96a) 10%, transparent);
+}
+.reflib-importChoice:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+/* 底部：汇总 + 操作 */
+.reflib-importFoot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.reflib-importSummary {
+  font-size: 12px;
+  color: var(--dsw-alias-label-secondary);
+  flex: 1;
+  min-width: 0;
+}
+.reflib-importActions {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+/* ── add 重复确认（v12：不再静默覆盖）──
+   同路径已注册且显式 note 不同：并排展示「现有 vs 新填写」，用户选保留或更新。 */
+.reflib-duplicate {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.reflib-duplicateCompare {
+  display: grid;
+  grid-template-columns: 1fr 34px 1fr;
+  align-items: stretch;
+  border: 1px solid var(--dsw-alias-border-l1);
+  border-radius: var(--dsw-radius-md, 8px);
+  overflow: hidden;
+}
+.reflib-duplicateSide {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 12px;
+  min-width: 0;
+}
+.reflib-duplicateSide[data-side='mine'] {
+  border-right: 1px dashed var(--dsw-alias-border-l2);
+}
+.reflib-duplicateSide[data-side='new'] {
+  border-left: 1px dashed var(--dsw-alias-border-l2);
+}
+.reflib-duplicateTag {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  padding: 1px 7px;
+  border-radius: 9px;
+  border: 1px solid;
+  align-self: flex-start;
+}
+.reflib-duplicateSide[data-side='mine'] .reflib-duplicateTag {
+  color: var(--dsw-accent, #4d9fff);
+  border-color: var(--dsw-accent, #4d9fff);
+}
+.reflib-duplicateSide[data-side='new'] .reflib-duplicateTag {
+  color: var(--dsw-success, #3fb96a);
+  border-color: var(--dsw-success, #3fb96a);
+}
+.reflib-duplicateNote {
+  font-size: 12px;
+  word-break: break-word;
+}
+.reflib-duplicateActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
 }
 `
 

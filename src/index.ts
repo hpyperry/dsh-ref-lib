@@ -32,7 +32,7 @@ import type {} from '@deepseek-ai/dsh-host-webserver'
 import { parseRefLibCommand, REF_LIB_USAGE, resolveRefLibPath } from './commands.ts'
 import { renderLibList, renderRefLibs } from './render.ts'
 import { makeRefLibRoutes } from './routes.ts'
-import { RefLibService, type RefLibServiceConfig } from './service.ts'
+import { RefLibDuplicateError, RefLibService, type RefLibServiceConfig } from './service.ts'
 
 /**
  * ref-lib 插件本体：注册服务、命令与上下文贡献。
@@ -81,6 +81,12 @@ export class RefLibPlugin extends Service {
             await refLibs.remove(session, parsed.id)
             return { kind: 'success', text: `已移除参考库条目：${parsed.id}` }
           } catch (error) {
+            if (error instanceof RefLibDuplicateError) {
+              return {
+                kind: 'error',
+                text: `该目录已是参考库：${error.entry.path}（如需更新用途说明，请在参考库面板中编辑详情）`,
+              }
+            }
             const message = error instanceof Error ? error.message : String(error)
             return { kind: 'error', text: `${message}${REF_LIB_USAGE}` }
           }

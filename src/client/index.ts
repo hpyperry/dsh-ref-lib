@@ -22,7 +22,8 @@ import type {} from '@deepseek-ai/dsh-client-ui-slots'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type { RefLibEntry } from '../spec.ts'
-import { parseApiErrorPayload, parseLibsPayload, RefLibApiError } from './data.ts'
+import type { ImportPlan } from '../logic.ts'
+import { parseApiErrorPayload, parseLibsPayload, parseSessionsPayload, RefLibApiError, type RefLibSourceSession } from './data.ts'
 import { RefLibCommandCard } from './RefLibCommandCard.tsx'
 import { RefLibDock, type RefLibDockInjected } from './RefLibDock.tsx'
 import { zh, en, type RefLibKey } from './locales.ts'
@@ -91,6 +92,18 @@ export function apply(ctx: ClientContext): void {
     },
     setNote: async (sessionId: SessionId, id: string, note: string): Promise<void> => {
       await api('/note', { session: sessionId, id, note })
+    },
+    listSessions: async (sessionId: SessionId): Promise<RefLibSourceSession[]> =>
+      parseSessionsPayload(
+        await api<{ sessions?: unknown }>(`/sessions?session=${encodeURIComponent(sessionId)}`, undefined, 'GET'),
+      ),
+    // 源条目走只读 /source 路由：不要求源会话 live（历史会话同样可导入）。
+    loadEntries: async (sessionId: SessionId): Promise<RefLibEntry[]> =>
+      parseLibsPayload(
+        await api<{ libs?: unknown }>(`/source?session=${encodeURIComponent(sessionId)}`, undefined, 'GET'),
+      ),
+    importEntries: async (sessionId: SessionId, plan: ImportPlan): Promise<void> => {
+      await api('/import', { session: sessionId, plan })
     },
     pickDirectory: () => ctx.workspaces.pickDirectory(),
     listDirectory: (path, signal) => ctx.workspaces.listDirectory(path, signal),
