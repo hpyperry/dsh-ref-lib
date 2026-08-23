@@ -1,6 +1,6 @@
 {
   "name": "@hpyperry/dsh-ref-lib",
-  "version": "0.10.0",
+  "version": "0.11.0",
   "description": "只读参考库插件：UI 交互式管理（应用内目录浏览器/系统选择器/手动路径直加）+ systemPrompt 注入 + per-session sidecar 持久化",
   "license": "MIT",
   "private": false,
