@@ -104,15 +104,18 @@ const CSS = `
   padding: 0 5px;
   border-radius: 9px;
   background: var(--dsw-alias-state-error-primary);
-  color: #fff;
+  color: var(--dsw-alias-label-primary-foreground);
   font-size: 11px;
   line-height: 18px;
   font-weight: 500;
 }
 
-/* ── 应用内目录浏览器（browse 后端）── */
+/* ── 应用内目录浏览器（browse 后端）──
+   Elevated surface（官方 Modal dialog 节点）：rebind l2 滚动条令牌对。 */
 .reflib-browser {
   width: min(460px, 100%);
+  --dsh-scrollbar-thumb: var(--dsw-alias-scrollbar-bg-l2);
+  --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2);
 }
 
 .reflib-browserPath {
@@ -305,7 +308,7 @@ const CSS = `
   background: var(--dsw-alias-state-success-primary);
 }
 .reflib-statuslineDot[data-tone='err'] {
-  background: var(--dsw-alias-state-error-primary, var(--dsw-alias-state-error-primary));
+  background: var(--dsw-alias-state-error-primary);
 }
 
 /* 列表：固定最大高度 + 内滚动（旧实现整个面板滚动、无设计，此处分层） */
@@ -533,7 +536,7 @@ const CSS = `
 }
 
 .reflib-noteTextarea:focus {
-  outline: 2px solid var(--dsw-alias-focus-ring, var(--dsw-alias-state-info-primary));
+  outline: 2px solid var(--dsw-alias-state-business-primary);
   outline-offset: -1px;
 }
 
@@ -621,10 +624,14 @@ const CSS = `
 
 /* ── 管理面板 Modal（v8 优化）──
    宽度放宽到约 1/3 屏（上限 560px）；进入动画为柔和缓出（easeOutQuint 风格：
-   280ms 浮起 + 淡入，位移 12px→0、scale 0.96→1），无回弹——更从容、高级感。 */
+   280ms 浮起 + 淡入，位移 12px→0、scale 0.96→1），无回弹——更从容、高级感。
+   Elevated surface：按官方 scrollbar 契约（ui-theme styles/scrollbar.css）在
+   dialog 节点 rebind l2 滚动条令牌对，内部滚动容器（列表/导入流程）继承。 */
 .reflib-modal {
   width: min(52vw, 720px);
   animation: reflib-pop 280ms cubic-bezier(0.16, 1, 0.3, 1);
+  --dsh-scrollbar-thumb: var(--dsw-alias-scrollbar-bg-l2);
+  --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2);
 }
 
 /* v12 导入流程弹窗宽度（按步骤贴近原型：会话选择 560 / 条目选择 680 / 冲突 diff 760） */
@@ -826,7 +833,7 @@ const CSS = `
   gap: 12px;
   padding: 12px 14px;
   border: 1px solid var(--dsw-alias-border-l1);
-  border-radius: var(--dsw-radius-sm, 8px);
+  border-radius: 8px;
   background: transparent;
   color: var(--dsw-alias-label-primary);
   font: inherit;
@@ -873,7 +880,7 @@ const CSS = `
   gap: 10px;
   padding: 8px 12px;
   border: 1px dashed var(--dsw-alias-border-l2);
-  border-radius: var(--dsw-radius-sm, 6px);
+  border-radius: 6px;
   position: sticky;
   top: 0;
   z-index: 1;
@@ -939,7 +946,7 @@ const CSS = `
   gap: 12px;
   padding: 11px 14px;
   border: 1px solid var(--dsw-alias-border-l1);
-  border-radius: var(--dsw-radius-sm, 8px);
+  border-radius: 8px;
   background: transparent;
   color: var(--dsw-alias-label-primary);
   font: inherit;
@@ -995,22 +1002,14 @@ const CSS = `
   white-space: nowrap;
 }
 .reflib-importStatusBadge[data-tone='err'] {
-  color: var(--dsw-alias-state-error-primary, var(--dsw-alias-state-error-primary));
-  border: 1px solid var(--dsw-alias-state-error-primary, var(--dsw-alias-state-error-primary));
+  color: var(--dsw-alias-state-error-primary);
+  border: 1px solid var(--dsw-alias-state-error-primary);
 }
 
 /* 冲突 diff */
-.reflib-importDiffNote {
-  font-size: 12px;
-  color: var(--dsw-alias-label-secondary);
-  background: var(--dsw-alias-bg-2, transparent);
-  border: 1px solid var(--dsw-alias-border-l1);
-  border-radius: var(--dsw-radius-sm, 6px);
-  padding: 8px 12px;
-}
 .reflib-importConflict {
   border: 1px solid var(--dsw-alias-border-l1);
-  border-radius: var(--dsw-radius-md, 8px);
+  border-radius: 8px;
   overflow: hidden;
 }
 .reflib-importConflictHead {
@@ -1020,7 +1019,7 @@ const CSS = `
   padding: 9px 14px;
   font-size: 12px;
   color: var(--dsw-alias-label-secondary);
-  background: var(--dsw-alias-bg-3, transparent);
+  background: var(--dsw-alias-bg-layer-3);
   border-bottom: 1px solid var(--dsw-alias-border-l1);
 }
 .reflib-importConflictWarn {
@@ -1030,7 +1029,7 @@ const CSS = `
 .reflib-importConflictPath {
   flex: 1;
   min-width: 0;
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-family: var(--ds-font-family-code);
   font-size: 11.5px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1072,7 +1071,7 @@ const CSS = `
   border-color: var(--dsw-alias-state-success-primary);
 }
 .reflib-importSidePath {
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-family: var(--ds-font-family-code);
   font-size: 11.5px;
   word-break: break-all;
 }
@@ -1178,7 +1177,7 @@ const CSS = `
   grid-template-columns: 1fr 34px 1fr;
   align-items: stretch;
   border: 1px solid var(--dsw-alias-border-l1);
-  border-radius: var(--dsw-radius-md, 8px);
+  border-radius: 8px;
   overflow: hidden;
 }
 .reflib-duplicateSide {
