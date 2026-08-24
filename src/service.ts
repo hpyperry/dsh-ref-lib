@@ -566,8 +566,8 @@ export class RefLibService extends Service {
   /** 解析父会话的有效参考库列表：优先经 live 父会话（覆盖父为 legacy/惰性子会话的
    * 折叠路径），父会话不可得时兜底直接读其 sidecar 文件。 */
   private resolveParentLibs(parentId: string): readonly RefLibEntry[] {
-    const sessions = this.ctx.get('sessions') as { get(sessionId: string): Session | undefined } | undefined
-    const parent = sessions?.get(parentId)
+    // 官方类型（dsh-session 声明合并 ctx.sessions: SessionStore）——不再用本地 as 断言。
+    const parent = this.ctx.get('sessions')?.get(SessionId(parentId))
     if (parent !== undefined) return this.list(parent)
     const file = this.pathOf(parentId)
     if (!existsSync(file)) return []
