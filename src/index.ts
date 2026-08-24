@@ -7,46 +7,117 @@
  * v4 起 client 读/写走插件自注册的 `/api/ref-lib/*` HTTP 路由（`ctx.webServer`，
  * 静默、无命令卡片）。
  *
- * - `ctx.refLibs` 服务：per-session 参考库校验与持久化（list / add / remove）；
- * - `/ref-lib` 命令（`ctx.commands`）：操作**当前会话**的参考库；
- * - `/api/ref-lib/*` 路由（`ctx.webServer` + `ctx.sessions`）：client UI 静默读/写；
- * - `reference-libs:policy` 上下文贡献（`ctx.systemPrompt.context`）：仅向配置了
- *   参考库的会话注入其库清单与只读约束（命名遵循 harness 的 `域:类型` 惯例，
- *   与 `sandbox:policy` / `approval:policy` 同类）。
+ * v15（能力形态，见 `docs/v15-tool-migration-design-notes.md`）——**提醒式 + 自主
+ * 检索**（2026-08-24 实测收敛：移除覆盖检查与逃逸预算，观察裸效果）：
+ * - **reference_lookup 工具**（`ctx.tools`）：按需定位库内内容（库 id + query →
+ *   命中行片段），路径围栏天然成立；**不诱导必查**——模型可自主选择用工具、
+ *   直接读文件或自己 grep；
+ * - **注入 = 强化提醒**：挂载即识别（有可用库即注入库清单+根路径+规范使用提醒，
+ *   每轮加载对抗上下文遗忘；未挂载零注入）；
+ * - **子 agent 种子告知**（`agent/created` inject 指引）+ 极简 preset 工具 deny。
  *
  * 只读保证分层：
  * - L1 沙箱天然只读：库位于 session workspace 之外时，read-only /
  *   workspace-write 模式下 bash/fs 均进程级只读（推荐用法）；
- * - L2 本插件注入的上下文软约束。
+ * - L2 本插件注入的上下文软约束 + reference_lookup 工具本身只读。
  * @module @hpyperry/dsh-ref-lib
  */
 
 import { Context, Service } from '@deepseek-ai/cordis'
 import { SessionId } from '@deepseek-ai/dsh-session'
+import { createUserMessage } from '@deepseek-ai/dsh-llm'
 // Side-effect type imports：加载 dsh-commands / dsh-system-prompt / dsh-session
-// / dsh-host-webserver 对 `@deepseek-ai/cordis` Context 的声明合并与类型。
+// / dsh-host-webserver / dsh-tools / dsh-agent / dsh-agent-presets 对
+// `@deepseek-ai/cordis` Context 的声明合并与类型。
 import type {} from '@deepseek-ai/dsh-commands'
 import type {} from '@deepseek-ai/dsh-system-prompt'
 import type {} from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-host-webserver'
+import type {} from '@deepseek-ai/dsh-tools'
+import type {} from '@deepseek-ai/dsh-agent'
+import type {} from '@deepseek-ai/dsh-agent-presets'
 import { parseRefLibCommand, REF_LIB_USAGE, resolveRefLibPath, resolveSourceSessions } from './commands.ts'
-import { planImport } from './logic.ts'
-import { renderImportSessions, renderImportSource, renderLibList, renderRefLibs } from './render.ts'
+import { filterAvailable, planImport } from './logic.ts'
+import { renderImportSessions, renderImportSource, renderLibList, renderRefLibsV15 } from './render.ts'
 import { makeRefLibRoutes } from './routes.ts'
 import { RefLibDuplicateError, RefLibService, type RefLibServiceConfig } from './service.ts'
+import { registerReferenceLookup } from './tool.ts'
+
+/** ref-lib 插件配置（v15：存储根即可，无覆盖检查/逃逸配置——已移除）。 */
+export type RefLibPluginConfig = RefLibServiceConfig
+
+/** 子 agent 种子告知文本（inherit-lite：一行政策 + 清单引用；首轮前注入）。 */
+const SUBAGENT_SEED_TEXT =
+  'This session inherits registered read-only reference libraries from its parent session. They are ' +
+  'local, strictly read-only, and authoritative for project facts. When this task needs project details ' +
+  '(signatures, code locations, standards), you may use the reference_lookup tool or read the library ' +
+  'files directly. Reference libraries are strictly read-only.'
 
 /**
- * ref-lib 插件本体：注册服务、命令与上下文贡献。
+ * ref-lib 插件本体：注册服务、命令、上下文贡献与检索工具。
  * 数据全部按当前会话（`invocation.agent.session` / `context.agent?.session`）操作。
  */
 export class RefLibPlugin extends Service {
   /**
    * @param ctx - 宿主上下文。
-   * @param config - 可选存储根目录覆盖（测试用）。
+   * @param config - 配置（存储根）。
    */
-  constructor(ctx: Context, config: RefLibServiceConfig = {}) {
+  constructor(ctx: Context, config: RefLibPluginConfig = {}) {
     super(ctx, 'refLibPlugin')
     const refLibs = new RefLibService(ctx, config)
+
+    // ---- v15：reference_lookup 工具注册（纯检索，无预算/记账——逃逸与覆盖检查已移除）----
+    ctx.inject(['tools'], (toolsCtx) => {
+      registerReferenceLookup(toolsCtx, {
+        libs: {
+          list: (session) => refLibs.list(session),
+        },
+      })
+    })
+
+    // ---- v15：systemPrompt 上下文（挂载即识别：有可用库即注入库清单+路径+规范
+    // 提醒，每轮加载强化记忆；未挂载零注入）----
+    ctx.inject(['systemPrompt'], (promptCtx) => {
+      promptCtx.systemPrompt.context({
+        name: 'reference-libs:policy',
+        order: 150,
+        text: (context) => {
+          const session = context.agent?.session
+          if (session === undefined) return ''
+          const available = filterAvailable(refLibs.list(session))
+          if (available.length === 0) return '' // 无可用挂载库：零注入
+          return renderRefLibsV15(available)
+        },
+      })
+    })
+
+    // ---- v15：agent/created（子 agent 种子告知 + 极简 preset 工具 deny）----
+    ctx.on(
+      'agent/created',
+      (payload) => {
+        try {
+          const agent = payload.agent
+          // 极简 preset：reference_lookup 对极简 agent 默认可见（全局注册语义），显式 deny。
+          const preset = agent.ctx.get('agentPresets')?.composedPreset(agent.ctx)
+          if (preset === 'minimal') {
+            agent.ctx.tools.restrict({ deny: ['reference_lookup'] })
+          }
+          // 子 agent：inherit-lite 种子告知（首轮前注入）。
+          if (agent.session.header.origin === 'subagent') {
+            agent.inject(
+              createUserMessage({
+                content: [{ type: 'text', text: SUBAGENT_SEED_TEXT }],
+                source: { kind: 'plugin', plugin: 'ref-lib' },
+              }),
+            )
+          }
+        } catch (error) {
+          // announce 契约：监听器抛错会回滚 agent 发布——绝不外抛。
+          ctx.logger.warn(`ref-lib: agent/created 处理失败（不阻断）：${String(error)}`)
+        }
+      },
+      { global: true },
+    )
 
     // v4：client UI 静默读/写通道 —— 在宿主 webServer 上注册 /api/ref-lib/* 路由。
     // 仅 web 组合存在 webServer/sessions 时生效（inject 等待，缺服务则不注册）。
@@ -134,17 +205,6 @@ export class RefLibPlugin extends Service {
             const message = error instanceof Error ? error.message : String(error)
             return { kind: 'error', text: `${message}${REF_LIB_USAGE}` }
           }
-        },
-      })
-    })
-
-    ctx.inject(['systemPrompt'], (promptCtx) => {
-      promptCtx.systemPrompt.context({
-        name: 'reference-libs:policy',
-        order: 150,
-        text: (context) => {
-          const session = context.agent?.session
-          return session === undefined ? '' : renderRefLibs([...refLibs.list(session)].reverse())
         },
       })
     })

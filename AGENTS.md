@@ -68,7 +68,31 @@
    `listSessions()` 记录，最终回退"新会话"），宿主结构变化从此走 typecheck 而非
    被断言掩盖；冲突页视觉对齐原型（note 标签国际化"用途说明："、diff 高亮按侧
    红/绿、主面板状态行/详情编辑打磨）；195 测试全过，`docs/prototype-session-
-   import.html` 为 v12 候选原型基准）。
+   import.html` 为 v12 候选原型基准）→
+v15（**能力形态：提醒式 + 自主检索**，2026-08-24 落地，设计文档
+`docs/v15-tool-migration-design-notes.md`）：新增 peerDeps
+`dsh-tools`/`dsh-agent`/`dsh-llm`/`dsh-agent-presets`（均 `^0.1.1-rc.2`）；
+**`reference_lookup` 工具**（`src/tool.ts`：库 id schema 路径围栏 + 自实现受限
+检索 `src/search.ts`（node fs 遍历 + 行匹配，无 rg 二进制）+ snippet 返回 +
+catalog 操作；**纯检索无预算无记账**——模型可自主选择用工具/直接读文件/自己
+grep）；**注入 = 强化提醒**（挂载即识别：有可用挂载库即注入提醒式政策
+`renderRefLibsV15`（库清单+根路径+规范使用指引，每轮加载对抗上下文遗忘），
+未挂载零注入；cwd 自动匹配 + 映射表经评估价值有限**整体移除**，见设计文档
+§1.2）；**子 agent 种子告知**（`agent/created` 对 `origin:'subagent'` inject
+inherit-lite 指引）+ **极简 preset 工具 deny**（`agent.ctx.tools.restrict`——
+全局注册工具对极简 agent 默认可见，已核验设计文档 §6-21）；**覆盖检查
+（nudge/strict）与逃逸预算（三层 + budget-stats 统计）2026-08-24 实测后整体
+移除**——政策"BEFORE answering"诱导模型每次必查导致过度调用（一次 step 4 次
+查询被截断），用户决定回到"提醒 + 自主"观察裸效果（`src/coverage.ts` /
+`src/metrics.ts` 已删除，git 历史可恢复）；检索质量：多词 OR 匹配、忽略
+`.pnpm-store` 等大目录、文件优先遍历、注释降权+行长升序排序、每文件命中上限；
+**canonical 值红线：工具返回值必须是纯 lossless JSON（禁 undefined 键/函数/
+符号/循环引用——`message: undefined` 曾触发 `INVALID_TOOL_OUTPUT`）**；
+233 测试全过（coverage/metrics 套件随模块移除），调试工具
+`scripts/analyze-session.mjs` / `dump-grep.mjs`（只读冷加载会话日志）。
+**未完成（后续）**：S5 探测 TTL（热路径 statSync 仍在）、inherit none 策略、
+token 对比基准任务集（§4.1 开放问题 #16）；覆盖检查/逃逸如需恢复可从 git
+历史取回并按需接线。
 
 ## 2. 开发规范（必须遵守）
 

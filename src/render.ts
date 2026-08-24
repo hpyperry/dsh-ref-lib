@@ -181,3 +181,54 @@ export function renderImportSessions(sessions: readonly { sessionId: string; tit
     .join('\n')
   return `配置过参考库的会话：\n${lines}\n用 /ref-lib import <上面的会话id或标题> [路径...] 查看并导入。`
 }
+
+/* ------------------------------------------------------------------ */
+/* v15：瘦身政策 + 命中库清单（方案 B：路径告知 + 工具化查证）          */
+/* ------------------------------------------------------------------ */
+
+/** v15 政策模板（提醒式——2026-08-24 实测收敛：告知路径 + 规范使用提醒，不强制必查）。 */
+const REF_LIB_TEMPLATE_V15 = `[Read-only Reference Libraries]
+
+The following reference libraries are registered for this session. They are
+local, strictly read-only, and authoritative for project facts (code, APIs,
+standards, internal docs).
+
+Reference libraries:
+
+{LIB}
+
+[Usage Guidance]
+
+Prefer reference library information over model memory for project facts.
+When you need specific details (exact signatures, code locations, file
+contents), locate them in the libraries above — via the reference_lookup tool
+or by reading the library files directly. Use English identifiers and
+technical terms as query terms (matching is literal). Follow the standards and
+conventions found in these libraries when implementing features. Reference
+libraries are strictly read-only.`
+
+/** 一条命中库的 v15 渲染（序号 + basename + id + Path + Description）。 */
+function renderLibraryV15(entry: RefLibEntry, index: number): string {
+  const path = sanitizeControlCharacters(entry.path)
+  const lines = [
+    `${index + 1}. ${sanitizeControlCharacters(basename(path))} (id: ${entry.id})`,
+    `   Path: ${path}`,
+  ]
+  const note = entry.note?.trim()
+  if (note !== undefined && note !== '') {
+    const flat = note.replace(/\s+/g, ' ')
+    lines.push(`   Description: ${sanitizeControlCharacters(flat)}`)
+  }
+  return lines.join('\n')
+}
+
+/** v15 注入渲染：可用挂载库 → 提醒式政策 + 库清单（每库一行，含 id 供工具限定）。
+ * 挂载即识别：无可用库返回空串（未挂载 → 零注入）。
+ * @param hits - 可用挂载条目（调用方已 filterAvailable）。
+ * @returns 注入文本；无可用库时为空串。
+ */
+export function renderRefLibsV15(hits: readonly RefLibEntry[]): string {
+  if (hits.length === 0) return ''
+  const libraries = hits.map(renderLibraryV15).join('\n\n')
+  return REF_LIB_TEMPLATE_V15.replace('{LIB}', libraries)
+}

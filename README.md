@@ -54,8 +54,9 @@ dsh --profile web
 | 用途说明（note） | 添加时可选填写；未填写时自动提取目录 README 首个 H1 标题兜底（无 README 则为空）。note 作为 routing metadata 注入，帮助 agent 判断库的相关性；可在面板条目详情中随时编辑 |
 | 跨会话导入 | 导入为**快照副本、不回流**——新条目重新铸造 id、note 保持源值；「采用导入」仅以导入侧 note 替换现有条目（保留现有 id）。重复判定按规范化绝对路径；源会话读取实时探测可用性、不写回 |
 | 目录选择后端 | 启动时自动探测：应用内目录浏览器（browse）或系统原生对话框（native）；可在 profile 的 `cordis.patch.yml` 切换 `directory-picker` 行为 |
-| 上下文注入 | 仅向有参考库的会话注入（`systemPrompt.context`，空列表零 token；注入文本为定稿英文模板） |
-| 子会话 | 分支会话（fork）创建时**复制继承**父会话的参考库列表（fork 时刻快照、条目 id 独立）；legacy 子会话（升级前创建）首次读取时同语义物化 |
+| 上下文注入（v15） | **挂载即识别 + 强化提醒**：会话有可用参考库（用户显式添加）即注入提醒式政策 + 全部库清单（含库 id 与根路径），每轮加载对抗上下文遗忘；未挂载零注入。极简 preset 下注入被 persona `complete` 天然抑制 |
+| 检索工具（v15） | `reference_lookup` 工具：**按需定位**库内内容（库 id + query → 命中片段），路径围栏；不诱导必查——模型可自主选择用工具、直接读文件或自己 grep；空 query 返回库清单（catalog）；库内受限检索自实现（无 rg 二进制依赖） |
+| 子会话 | 分支会话（fork）创建时**复制继承**父会话的参考库列表（fork 时刻快照、条目 id 独立）；子 agent（subagent）创建时注入一行查证指引（inherit-lite）；legacy 子会话（升级前创建）首次读取时同语义物化 |
 
 ## 🛡️ 安全
 
@@ -68,7 +69,10 @@ dsh --profile web
 - **系统原生目录选择器可能卡顿且界面语言跟随 OS**：可用「手动输入路径」绕开；或在 profile 把 `directory-picker` 切换为 `@deepseek-ai/dsh-host-directory-picker-browse`（应用内浏览器，快速且 zh/en 本地化）；
 - **settings 配置客户端白名单**（DSH rc.6 框架限制）：第三方插件 namespace 默认不可被浏览器端读写，官方标注为 deferred work；
 - `/ref-lib add <path>` 的相对路径**基于当前会话工作区**解析，而非 dsh 进程启动目录；
-- 导入只做**单向快照**：导入后源会话的变化不会回流；同路径再次导入仍是重复项处理（保留现有 / 采用导入），不会自动合并。
+- 导入只做**单向快照**：导入后源会话的变化不会回流；同路径再次导入仍是重复项处理（保留现有 / 采用导入），不会自动合并；
+- **检索为字面匹配**（设计红线：不做语义索引/embedding）；超大库（数千文件）首次检索存在 IO 成本，命中上限与超时已内置但未做库级预索引；
+- **注入热路径仍每次 statSync 探测**（S5 探测 TTL 未落地，属 v14 主题）；
+- **strict 为全局开关**（per-library 策略位未做）；子 agent 仅 inherit-lite（inherit/none 策略未做）。
 
 ## 🧑‍💻 开发
 

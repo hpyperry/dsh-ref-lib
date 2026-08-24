@@ -1,11 +1,47 @@
 import { describe, expect, it } from 'vitest'
-import { renderLibList, renderRefLibs } from '../src/render.ts'
+import { renderLibList, renderRefLibs, renderRefLibsV15 } from '../src/render.ts'
 import type { RefLibEntry } from '../src/spec.ts'
 
 /** 可用条目（真实链路中 service.list 返回前已实时探测并填充 status）。 */
 function available(id: string, path: string, note?: string): RefLibEntry {
   return { id, path, status: 'available', checkedAt: 1, ...(note === undefined ? {} : { note }) }
 }
+
+describe('renderRefLibsV15（提醒式政策 + 库清单）', () => {
+  it('无可用库返回空串（未挂载 → 零注入）', () => {
+    expect(renderRefLibsV15([])).toBe('')
+  })
+
+  it('注入提醒式政策 + 库清单（含 id 供工具限定）', () => {
+    const hits = [available('a', '/lib/my-lib', 'project specs')]
+    const text = renderRefLibsV15(hits)
+    expect(text).toContain('[Read-only Reference Libraries]')
+    expect(text).toContain('reference_lookup')
+    expect(text).toContain('1. my-lib (id: a)')
+    expect(text).toContain('Path: /lib/my-lib')
+    expect(text).toContain('Description: project specs')
+    // 提醒式政策关键词：使用指引 / 只读 / 规范遵守
+    expect(text).toContain('[Usage Guidance]')
+    expect(text).toContain('Follow the standards')
+    expect(text).toContain('strictly read-only')
+    // 无强制措辞（2026-08-24 收敛：不诱导必查、无覆盖检查段）
+    expect(text).not.toContain('BEFORE answering')
+    expect(text).not.toContain('[Coverage Check]')
+  })
+
+  it('多命中按序渲染', () => {
+    const hits = [available('a', '/lib/one'), available('b', '/lib/two')]
+    const text = renderRefLibsV15(hits)
+    expect(text.indexOf('1. one')).toBeLessThan(text.indexOf('2. two'))
+  })
+
+  it('note 多行折叠为单行（注入卫生）', () => {
+    const hits = [available('a', '/lib/one', 'line1\nline2')]
+    const text = renderRefLibsV15(hits)
+    expect(text).toContain('Description: line1 line2')
+    expect(text).not.toContain('\nline2')
+  })
+})
 
 describe('renderRefLibs', () => {
   it('空列表返回空串（零 token）', () => {
