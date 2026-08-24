@@ -31,6 +31,7 @@
     }
   },
   "scripts": {
+    "prepare": "tsc && tsdown",
     "build": "tsc && tsdown",
     "build:node": "tsc",
     "build:client": "tsdown",
