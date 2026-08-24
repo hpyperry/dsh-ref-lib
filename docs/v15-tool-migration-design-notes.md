@@ -429,3 +429,14 @@ reasoning? }`）——**token 用量随会话日志持久化**，可实时监听
   删除 `src/coverage.ts` / `src/metrics.ts`（git 历史可恢复），233 测试全过；
   剩余机制：挂载注入 + reference_lookup（纯检索）+ 子 agent 种子 + 极简 restrict +
   检索质量改进。**覆盖检查/逃逸如需恢复**：从 git 历史取回模块并按需接线。
+- 2026-08-24：**极简模式现状记录 + 待办（预设黑名单自动判定，未实施）**——
+  实测确认极简模式下插件完全静默：①注入被极简 preset 的 persona `complete: true`
+  吞掉（框架行为，插件无法绕过——S4"极简零注入"设计预期）；②工具被
+  `agent/created` 钩子硬编码 `restrict({ deny: ['reference_lookup'] })` 拒绝。
+  技术事实：极简模式其实**能查**（reference_lookup 自包含返回片段，bash 可 cat
+  follow-up），缺的只是"提醒"（注入）。用户不使用极简模式，但希望把"极简特判"
+  升级为**通用自动判定**（不硬编码模式名）。**决策（方案 A，待实施）**：
+  `agent/created` 读 `composedPreset(agent.ctx)`，命中**可配置预设黑名单**
+  （`config.denyPresets`，默认 `['minimal']`）→ 自动 deny 工具 + 不注入；
+  黑名单可配置（新 preset 加配置即可）。否决方案 B（按工具集能力检测——
+  极简有 bash 能读，检测抓不住本质；且"注入是否被 persona 吞"插件拿不到信息）。

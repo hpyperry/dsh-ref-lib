@@ -90,7 +90,7 @@ inherit-lite 指引）+ **极简 preset 工具 deny**（`agent.ctx.tools.restric
 符号/循环引用——`message: undefined` 曾触发 `INVALID_TOOL_OUTPUT`）**；
 233 测试全过（coverage/metrics 套件随模块移除），调试工具
 `scripts/analyze-session.mjs` / `dump-grep.mjs`（只读冷加载会话日志）。
-**未完成（后续）**：S5 探测 TTL（热路径 statSync 仍在）、inherit none 策略、
+**未完成（后续）**：S5 探测 TTL（热路径 statSync 仍在）、inherit none 策略、预设黑名单自动判定（denyPresets，方案 A 见设计文档变更记录）、
 token 对比基准任务集（§4.1 开放问题 #16）；覆盖检查/逃逸如需恢复可从 git
 历史取回并按需接线。
 
