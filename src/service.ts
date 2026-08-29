@@ -39,9 +39,14 @@ import type { SessionTitleObservationResult } from '@deepseek-ai/dsh-session-que
 // 官方声明合并：加载 ctx.workspaceRegistry（WorkspaceRegistry）——v14 归档过滤
 // 读 `archivedSessionIds` 展示层归档集合（会话仍在 persistence，sidecar 枚举包含）。
 import type {} from '@deepseek-ai/dsh-workspace'
+// 官方声明合并：加载 ctx.apiProxy（ApiProxy）——v16.1 会话可见性（子代理/blank）
+// 与侧边栏同源判定（`sessions.list` 的 SessionSummary）。
+import type {} from '@deepseek-ai/dsh-host-apiproxy'
+import { RpcId } from '@deepseek-ai/dsh-host-apiproxy'
 import {
   attachSessionMeta,
   excludeArchivedSources,
+  excludeHiddenSources,
   filterSourcesByGroupKey,
   foldRefLibs,
   probeLibs,
@@ -405,19 +410,24 @@ export class RefLibService extends Service {
    * @returns 按 sidecar 修改时间倒序（最近活跃在前）。
    */
   async listSessions(excludeSessionId?: string): Promise<RefLibSourceSession[]> {
-    return this.attachTitles(this.enumerateSources(excludeSessionId))
+    const sources = this.enumerateSources(excludeSessionId)
+    // v16.1：宿主侧边栏不可见的会话（子代理 origin === 'subagent' + 空会话 blank）
+    // 不进导入来源——sidecar 保留不动，只是不当作"会话"展示（与侧边栏同口径）。
+    return this.attachTitles(excludeHiddenSources(sources, await this.hiddenSessionIds()))
   }
 
   /**
    * v16 懒加载第一级：工作区组概览（`groups=1`）。只做 sidecar 枚举 + 归档过滤 +
    * workspace 映射 + 组内计数聚合——**不读标题、不探测可用性**（展开某组时才做），
    * 会话数量级增长下保持轻量。组顺序 = 组内最近活跃会话降序（枚举按 mtime 倒序后
-   * 首次出现顺序）。
+   * 首次出现顺序）。v16.1 起为排除不可见会话需调一次 `apiProxy.sessions.list()`
+   * （宿主优化路径：live 事件折叠 + 冷会话 size-cap 探测 + 投影缓存，与侧边栏同源）。
    * @param excludeSessionId - 排除的会话 id（当前会话）。
    * @returns 组概览（key 回传给 {@link listSessionsByGroup} 做第二级加载）。
    */
-  listSessionGroups(excludeSessionId?: string): RefLibGroupSummaryRow[] {
-    return summarizeGroups(this.enumerateSources(excludeSessionId))
+  async listSessionGroups(excludeSessionId?: string): Promise<RefLibGroupSummaryRow[]> {
+    const sources = this.enumerateSources(excludeSessionId)
+    return summarizeGroups(excludeHiddenSources(sources, await this.hiddenSessionIds()))
   }
 
   /**
@@ -429,7 +439,36 @@ export class RefLibService extends Service {
    * @returns 该组会话（按 mtime 倒序；无标题/读取失败时降级为无 title）。
    */
   async listSessionsByGroup(excludeSessionId: string | undefined, key: string): Promise<RefLibSourceSession[]> {
-    return this.attachTitles(filterSourcesByGroupKey(this.enumerateSources(excludeSessionId), key))
+    const sources = this.enumerateSources(excludeSessionId)
+    return this.attachTitles(
+      filterSourcesByGroupKey(excludeHiddenSources(sources, await this.hiddenSessionIds()), key),
+    )
+  }
+
+  private rpcCounter = 0
+
+  /**
+   * 宿主判定的"侧边栏不可见"会话 id 集合（v16.1）：子代理（`origin === 'subagent'`）
+   * + 空会话（`blank`）。经 `ctx.apiProxy.sessions.list()` 一次拿到——与宿主侧边栏
+   * **同源同逻辑**（live 事件折叠 + 冷会话 size-cap 探测 + 投影缓存，见 host
+   * api-proxy 的 session.list）。宿主服务缺失（非 web 组合）或读取异常时降级为
+   * 空集合（不过滤，不阻断导入）。
+   * @returns 不可见会话 id 集合。
+   */
+  private async hiddenSessionIds(): Promise<ReadonlySet<string>> {
+    const ids = new Set<string>()
+    const apiProxy = this.ctx.get('apiProxy')
+    if (apiProxy === undefined) return ids
+    try {
+      const response = await apiProxy.sessions.list({ rpcId: RpcId(`ref-lib-hidden-${++this.rpcCounter}`), payload: {} })
+      if (!response.result.ok) return ids
+      for (const item of response.result.value.items) {
+        if (item.origin === 'subagent' || item.blank) ids.add(String(item.sessionId))
+      }
+    } catch (error) {
+      this.ctx.logger.warn(`ref-lib: 会话可见性判定失败（降级不过滤）：${String(error)}`)
+    }
+    return ids
   }
 
   /**

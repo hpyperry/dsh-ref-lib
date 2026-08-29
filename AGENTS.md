@@ -96,7 +96,19 @@
    `UNGROUPED_GROUP_KEY`（`__ungrouped__` 哨兵），client 不再自造；新增 locale
    `import.group.ungrouped/count`；L0 钉死分组顺序/兜底组/概览聚合/按组过滤 +
    wire 三级解析 + 路由三级分发 + 服务层两级映射 + render 分组文本；版本
-   0.12.0 → 0.13.0）。
+   0.12.0 → 0.13.0）→
+   v16.1（**导入来源与宿主侧边栏同口径**：跨会话导入排除子代理
+   （`origin === 'subagent'`）与**空白会话**（`blank`——从未开始对话，如测试残留的
+   空会话；此前"未分组"被它们占满且侧边栏看不到）——一次
+   `ctx.apiProxy.sessions.list()` 拿 `SessionSummary`（与侧边栏**同源同逻辑**：
+   live 事件折叠 + 冷会话 size-cap 探测 + 投影缓存），`hiddenSessionIds()` 收集
+   `origin === 'subagent' || blank` 的 id，三个入口（全量/组概览/按组）统一过滤；
+   子代理 sidecar（v10 继承产物，带父会话参考库上下文）与 blank sidecar **保留
+   不动**，仅不入导入来源；宿主无 apiProxy（非 web 组合）或调用失败降级不过滤；
+   peer/dev 新增 `@deepseek-ai/dsh-host-apiproxy ^0.1.1-rc.2`；纯函数
+   `excludeHiddenSources`（L0 钉死缺省/部分/全滤）+ 服务层 apiProxy stub 4 条
+   （子代理/blank/调用失败/无服务）；231 测试全过，dev 实测 blank 会话（Redis
+   残留）被正确剔除）。
 
 ## 2. 开发规范（必须遵守）
 

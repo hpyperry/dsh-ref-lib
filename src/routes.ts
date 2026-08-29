@@ -295,7 +295,7 @@ export function makeRefLibRoutes(deps: RefLibRouteDeps): WebRoute[] {
           const groups = url.searchParams.get('groups')
           const group = url.searchParams.get('group')
           if (groups === '1') {
-            writeJson(res, 200, { groups: refLibs.listSessionGroups(current) })
+            writeJson(res, 200, { groups: await refLibs.listSessionGroups(current) })
             return
           }
           if (group !== null) {

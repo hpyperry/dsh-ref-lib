@@ -220,6 +220,24 @@ export function filterSourcesByGroupKey(
 }
 
 /**
+ * 从源会话清单中排除宿主侧边栏不可见的会话（v16.1：子代理 `origin === 'subagent'`
+ * 与空会话 `blank`）。子代理的 sidecar 是 v10 继承钩子的产物（带父会话参考库
+ * 上下文），blank 会话的 sidecar 多为测试残留——都**保留不动**，只从导入来源
+ * 枚举里剔除，与宿主侧边栏口径一致（侧边栏不显示这两类）。
+ * 纯函数：集合缺省或为空时原样返回；过滤后顺序与入参一致。
+ * @param sources - 已枚举的源会话清单。
+ * @param hiddenSessionIds - 宿主判定的不可见会话 id 集合（缺省 = 不过滤）。
+ * @returns 可见的源会话清单（顺序与入参一致）。
+ */
+export function excludeHiddenSources(
+  sources: readonly RefLibSourceSessionRow[],
+  hiddenSessionIds: ReadonlySet<string> | undefined,
+): RefLibSourceSessionRow[] {
+  if (hiddenSessionIds === undefined || hiddenSessionIds.size === 0) return [...sources]
+  return sources.filter((source) => !hiddenSessionIds.has(source.sessionId))
+}
+
+/**
  * 把宿主 `sessionQuery.readTitleSnapshots` 的结果合并进源会话清单（v12 标题补全，
  * 与宿主 `@session` 引用同源——`session/title` 事件折叠，冷会话同样可读）。
  * 同时补全会话工作区 cwd（无标题会话的 UI 显示回退"工作区名 · 新会话"）。

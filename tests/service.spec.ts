@@ -733,7 +733,7 @@ describe('RefLibService v12（跨会话导入）', () => {
         { title: 'ws-b', sessionIds: [] },
       ],
     } as never)
-    const groups = service.listSessionGroups()
+    const groups = await service.listSessionGroups()
     // loose 最后 add（mtime 最新）→ 未分组组排最前；ws-a 两会话随后；归档会话已排除。
     expect(groups).toEqual([
       { key: '__ungrouped__', count: 1 },
@@ -774,7 +774,7 @@ describe('RefLibService v12（跨会话导入）', () => {
     const service = new RefLibService(new Context(), { root: tmp })
     const sessionA = fakeSession()
     await service.add(sessionA, dir)
-    expect(service.listSessionGroups()).toEqual([{ key: '__ungrouped__', count: 1 }])
+    expect(await service.listSessionGroups()).toEqual([{ key: '__ungrouped__', count: 1 }])
     const rows = await service.listSessionsByGroup(undefined, '__ungrouped__')
     expect(rows.map((s) => s.sessionId)).toEqual([sessionA.id])
   })
@@ -900,5 +900,104 @@ describe('RefLibService v12.1（源读取实时探测、不写盘）', () => {
     const sources = await service.listSessions()
     expect(sources).toHaveLength(2)
     for (const source of sources) expect(source.available).toBe(0)
+  })
+})
+
+describe('RefLibService v16.1（导入来源排除不可见会话——子代理 + 空会话）', () => {
+  let tmp: string
+
+  beforeEach(async () => {
+    tmp = await mkdtemp(join(process.cwd(), 'tests/.tmp-'))
+  })
+
+  afterEach(async () => {
+    await rm(tmp, { recursive: true, force: true })
+  })
+
+  /** apiProxy stub：SessionSummary 带 blank / origin（与侧边栏同源）。 */
+  function provideSessionSummaries(ctx: Context, items: Array<{ sessionId: string; blank?: boolean; origin?: 'subagent' }>): void {
+    ctx.provide('apiProxy', {
+      sessions: {
+        list: async () => ({
+          rpcId: 'stub',
+          result: {
+            ok: true,
+            value: {
+              items: items.map((item) => ({
+                sessionId: item.sessionId,
+                updatedAt: 1,
+                running: false,
+                blank: item.blank ?? false,
+                ...(item.origin === undefined ? {} : { origin: item.origin }),
+              })),
+            },
+          },
+        }),
+      },
+    } as never)
+  }
+
+  it('listSessionGroups：排除子代理 + 空会话', async () => {
+    const dir = join(tmp, 'lib-a')
+    await mkdir(dir)
+    const ctx = new Context()
+    const service = new RefLibService(ctx, { root: tmp })
+    const normal = fakeSession()
+    const sub = fakeSession()
+    const blank = fakeSession()
+    await service.add(normal, dir)
+    await service.add(sub, dir)
+    await service.add(blank, dir)
+    provideSessionSummaries(ctx, [
+      { sessionId: sub.id, origin: 'subagent' },
+      { sessionId: blank.id, blank: true },
+      { sessionId: normal.id },
+    ])
+    const groups = await service.listSessionGroups()
+    // 三个都无工作区 → 只剩 normal 一个未分组
+    expect(groups).toEqual([{ key: '__ungrouped__', count: 1 }])
+  })
+
+  it('listSessions / listSessionsByGroup：同样排除子代理与空会话', async () => {
+    const dir = join(tmp, 'lib-a')
+    await mkdir(dir)
+    const ctx = new Context()
+    const service = new RefLibService(ctx, { root: tmp })
+    const normal = fakeSession()
+    const sub = fakeSession()
+    const blank = fakeSession()
+    await service.add(normal, dir)
+    await service.add(sub, dir)
+    await service.add(blank, dir)
+    provideSessionSummaries(ctx, [
+      { sessionId: sub.id, origin: 'subagent' },
+      { sessionId: blank.id, blank: true },
+    ])
+    const all = await service.listSessions()
+    expect(all.map((s) => s.sessionId)).toEqual([normal.id])
+    const group = await service.listSessionsByGroup(undefined, '__ungrouped__')
+    expect(group.map((s) => s.sessionId)).toEqual([normal.id])
+  })
+
+  it('sessions.list 失败时降级不过滤（原有行为不变）', async () => {
+    const dir = join(tmp, 'lib-a')
+    await mkdir(dir)
+    const ctx = new Context()
+    const service = new RefLibService(ctx, { root: tmp })
+    const sessionA = fakeSession()
+    await service.add(sessionA, dir)
+    ctx.provide('apiProxy', {
+      sessions: { list: async () => { throw new Error('boom') } },
+    } as never)
+    expect(await service.listSessionGroups()).toEqual([{ key: '__ungrouped__', count: 1 }])
+  })
+
+  it('宿主无 apiProxy 时降级不过滤', async () => {
+    const dir = join(tmp, 'lib-a')
+    await mkdir(dir)
+    const service = new RefLibService(new Context(), { root: tmp })
+    const sessionA = fakeSession()
+    await service.add(sessionA, dir)
+    expect(await service.listSessionGroups()).toEqual([{ key: '__ungrouped__', count: 1 }])
   })
 })

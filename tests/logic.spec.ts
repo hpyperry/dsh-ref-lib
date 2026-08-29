@@ -1,6 +1,6 @@
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import { describe, expect, it } from 'vitest'
-import { applyProbe, attachSessionMeta, excludeArchivedSources, filterAvailable, filterSourcesByGroupKey, foldRefLibs, groupKeyOf, groupSourcesByWorkspace, planImport, probeLibs, removeLib, statusChanged, summarizeGroups, UNGROUPED_GROUP_KEY, upsertLib, type RefLibSourceSessionRow } from '../src/logic.ts'
+import { applyProbe, attachSessionMeta, excludeArchivedSources, excludeHiddenSources, filterAvailable, filterSourcesByGroupKey, foldRefLibs, groupKeyOf, groupSourcesByWorkspace, planImport, probeLibs, removeLib, statusChanged, summarizeGroups, UNGROUPED_GROUP_KEY, upsertLib, type RefLibSourceSessionRow } from '../src/logic.ts'
 import type { RefLibEntry } from '../src/spec.ts'
 
 const a: RefLibEntry = { id: 'a', path: '/lib/a' }
@@ -370,5 +370,31 @@ describe('summarizeGroups / filterSourcesByGroupKey（v16 懒加载两级）', (
     expect(filterSourcesByGroupKey(sources, 'ws-b').map((s) => s.sessionId)).toEqual(['s-b'])
     expect(filterSourcesByGroupKey(sources, UNGROUPED_GROUP_KEY).map((s) => s.sessionId)).toEqual(['s-loose', 's-loose2'])
     expect(filterSourcesByGroupKey(sources, 'nope')).toEqual([])
+  })
+})
+
+describe('excludeHiddenSources（v16.1：导入来源排除不可见会话——子代理 + 空会话）', () => {
+  const row = (sessionId: string, workspace?: string): RefLibSourceSessionRow => ({
+    sessionId,
+    count: 1,
+    available: 1,
+    updatedAt: 1,
+    ...(workspace === undefined ? {} : { workspace }),
+  })
+
+  it('集合缺省或为空 → 原样保留', () => {
+    const sources = [row('s-a'), row('s-b')]
+    expect(excludeHiddenSources(sources, undefined)).toEqual(sources)
+    expect(excludeHiddenSources(sources, new Set())).toEqual(sources)
+  })
+
+  it('剔除集合中的会话，顺序与入参一致', () => {
+    const sources = [row('s-a'), row('s-b'), row('s-c')]
+    expect(excludeHiddenSources(sources, new Set(['s-b'])).map((s) => s.sessionId)).toEqual(['s-a', 's-c'])
+    expect(excludeHiddenSources(sources, new Set(['s-a', 's-c'])).map((s) => s.sessionId)).toEqual(['s-b'])
+  })
+
+  it('全部为子代理 → 空列表', () => {
+    expect(excludeHiddenSources([row('s-a')], new Set(['s-a']))).toEqual([])
   })
 })
