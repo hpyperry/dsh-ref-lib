@@ -36,7 +36,10 @@ import type {} from '@deepseek-ai/dsh-session'
 // 官方声明合并：加载 ctx.sessionQuery（SessionQueryEngine）与观测/记录类型。
 import type {} from '@deepseek-ai/dsh-session-query'
 import type { SessionTitleObservationResult } from '@deepseek-ai/dsh-session-query'
-import { attachSessionMeta, foldRefLibs, probeLibs, removeLib, upsertLib, type ImportPlan, type RefLibSourceSessionRow } from './logic.ts'
+// 官方声明合并：加载 ctx.workspaceRegistry（WorkspaceRegistry）——v14 归档过滤
+// 读 `archivedSessionIds` 展示层归档集合（会话仍在 persistence，sidecar 枚举包含）。
+import type {} from '@deepseek-ai/dsh-workspace'
+import { attachSessionMeta, excludeArchivedSources, foldRefLibs, probeLibs, removeLib, upsertLib, type ImportPlan, type RefLibSourceSessionRow } from './logic.ts'
 import type { RefLibAvailability, RefLibEntry } from './spec.ts'
 import { hasControlCharacters, isRefLibEntry } from './validate.ts'
 
@@ -387,7 +390,7 @@ export class RefLibService extends Service {
    * @returns 按 sidecar 修改时间倒序（最近活跃在前）。
    */
   async listSessions(excludeSessionId?: string): Promise<RefLibSourceSession[]> {
-    const sources: RefLibSourceSession[] = []
+    let sources: RefLibSourceSession[] = []
     let names: string[]
     try {
       names = readdirSync(this.root)
@@ -418,6 +421,10 @@ export class RefLibService extends Service {
       })
     }
     sources.sort((a, b) => b.updatedAt - a.updatedAt)
+    // v14：排除宿主已归档会话（workspaceRegistry 的 archivedSessionIds 是展示层
+    // 归档集合——会话仍在 live/persistence，sidecar 枚举会包含它们）。宿主无
+    // workspaceRegistry（非 web 组合）或集合为空时原样保留，不阻断导入。
+    sources = excludeArchivedSources(sources, this.ctx.get('workspaceRegistry')?.archivedSessionIds)
     if (sources.length === 0) return sources
     // 标题/工作区补全（v13.1）：cwd 多源兜底——
     // 1) live 会话直接读 header.cwd（sessions.get，不依赖 sessionQuery 观测时序）；

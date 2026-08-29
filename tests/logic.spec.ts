@@ -1,6 +1,6 @@
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import { describe, expect, it } from 'vitest'
-import { applyProbe, attachSessionMeta, filterAvailable, foldRefLibs, planImport, probeLibs, removeLib, statusChanged, upsertLib } from '../src/logic.ts'
+import { applyProbe, attachSessionMeta, excludeArchivedSources, filterAvailable, foldRefLibs, planImport, probeLibs, removeLib, statusChanged, upsertLib, type RefLibSourceSessionRow } from '../src/logic.ts'
 import type { RefLibEntry } from '../src/spec.ts'
 
 const a: RefLibEntry = { id: 'a', path: '/lib/a' }
@@ -252,5 +252,30 @@ describe('probeLibs / applyProbe（v12.1 源读取实时探测）', () => {
     const stable = probeLibs(stableInput, probe, 9)
     expect(stable.changed).toBe(false)
     expect(stable.next[0]).toBe(stableInput[0])
+  })
+})
+
+describe('excludeArchivedSources（v14：跨会话导入排除已归档会话）', () => {
+  const row = (sessionId: string): RefLibSourceSessionRow => ({
+    sessionId,
+    count: 1,
+    available: 1,
+    updatedAt: 1,
+  })
+
+  it('归档集合缺省（宿主无 workspaceRegistry 组合）或为空时原样保留', () => {
+    const sources = [row('s-a'), row('s-b')]
+    expect(excludeArchivedSources(sources, undefined)).toEqual(sources)
+    expect(excludeArchivedSources(sources, [])).toEqual(sources)
+  })
+
+  it('剔除归档集合中的会话，顺序与入参一致', () => {
+    const sources = [row('s-a'), row('s-b'), row('s-c')]
+    expect(excludeArchivedSources(sources, ['s-b']).map((s) => s.sessionId)).toEqual(['s-a', 's-c'])
+    expect(excludeArchivedSources(sources, ['s-a', 's-c']).map((s) => s.sessionId)).toEqual(['s-b'])
+  })
+
+  it('全部归档 → 空列表（不阻断导入的其余步骤）', () => {
+    expect(excludeArchivedSources([row('s-a')], ['s-a'])).toEqual([])
   })
 })

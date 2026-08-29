@@ -166,6 +166,24 @@ export function attachSessionMeta(
 }
 
 /**
+ * 从源会话清单中排除宿主已归档会话（v14：`WorkspaceRegistry.archivedSessionIds`
+ * 过滤）。归档是 workspace 展示层概念——会话仍留在 live/persistence、sidecar
+ * 枚举必然包含它们，跨会话导入需要显式剔除。纯函数：归档集合缺省（宿主无
+ * workspaceRegistry 的组合）或为空时原样返回（不阻断导入）；过滤后顺序与入参一致。
+ * @param sources - sidecar 枚举的源会话清单。
+ * @param archivedSessionIds - host workspaceRegistry 的归档会话 id 集合（缺省 = 不过滤）。
+ * @returns 未归档的源会话清单（顺序与入参一致）。
+ */
+export function excludeArchivedSources(
+  sources: readonly RefLibSourceSessionRow[],
+  archivedSessionIds: readonly string[] | undefined,
+): RefLibSourceSessionRow[] {
+  if (archivedSessionIds === undefined || archivedSessionIds.length === 0) return [...sources]
+  const archived = new Set(archivedSessionIds)
+  return sources.filter((source) => !archived.has(source.sessionId))
+}
+
+/**
  * 对一条目应用探测结果（v12.1 源读取实时探测）：状态未变（或从未检测）时返回
  * **原引用**，变化时返回带新 status/checkedAt 的新对象。纯函数（探测函数注入，
  * logic 层不触碰文件系统）。

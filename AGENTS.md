@@ -68,7 +68,15 @@
    `listSessions()` 记录，最终回退"新会话"），宿主结构变化从此走 typecheck 而非
    被断言掩盖；冲突页视觉对齐原型（note 标签国际化"用途说明："、diff 高亮按侧
    红/绿、主面板状态行/详情编辑打磨）；195 测试全过，`docs/prototype-session-
-   import.html` 为 v12 候选原型基准）。
+   import.html` 为 v12 候选原型基准）→
+   v14（**跨会话导入排除已归档会话**：宿主 `ctx.workspaceRegistry.archivedSessionIds`
+   （`@deepseek-ai/dsh-workspace` 展示层归档集合——归档只隐藏工作区树、会话仍在
+   live/persistence，sidecar 枚举原本会包含它们）在 `listSessions` **单点过滤**，
+   UI 面板（`/api/ref-lib/sessions`）与 `/ref-lib import` 命令同享；宿主无
+   workspaceRegistry（非 web 组合）或缺省时原样保留不阻断；纯函数
+   `excludeArchivedSources`（L0 钉死缺省/空集合/部分/全归档行为）+ 服务层 stub
+   集成测试；peer/dev 新增 `@deepseek-ai/dsh-workspace ^0.1.1-rc.2`（与 v11 基线
+   同元组，声明合并经 typecheck 而非断言）；200 测试全过）。
 
 ## 2. 开发规范（必须遵守）
 

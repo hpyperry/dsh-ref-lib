@@ -654,6 +654,32 @@ describe('RefLibService v12（跨会话导入）', () => {
     expect(sources).toHaveLength(1)
     expect(sources[0]?.title).toBeUndefined()
   })
+
+  it('listSessions：workspaceRegistry 归档集合中的会话被排除（v14）', async () => {
+    const dir = join(tmp, 'lib-a')
+    await mkdir(dir)
+    const ctx = new Context()
+    const service = new RefLibService(ctx, { root: tmp })
+    const archived = fakeSession()
+    const kept = fakeSession()
+    await service.add(archived, dir)
+    await service.add(kept, dir)
+    ctx.provide('workspaceRegistry', { archivedSessionIds: [archived.id] } as never)
+    const sources = await service.listSessions()
+    expect(sources.map((s) => s.sessionId)).toEqual([kept.id])
+  })
+
+  it('listSessions：workspaceRegistry 存在但归档集合为空 → 全部保留', async () => {
+    const dir = join(tmp, 'lib-a')
+    await mkdir(dir)
+    const ctx = new Context()
+    const service = new RefLibService(ctx, { root: tmp })
+    const kept = fakeSession()
+    await service.add(kept, dir)
+    ctx.provide('workspaceRegistry', { archivedSessionIds: [] } as never)
+    const sources = await service.listSessions()
+    expect(sources.map((s) => s.sessionId)).toEqual([kept.id])
+  })
 })
 
 describe('RefLibService v12（只读源读取）', () => {
