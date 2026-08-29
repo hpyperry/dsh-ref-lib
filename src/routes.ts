@@ -290,6 +290,18 @@ export function makeRefLibRoutes(deps: RefLibRouteDeps): WebRoute[] {
             return
           }
           // 来源清单不需要当前会话 live——枚举的是 sidecar 文件；current 仅用于排除自身。
+          // v16 懒加载三级：`groups=1` → 组概览（轻量，不读标题）；`group=<key>` → 单个
+          // 工作区的会话（标题补全只对该组执行）；无参数 → 全量清单（兼容/命令模式）。
+          const groups = url.searchParams.get('groups')
+          const group = url.searchParams.get('group')
+          if (groups === '1') {
+            writeJson(res, 200, { groups: refLibs.listSessionGroups(current) })
+            return
+          }
+          if (group !== null) {
+            writeJson(res, 200, { sessions: await refLibs.listSessionsByGroup(current, group) })
+            return
+          }
           writeJson(res, 200, { sessions: await refLibs.listSessions(current) })
         } catch (error) {
           writeError(res, error)

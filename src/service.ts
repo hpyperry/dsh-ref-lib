@@ -39,7 +39,19 @@ import type { SessionTitleObservationResult } from '@deepseek-ai/dsh-session-que
 // 官方声明合并：加载 ctx.workspaceRegistry（WorkspaceRegistry）——v14 归档过滤
 // 读 `archivedSessionIds` 展示层归档集合（会话仍在 persistence，sidecar 枚举包含）。
 import type {} from '@deepseek-ai/dsh-workspace'
-import { attachSessionMeta, excludeArchivedSources, foldRefLibs, probeLibs, removeLib, upsertLib, type ImportPlan, type RefLibSourceSessionRow } from './logic.ts'
+import {
+  attachSessionMeta,
+  excludeArchivedSources,
+  filterSourcesByGroupKey,
+  foldRefLibs,
+  probeLibs,
+  removeLib,
+  summarizeGroups,
+  upsertLib,
+  type ImportPlan,
+  type RefLibGroupSummaryRow,
+  type RefLibSourceSessionRow,
+} from './logic.ts'
 import type { RefLibAvailability, RefLibEntry } from './spec.ts'
 import { hasControlCharacters, isRefLibEntry } from './validate.ts'
 
@@ -386,10 +398,48 @@ export class RefLibService extends Service {
    * 空列表会话不出现。会话标题经宿主 `ctx.sessionQuery.readTitleSnapshots` 补全
    * （与宿主 `@session` 引用同源：`session/title` 事件折叠，**冷会话同样可读**）；
    * 宿主无 sessionQuery 服务（非 web 组合）或读取失败时该会话无标题（UI 回退显示 id）。
+   * v16 懒加载：UI 不再全量拉取本清单——先 `listSessionGroups`（轻量概览，不读标题），
+   * 展开某个工作区时再 `listSessionsByGroup`（只对单个工作区的会话做标题补全）。
+   * 本方法保留全量语义（命令模式 `/ref-lib import` 与兼容路径使用）。
    * @param excludeSessionId - 排除的会话 id（通常是当前会话——导入给自己无意义）。
    * @returns 按 sidecar 修改时间倒序（最近活跃在前）。
    */
   async listSessions(excludeSessionId?: string): Promise<RefLibSourceSession[]> {
+    return this.attachTitles(this.enumerateSources(excludeSessionId))
+  }
+
+  /**
+   * v16 懒加载第一级：工作区组概览（`groups=1`）。只做 sidecar 枚举 + 归档过滤 +
+   * workspace 映射 + 组内计数聚合——**不读标题、不探测可用性**（展开某组时才做），
+   * 会话数量级增长下保持轻量。组顺序 = 组内最近活跃会话降序（枚举按 mtime 倒序后
+   * 首次出现顺序）。
+   * @param excludeSessionId - 排除的会话 id（当前会话）。
+   * @returns 组概览（key 回传给 {@link listSessionsByGroup} 做第二级加载）。
+   */
+  listSessionGroups(excludeSessionId?: string): RefLibGroupSummaryRow[] {
+    return summarizeGroups(this.enumerateSources(excludeSessionId))
+  }
+
+  /**
+   * v16 懒加载第二级：按组 wire 键取单个工作区的会话（`group=<key>`）。与
+   * `listSessions` 同语义（含标题补全），但 `readTitleSnapshots` 只作用于该组的
+   * 会话子集——展开时按需加载，避免全局冷读会话日志。
+   * @param excludeSessionId - 排除的会话 id（当前会话）。
+   * @param key - 组 wire 键（`listSessionGroups` 返回的 key）。
+   * @returns 该组会话（按 mtime 倒序；无标题/读取失败时降级为无 title）。
+   */
+  async listSessionsByGroup(excludeSessionId: string | undefined, key: string): Promise<RefLibSourceSession[]> {
+    return this.attachTitles(filterSourcesByGroupKey(this.enumerateSources(excludeSessionId), key))
+  }
+
+  /**
+   * 枚举公共核心（v16 抽出，两级懒加载与全量共用）：读 sidecar 目录 → 过滤空列表 →
+   * 实时探测 available → 按 mtime 倒序 → 排除归档会话 → 补全 workspace（注册工作区
+   * display title）。**不含标题补全**（那是 `attachTitles` 的事，仅对需要的子集执行）。
+   * @param excludeSessionId - 排除的会话 id。
+   * @returns 排序、过滤、补全后的源会话清单（可能为空数组）。
+   */
+  private enumerateSources(excludeSessionId?: string): RefLibSourceSession[] {
     let sources: RefLibSourceSession[] = []
     let names: string[]
     try {
@@ -426,10 +476,34 @@ export class RefLibService extends Service {
     // workspaceRegistry（非 web 组合）或集合为空时原样保留，不阻断导入。
     sources = excludeArchivedSources(sources, this.ctx.get('workspaceRegistry')?.archivedSessionIds)
     if (sources.length === 0) return sources
-    // 标题/工作区补全（v13.1）：cwd 多源兜底——
-    // 1) live 会话直接读 header.cwd（sessions.get，不依赖 sessionQuery 观测时序）；
-    // 2) sessionQuery.listSessions 的全量记录 header（persistence corpus）；
-    // 3) readTitleSnapshots 观测的 value.session（与 title 同源）。
+    // v15：按注册工作区补全 workspace（display title）——经 workspaceRegistry.list()
+    // 的 sessionIds 精确映射（与宿主工作区树同口径）。未归属工作区的会话不带该字段
+    // （UI/命令归入「未分组」）；宿主无 workspaceRegistry（非 web 组合）时全部不带。
+    const registry = this.ctx.get('workspaceRegistry')
+    if (registry !== undefined) {
+      const workspaceBySession = new Map<string, string>()
+      for (const workspace of registry.list()) {
+        for (const sessionId of workspace.sessionIds) workspaceBySession.set(String(sessionId), workspace.title)
+      }
+      sources = sources.map((source) => {
+        const workspace = workspaceBySession.get(source.sessionId)
+        return workspace === undefined ? source : { ...source, workspace }
+      })
+    }
+    return sources
+  }
+
+  /**
+   * 标题/工作区补全（v13.1）：cwd 多源兜底——
+   * 1) live 会话直接读 header.cwd（sessions.get，不依赖 sessionQuery 观测时序）；
+   * 2) sessionQuery.listSessions 的全量记录 header（persistence corpus）；
+   * 3) readTitleSnapshots 观测的 value.session（与 title 同源）。
+   * v16：只对传入子集（整组）执行——懒加载下 `readTitleSnapshots` 不随会话总量增长。
+   * @param sources - 已枚举（含 workspace 补全）的源会话清单。
+   * @returns 补全标题/工作区后的清单（顺序与入参一致；宿主服务异常时降级原样返回）。
+   */
+  private async attachTitles(sources: RefLibSourceSession[]): Promise<RefLibSourceSession[]> {
+    if (sources.length === 0) return sources
     try {
       // 官方类型：ctx.sessionQuery（SessionQueryEngine，dsh-session-query 声明合并）
       // 与 ctx.sessions（SessionStore，dsh-session 声明合并）——不再用本地结构断言。

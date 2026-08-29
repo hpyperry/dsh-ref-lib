@@ -10,7 +10,8 @@
  *
  * 语义（与 v10 fork 继承一致）：导入即**快照、不回流**——新增条目重新铸造 id、
  * note 保持源值；「使用导入的」= 以导入侧 note 替换现有条目（保留现有 id）。
- * 数据通道：/api/ref-lib/sessions（来源清单）+ /list（源条目）+ /import（写入）。
+ * 数据通道：/api/ref-lib/sessions（v16 懒加载：`groups=1` 组概览 + `group=<key>`
+ * 按组会话）+ /list（源条目）+ /import（写入）。
  * 本组件为纯展示 + 状态机：异步操作（枚举/拉取/导入）经注入面执行，错误在
  * 流程弹窗内部展示（flowError）——导入流程是叠在面板之上的独立 Modal，
  * 写入面板错误槽会被遮住（v12.1 修复）。
@@ -30,7 +31,7 @@ import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
 import type { SessionId } from '@deepseek-ai/dsh-client-runtime/client'
 import type { ImportPlan } from '../logic.ts'
 import type { RefLibEntry } from '../spec.ts'
-import { classifyImport, formatRefLibError, libBasename, type ImportClassification, type RefLibSourceSession } from './data.ts'
+import { classifyImport, formatRefLibError, libBasename, type ImportClassification, type RefLibImportGroup, type RefLibSourceSession } from './data.ts'
 
 /** 导入流程的步骤。 */
 type Step = 'sessions' | 'picks' | 'conflicts'
@@ -48,8 +49,10 @@ export interface RefLibImportProps {
   currentLibs: readonly RefLibEntry[]
   /** 本地化取词。 */
   t: TranslateNS<'ref-lib'>
-  /** 拉取来源会话清单（GET /api/ref-lib/sessions）。 */
-  listSessions: () => Promise<RefLibSourceSession[]>
+  /** 工作区组概览（v16 懒加载第一级，GET /api/ref-lib/sessions?groups=1，不读标题）。 */
+  listGroups: () => Promise<RefLibImportGroup[]>
+  /** 单个工作区的会话（v16 懒加载第二级，GET /api/ref-lib/sessions?group=<key>）。 */
+  loadGroupSessions: (groupKey: string) => Promise<RefLibSourceSession[]>
   /** 拉取某会话的条目（GET /api/ref-lib/list?session=<id>）。 */
   loadEntries: (sessionId: SessionId) => Promise<RefLibEntry[]>
   /** 提交导入（POST /api/ref-lib/import）；失败抛错（错误在流程弹窗内展示）。 */
@@ -67,13 +70,10 @@ function timeAgo(updatedAt: number, t: RefLibImportProps['t']): string {
   return t('import.time.days', { n: String(Math.floor(hours / 24)) })
 }
 
-/** 源会话显示名：标题优先；无标题时显示"工作区名 · 新会话"（工作区 = cwd 基名）；
- * 连工作区信息都没有时显示"新会话"（v13.1：不裸展示 id——id 在会话清单中始终可见）。 */
+/** 源会话显示名：标题优先；无标题时显示"新会话"（v15：按工作区分组后，工作区名由
+ * 组头承担，回退标题不再拼"工作区名 · "前缀；id 在会话清单中始终可见）。 */
 function sessionTitle(session: RefLibSourceSession, t: RefLibImportProps['t']): string {
   if (session.title !== undefined && session.title !== '') return session.title
-  if (session.cwd !== undefined && session.cwd !== '') {
-    return `${libBasename(session.cwd)} · ${t('import.session.new')}`
-  }
   return t('import.session.new')
 }
 
@@ -93,23 +93,31 @@ function statusLabel(entry: RefLibEntry, t: RefLibImportProps['t']): { text: str
  * @returns 对话框元素（关闭时 Modal 返回 null）。
  */
 export function RefLibImport(props: RefLibImportProps): ReactElement {
-  const { open, onClose, currentLibs, t, listSessions, loadEntries, onImport } = props
+  const { open, onClose, currentLibs, t, listGroups, loadGroupSessions, loadEntries, onImport } = props
   const [step, setStep] = useState<Step>('sessions')
-  const [sessions, setSessions] = useState<RefLibSourceSession[] | null>(null)
+  // v16 懒加载：第一级只有工作区组概览（轻量、不读标题）；展开某组才拉该组会话。
+  const [groups, setGroups] = useState<RefLibImportGroup[] | null>(null)
   const [source, setSource] = useState<RefLibSourceSession | null>(null)
   const [classification, setClassification] = useState<ImportClassification | null>(null)
   const [selected, setSelected] = useState<ReadonlySet<string>>(new Set())
   const [decisions, setDecisions] = useState<ReadonlyMap<string, ConflictDecision>>(new Map())
   const [busy, setBusy] = useState(false)
+  // v16：展开/折叠状态（**默认全折叠**）+ 按组缓存与加载中集合。
+  const [expanded, setExpanded] = useState<ReadonlySet<string>>(new Set())
+  const [groupSessions, setGroupSessions] = useState<ReadonlyMap<string, RefLibSourceSession[]>>(new Map())
+  const [groupLoading, setGroupLoading] = useState<ReadonlySet<string>>(new Set())
   // 流程内错误（v12.1）：导入流程是叠在面板之上的独立 Modal，错误必须显示在流程
   // 内部（写入面板错误槽会被遮住）。打开/换步骤时清除。
   const [flowError, setFlowError] = useState<string | null>(null)
 
-  // 打开时重置并拉取来源清单（只列有参考库的其他会话）。
+  // 打开时重置并拉取**组概览**（v16：不读标题；展开某组时才按需补全该组会话）。
   useEffect(() => {
     if (!open) return
     setStep('sessions')
-    setSessions(null)
+    setGroups(null)
+    setExpanded(new Set())
+    setGroupSessions(new Map())
+    setGroupLoading(new Set())
     setSource(null)
     setClassification(null)
     setSelected(new Set())
@@ -118,10 +126,10 @@ export function RefLibImport(props: RefLibImportProps): ReactElement {
     setFlowError(null)
     void (async () => {
       try {
-        setSessions(await listSessions())
+        setGroups(await listGroups())
       } catch (cause) {
         setFlowError(formatRefLibError(cause, t))
-        setSessions([])
+        setGroups([])
       }
     })()
   }, [open])
@@ -142,6 +150,37 @@ export function RefLibImport(props: RefLibImportProps): ReactElement {
       setFlowError(formatRefLibError(cause, t))
     } finally {
       setBusy(false)
+    }
+  }
+
+  /** 按组懒加载（v16 第二级）：展开时拉取该工作区的会话；失败进 flowError（可重试）。 */
+  const loadGroup = async (key: string): Promise<void> => {
+    setGroupLoading((prev) => new Set(prev).add(key))
+    try {
+      const rows = await loadGroupSessions(key)
+      setGroupSessions((prev) => new Map(prev).set(key, rows))
+    } catch (cause) {
+      setFlowError(formatRefLibError(cause, t))
+    } finally {
+      setGroupLoading((prev) => {
+        const next = new Set(prev)
+        next.delete(key)
+        return next
+      })
+    }
+  }
+
+  /** 切换一个工作区组的展开/折叠（v16：默认全折叠；展开且未缓存时按组拉取）。 */
+  const toggleGroup = (key: string): void => {
+    setExpanded((prev) => {
+      const next = new Set(prev)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      return next
+    })
+    // 展开且未缓存/未加载中 → 发起按组加载（闭包读当前渲染的 expanded/缓存状态）。
+    if (!expanded.has(key) && !groupSessions.has(key) && !groupLoading.has(key)) {
+      void loadGroup(key)
     }
   }
 
@@ -305,46 +344,94 @@ export function RefLibImport(props: RefLibImportProps): ReactElement {
         <div className="reflib-importScroll">
         {step === 'sessions' && (
           <>
-            {sessions === null ? (
+            {groups === null ? (
               <div className="reflib-status" role="status">
                 <IconLoadingOutline16 size={20} className="reflib-spin reflib-statusIcon" />
                 <span className="reflib-statusText">{t('import.sessions.loading')}</span>
               </div>
-            ) : sessions.length === 0 ? (
+            ) : groups.length === 0 ? (
               <div className="reflib-status">
                 <IconFolderOpen16 size={22} className="reflib-statusIcon" />
                 <span className="reflib-statusText">{t('import.empty')}</span>
               </div>
             ) : (
               <div className="reflib-importList">
-                {sessions.map((session) => {
-                  const name = sessionTitle(session, t)
+                {groups.map((group) => {
+                  // v16 懒加载：组概览默认**全折叠**；展开且未缓存时按组拉取（第二级）。
+                  const isExpanded = expanded.has(group.key)
+                  const rows = groupSessions.get(group.key)
+                  const loading = groupLoading.has(group.key)
+                  const label = group.workspace ?? t('import.group.ungrouped')
                   return (
-                    <button
-                      key={session.sessionId}
-                      type="button"
-                      className="reflib-importSession"
-                      disabled={busy}
-                      onClick={() => {
-                        void selectSource(session)
-                      }}
-                    >
-                      <span className="reflib-importSessionRadio" aria-hidden="true" />
-                      <span className="reflib-importSessionBody">
-                        <span className="reflib-importSessionTitle">{name}</span>
-                        <span className="reflib-importSessionMeta">
-                          {t('import.sessions.count', { count: String(session.count), available: String(session.available) })}
-                          {session.count - session.available > 0 && (
-                            <span className="reflib-importSessionUnavailable">
-                              {' · '}
-                              {t('import.sessions.unavailable', { count: String(session.count - session.available) })}
-                            </span>
-                          )}
-                          {' · '}
-                          {t('import.updated', { time: timeAgo(session.updatedAt, t) })}
+                    <section key={group.key} className="reflib-importGroup" data-collapsed={!isExpanded || undefined}>
+                      <button
+                        type="button"
+                        className="reflib-importGroupHead"
+                        disabled={busy}
+                        aria-expanded={isExpanded}
+                        onClick={() => {
+                          toggleGroup(group.key)
+                        }}
+                      >
+                        <span className="reflib-importGroupChevron" aria-hidden="true">{isExpanded ? '▾' : '▸'}</span>
+                        <span className="reflib-importGroupTitle">{label}</span>
+                        <span className="reflib-importGroupCount">
+                          {t('import.group.count', { n: String(group.count) })}
                         </span>
-                      </span>
-                    </button>
+                      </button>
+                      {isExpanded && (
+                        <div className="reflib-importGroupBody">
+                          {loading ? (
+                            <div className="reflib-status" role="status">
+                              <IconLoadingOutline16 size={16} className="reflib-spin reflib-statusIcon" />
+                              <span className="reflib-statusText">{t('import.sessions.loading')}</span>
+                            </div>
+                          ) : rows !== undefined && rows.length === 0 ? (
+                            <div className="reflib-status">
+                              <IconFolderOpen16 size={18} className="reflib-statusIcon" />
+                              <span className="reflib-statusText">{t('import.empty')}</span>
+                            </div>
+                          ) : (
+                            (rows ?? []).map((session) => {
+                              const name = sessionTitle(session, t)
+                              return (
+                                <button
+                                  key={session.sessionId}
+                                  type="button"
+                                  className="reflib-importSession"
+                                  disabled={busy}
+                                  onClick={() => {
+                                    void selectSource(session)
+                                  }}
+                                >
+                                  <span className="reflib-importSessionRadio" aria-hidden="true" />
+                                  <span className="reflib-importSessionBody">
+                                    <span className="reflib-importSessionTitle">{name}</span>
+                                    <span className="reflib-importSessionMeta">
+                                      {t('import.sessions.count', { count: String(session.count), available: String(session.available) })}
+                                      {session.count - session.available > 0 && (
+                                        <span className="reflib-importSessionUnavailable">
+                                          {' · '}
+                                          {t('import.sessions.unavailable', { count: String(session.count - session.available) })}
+                                        </span>
+                                      )}
+                                      {' · '}
+                                      {t('import.updated', { time: timeAgo(session.updatedAt, t) })}
+                                      {session.workspace === undefined && session.cwd !== undefined && session.cwd !== '' && (
+                                        <>
+                                          {' · '}
+                                          <span className="reflib-importSessionCwd">{libBasename(session.cwd)}</span>
+                                        </>
+                                      )}
+                                    </span>
+                                  </span>
+                                </button>
+                              )
+                            })
+                          )}
+                        </div>
+                      )}
+                    </section>
                   )
                 })}
               </div>

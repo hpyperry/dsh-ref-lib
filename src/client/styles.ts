@@ -826,6 +826,73 @@ const CSS = `
   gap: 8px;
 }
 
+/* v15：按工作区分组——组头（可折叠，默认展开）+ 组体。组头是分段小标题：字号/字重
+   明显大于会话行（13px），主色 + 折叠箭头，计数为次级小字；组间用细分隔线分层。 */
+.reflib-importGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.reflib-importGroup + .reflib-importGroup {
+  padding-top: 10px;
+  border-top: 1px solid var(--dsw-alias-border-l1);
+}
+.reflib-importGroupHead {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border: none;
+  border-radius: 8px;
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary-bluish, var(--dsw-alias-label-primary));
+  font: inherit;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 120ms ease;
+}
+/* 左侧品牌色竖条：分段标题的强信号（与 tinted 底色共同把组头从背景里"捞"出来）。 */
+.reflib-importGroupHead::before {
+  content: '';
+  flex: none;
+  align-self: stretch;
+  width: 3px;
+  border-radius: 2px;
+  background: var(--dsw-alias-state-business-primary);
+}
+.reflib-importGroupHead:hover {
+  background: var(--dsw-alias-interactive-bg-active);
+}
+.reflib-importGroupChevron {
+  width: 12px;
+  flex-shrink: 0;
+  font-size: 12px;
+  color: var(--dsw-alias-label-secondary);
+}
+.reflib-importGroupTitle {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.reflib-importGroupCount {
+  margin-left: auto;
+  flex-shrink: 0;
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--dsw-alias-label-tertiary, var(--dsw-alias-label-secondary));
+}
+.reflib-importGroupBody {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.reflib-importSessionCwd {
+  color: var(--dsw-alias-label-tertiary, var(--dsw-alias-label-secondary));
+}
+
 /* 会话选择行 */
 .reflib-importSession {
   display: flex;

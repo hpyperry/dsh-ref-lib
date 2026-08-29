@@ -102,6 +102,8 @@ export interface RefLibSourceSession {
   readonly title?: string
   /** 会话工作区目录（header.cwd）；无标题时用于显示"工作区名 · 新会话"。 */
   readonly cwd?: string
+  /** 注册工作区 display title（v15 分组键）；缺省 = 未归属工作区（归入「未分组」）。 */
+  readonly workspace?: string
   readonly count: number
   readonly available: number
   readonly updatedAt: number
@@ -120,10 +122,11 @@ export function parseSessionsPayload(value: unknown): RefLibSourceSession[] {
   const out: RefLibSourceSession[] = []
   for (const row of sessions) {
     if (typeof row !== 'object' || row === null) continue
-    const { sessionId, title, cwd, count, available, updatedAt } = row as {
+    const { sessionId, title, cwd, workspace, count, available, updatedAt } = row as {
       sessionId?: unknown
       title?: unknown
       cwd?: unknown
+      workspace?: unknown
       count?: unknown
       available?: unknown
       updatedAt?: unknown
@@ -134,9 +137,45 @@ export function parseSessionsPayload(value: unknown): RefLibSourceSession[] {
       sessionId,
       ...(typeof title === 'string' && title !== '' ? { title } : {}),
       ...(typeof cwd === 'string' && cwd !== '' ? { cwd } : {}),
+      ...(typeof workspace === 'string' && workspace !== '' ? { workspace } : {}),
       count,
       available,
       updatedAt,
+    })
+  }
+  return out
+}
+
+/** 跨会话导入：工作区组概览（v16 懒加载第一级，`groups=1` 响应行；不含标题）。 */
+export interface RefLibImportGroup {
+  /** 组 wire 键（= 工作区标题或未分组哨兵），按组加载会话时原样回传。 */
+  readonly key: string
+  /** 注册工作区 display title；缺省 = 未分组兜底组。 */
+  readonly workspace?: string
+  /** 组内会话数。 */
+  readonly count: number
+}
+
+/**
+ * 从 `/api/ref-lib/sessions?groups=1` 路由响应（{ groups: [...] }）解析工作区组
+ * 概览；缺失/畸形行被丢弃（组键或计数缺关键字段即跳过，不整体失败）。
+ * @param value - 路由响应体。
+ * @returns 组概览（按服务端顺序，即组内最近活跃降序）。
+ */
+export function parseGroupsPayload(value: unknown): RefLibImportGroup[] {
+  if (typeof value !== 'object' || value === null) return []
+  const groups = (value as { groups?: unknown }).groups
+  if (!Array.isArray(groups)) return []
+  const out: RefLibImportGroup[] = []
+  for (const row of groups) {
+    if (typeof row !== 'object' || row === null) continue
+    const { key, workspace, count } = row as { key?: unknown; workspace?: unknown; count?: unknown }
+    if (typeof key !== 'string' || key === '') continue
+    if (typeof count !== 'number' || !Number.isFinite(count) || count < 0) continue
+    out.push({
+      key,
+      ...(typeof workspace === 'string' && workspace !== '' ? { workspace } : {}),
+      count,
     })
   }
   return out

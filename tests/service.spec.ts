@@ -664,7 +664,7 @@ describe('RefLibService v12（跨会话导入）', () => {
     const kept = fakeSession()
     await service.add(archived, dir)
     await service.add(kept, dir)
-    ctx.provide('workspaceRegistry', { archivedSessionIds: [archived.id] } as never)
+    ctx.provide('workspaceRegistry', { archivedSessionIds: [archived.id], list: () => [] } as never)
     const sources = await service.listSessions()
     expect(sources.map((s) => s.sessionId)).toEqual([kept.id])
   })
@@ -676,9 +676,107 @@ describe('RefLibService v12（跨会话导入）', () => {
     const service = new RefLibService(ctx, { root: tmp })
     const kept = fakeSession()
     await service.add(kept, dir)
-    ctx.provide('workspaceRegistry', { archivedSessionIds: [] } as never)
+    ctx.provide('workspaceRegistry', { archivedSessionIds: [], list: () => [] } as never)
     const sources = await service.listSessions()
     expect(sources.map((s) => s.sessionId)).toEqual([kept.id])
+  })
+
+  it('listSessions：workspaceRegistry 按 sessionIds 补全 workspace 标题（v15）', async () => {
+    const dir = join(tmp, 'lib-a')
+    await mkdir(dir)
+    const ctx = new Context()
+    const service = new RefLibService(ctx, { root: tmp })
+    const inWs = fakeSession()
+    const loose = fakeSession()
+    await service.add(inWs, dir)
+    await service.add(loose, dir)
+    ctx.provide('workspaceRegistry', {
+      archivedSessionIds: [],
+      list: () => [
+        { title: 'deepseek-harness', sessionIds: [inWs.id] },
+        { title: 'ref-lib', sessionIds: [] },
+      ],
+    } as never)
+    const sources = await service.listSessions()
+    const byId = new Map(sources.map((s) => [s.sessionId, s]))
+    expect(byId.get(inWs.id)?.workspace).toBe('deepseek-harness')
+    expect(byId.get(loose.id)?.workspace).toBeUndefined()
+  })
+
+  it('listSessions：无 workspaceRegistry 时 workspace 字段缺省（平铺回退）', async () => {
+    const dir = join(tmp, 'lib-a')
+    await mkdir(dir)
+    const service = new RefLibService(new Context(), { root: tmp })
+    const sessionA = fakeSession()
+    await service.add(sessionA, dir)
+    const sources = await service.listSessions()
+    expect(sources[0]?.workspace).toBeUndefined()
+  })
+
+  it('listSessionGroups：组概览按工作区分组计数，组顺序 = 组内最近活跃降序（v16）', async () => {
+    const dir = join(tmp, 'lib-a')
+    await mkdir(dir)
+    const ctx = new Context()
+    const service = new RefLibService(ctx, { root: tmp })
+    const wsA = fakeSession()
+    const wsA2 = fakeSession()
+    const loose = fakeSession()
+    const archived = fakeSession()
+    await service.add(wsA, dir)
+    await service.add(wsA2, dir)
+    await service.add(loose, dir)
+    await service.add(archived, dir)
+    ctx.provide('workspaceRegistry', {
+      archivedSessionIds: [archived.id],
+      list: () => [
+        { title: 'ws-a', sessionIds: [wsA.id, wsA2.id] },
+        { title: 'ws-b', sessionIds: [] },
+      ],
+    } as never)
+    const groups = service.listSessionGroups()
+    // loose 最后 add（mtime 最新）→ 未分组组排最前；ws-a 两会话随后；归档会话已排除。
+    expect(groups).toEqual([
+      { key: '__ungrouped__', count: 1 },
+      { key: 'ws-a', workspace: 'ws-a', count: 2 },
+    ])
+  })
+
+  it('listSessionsByGroup：只返回该组的会话，保留 workspace 字段（v16）', async () => {
+    const dir = join(tmp, 'lib-a')
+    await mkdir(dir)
+    const ctx = new Context()
+    const service = new RefLibService(ctx, { root: tmp })
+    const inWs = fakeSession()
+    const otherWs = fakeSession()
+    const loose = fakeSession()
+    await service.add(inWs, dir)
+    await service.add(otherWs, dir)
+    await service.add(loose, dir)
+    ctx.provide('workspaceRegistry', {
+      archivedSessionIds: [],
+      list: () => [
+        { title: 'ws-a', sessionIds: [inWs.id] },
+        { title: 'ws-b', sessionIds: [otherWs.id] },
+      ],
+    } as never)
+    const groupA = await service.listSessionsByGroup(undefined, 'ws-a')
+    expect(groupA.map((s) => s.sessionId)).toEqual([inWs.id])
+    expect(groupA[0]?.workspace).toBe('ws-a')
+    const ungrouped = await service.listSessionsByGroup(undefined, '__ungrouped__')
+    expect(ungrouped.map((s) => s.sessionId)).toEqual([loose.id])
+    expect(ungrouped[0]?.workspace).toBeUndefined()
+    expect(await service.listSessionsByGroup(undefined, 'nope')).toEqual([])
+  })
+
+  it('listSessionGroups / listSessionsByGroup：无 workspaceRegistry 时全部归入未分组', async () => {
+    const dir = join(tmp, 'lib-a')
+    await mkdir(dir)
+    const service = new RefLibService(new Context(), { root: tmp })
+    const sessionA = fakeSession()
+    await service.add(sessionA, dir)
+    expect(service.listSessionGroups()).toEqual([{ key: '__ungrouped__', count: 1 }])
+    const rows = await service.listSessionsByGroup(undefined, '__ungrouped__')
+    expect(rows.map((s) => s.sessionId)).toEqual([sessionA.id])
   })
 })
 

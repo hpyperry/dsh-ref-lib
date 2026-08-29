@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { renderLibList, renderRefLibs } from '../src/render.ts'
+import { renderImportSessions, renderLibList, renderRefLibs } from '../src/render.ts'
 import type { RefLibEntry } from '../src/spec.ts'
 
 /** 可用条目（真实链路中 service.list 返回前已实时探测并填充 status）。 */
@@ -115,5 +115,34 @@ describe('renderLibList', () => {
     expect(text).not.toContain('1: /lib/a [')
     expect(text).toContain('2: /lib/deleted [已失效]')
     expect(text).toContain('3: /lib/replaced [不是目录]')
+  })
+})
+
+describe('renderImportSessions（v15 按工作区分组）', () => {
+  it('空清单提示', () => {
+    expect(renderImportSessions([])).toBe('其他会话还没有参考库。')
+  })
+
+  it('按工作区分组输出：组头 + 组内行；无标题会话去"工作区名 · "前缀', () => {
+    const text = renderImportSessions([
+      { sessionId: 's-a', title: '会话 A', workspace: 'ws-x', count: 3 },
+      { sessionId: 's-b', workspace: 'ws-x', count: 1 },
+      { sessionId: 's-c', title: '会话 C', count: 2 },
+    ])
+    expect(text).toContain('工作区 ws-x：')
+    expect(text).toContain('- s-a 「会话 A」（3 个条目）')
+    expect(text).toContain('- s-b 「新会话」（1 个条目）')
+    expect(text).toContain('未分组：')
+    expect(text).toContain('- s-c 「会话 C」（2 个条目）')
+  })
+
+  it('未分组行附 cwd 基名辅助识别', () => {
+    const text = renderImportSessions([{ sessionId: 's-loose', cwd: '/Users/x/projects/foo', count: 2 }])
+    expect(text).toContain('- s-loose 「新会话」（2 个条目 · foo）')
+  })
+
+  it('分组会话（有 workspace）不带 cwd 基名', () => {
+    const text = renderImportSessions([{ sessionId: 's-ws', cwd: '/Users/x/projects/foo', workspace: 'foo', count: 1 }])
+    expect(text).toContain('- s-ws 「新会话」（1 个条目）')
   })
 })

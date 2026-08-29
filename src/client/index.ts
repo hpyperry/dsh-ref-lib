@@ -23,7 +23,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type { RefLibEntry } from '../spec.ts'
 import type { ImportPlan } from '../logic.ts'
-import { parseApiErrorPayload, parseLibsPayload, parseSessionsPayload, RefLibApiError, type RefLibSourceSession } from './data.ts'
+import { parseApiErrorPayload, parseGroupsPayload, parseLibsPayload, parseSessionsPayload, RefLibApiError, type RefLibImportGroup, type RefLibSourceSession } from './data.ts'
 import { RefLibCommandCard } from './RefLibCommandCard.tsx'
 import { RefLibDock, type RefLibDockInjected } from './RefLibDock.tsx'
 import { zh, en, type RefLibKey } from './locales.ts'
@@ -93,9 +93,19 @@ export function apply(ctx: ClientContext): void {
     setNote: async (sessionId: SessionId, id: string, note: string): Promise<void> => {
       await api('/note', { session: sessionId, id, note })
     },
-    listSessions: async (sessionId: SessionId): Promise<RefLibSourceSession[]> =>
+    // v16 懒加载第一级：工作区组概览（轻量，不读标题）。
+    listGroups: async (sessionId: SessionId): Promise<RefLibImportGroup[]> =>
+      parseGroupsPayload(
+        await api<{ groups?: unknown }>(`/sessions?session=${encodeURIComponent(sessionId)}&groups=1`, undefined, 'GET'),
+      ),
+    // v16 懒加载第二级：单个工作区的会话（标题补全只对该组执行）。
+    loadGroupSessions: async (sessionId: SessionId, groupKey: string): Promise<RefLibSourceSession[]> =>
       parseSessionsPayload(
-        await api<{ sessions?: unknown }>(`/sessions?session=${encodeURIComponent(sessionId)}`, undefined, 'GET'),
+        await api<{ sessions?: unknown }>(
+          `/sessions?session=${encodeURIComponent(sessionId)}&group=${encodeURIComponent(groupKey)}`,
+          undefined,
+          'GET',
+        ),
       ),
     // 源条目走只读 /source 路由：不要求源会话 live（历史会话同样可导入）。
     loadEntries: async (sessionId: SessionId): Promise<RefLibEntry[]> =>

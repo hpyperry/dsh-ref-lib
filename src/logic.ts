@@ -131,12 +131,92 @@ export interface RefLibSourceSessionRow {
   readonly title?: string
   /** 会话工作区目录（header.cwd，宿主 sessionQuery 观测）；缺省时 UI 无工作区回退。 */
   readonly cwd?: string
+  /** 注册工作区 display title（host workspaceRegistry 按 sessionId 映射，v15）；
+   * 缺省 = 未归属任何注册工作区（UI/命令归入「未分组」兜底组）。 */
+  readonly workspace?: string
   /** 条目数。 */
   readonly count: number
   /** 可用条目数。 */
   readonly available: number
   /** sidecar mtime（epoch ms）。 */
   readonly updatedAt: number
+}
+
+/**
+ * 把源会话清单按注册工作区分组（v15：跨工作区支持后平铺难选，按工作区聚组）。
+ * 分组键 = `workspace`（注册工作区 display title）；缺省（未归属工作区）归入
+ * `workspace: undefined` 的兜底组（UI/命令显示"未分组"）。
+ * **组顺序 = 首次出现顺序**（listSessions 已按 updatedAt 倒序，故等价于
+ * "组内最近活跃会话降序"）；组内会话保持入参顺序。纯函数：不触碰宿主服务。
+ * 泛型约束只要求分组键相关字段，node（RefLibSourceSessionRow）与 client
+ * （data.ts 的 RefLibSourceSession / render 的最小形状）均可直接复用。
+ * @param sources - 源会话清单（listSessions 结果，含 workspace 补全）。
+ * @returns 分组结果（组顺序即组内最近活跃降序；元素保持入参引用与顺序）。
+ */
+export function groupSourcesByWorkspace<S extends { readonly sessionId: string; readonly workspace?: string }>(
+  sources: readonly S[],
+): ReadonlyArray<{ readonly workspace: string | undefined; readonly sessions: S[] }> {
+  const groups: Array<{ workspace: string | undefined; sessions: S[] }> = []
+  const index = new Map<string | undefined, number>()
+  for (const source of sources) {
+    const key = source.workspace
+    let at = index.get(key)
+    if (at === undefined) {
+      at = groups.length
+      index.set(key, at)
+      groups.push({ workspace: key, sessions: [] })
+    }
+    groups[at]!.sessions.push(source)
+  }
+  return groups
+}
+
+/** 「未分组」兜底组的组键（v16 懒加载：groups 概览与按组查询共用的 wire 键）。
+ * 注册工作区标题默认取路径基名，不会与这个带 `__` 包裹的保留名冲突。 */
+export const UNGROUPED_GROUP_KEY = '__ungrouped__'
+
+/** 源会话所属组的 wire 键：注册工作区 display title；未归属 → 未分组哨兵。 */
+export function groupKeyOf(source: { readonly workspace?: string }): string {
+  return source.workspace ?? UNGROUPED_GROUP_KEY
+}
+
+/** 组概览行（v16：`groups=1` 第一级响应；不含标题——懒加载第二级按需补全）。 */
+export interface RefLibGroupSummaryRow {
+  /** 组 wire 键（= workspace 标题或 UNGROUPED_GROUP_KEY），按组查询时原样回传。 */
+  readonly key: string
+  /** 注册工作区 display title；缺省 = 未分组兜底组。 */
+  readonly workspace?: string
+  /** 组内会话数。 */
+  readonly count: number
+}
+
+/**
+ * 把源会话清单汇总为组概览（v16 懒加载第一级）：只聚合 count，**不读标题**——
+ * 会话总量增长时保持轻量。组顺序 = groupSourcesByWorkspace 顺序（组内最近活跃降序）。
+ * 纯函数：不触碰宿主服务。
+ * @param sources - 已枚举（含 workspace 补全）的源会话清单。
+ * @returns 组概览（key 供第二级 `filterSourcesByGroupKey` 使用）。
+ */
+export function summarizeGroups(sources: readonly RefLibSourceSessionRow[]): RefLibGroupSummaryRow[] {
+  return groupSourcesByWorkspace(sources).map((group) => ({
+    key: groupKeyOf(group),
+    ...(group.workspace === undefined ? {} : { workspace: group.workspace }),
+    count: group.sessions.length,
+  }))
+}
+
+/**
+ * 按组 wire 键过滤源会话（v16 懒加载第二级：只取一个工作区的会话再做标题补全）。
+ * 纯函数：保持入参顺序（已按 mtime 倒序）。
+ * @param sources - 已枚举的源会话清单。
+ * @param key - 组 wire 键（`summarizeGroups` 返回的 key）。
+ * @returns 该组的会话子集（顺序与入参一致）。
+ */
+export function filterSourcesByGroupKey(
+  sources: readonly RefLibSourceSessionRow[],
+  key: string,
+): RefLibSourceSessionRow[] {
+  return sources.filter((source) => groupKeyOf(source) === key)
 }
 
 /**

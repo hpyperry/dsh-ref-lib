@@ -1,6 +1,6 @@
 /** client 端数据纯函数（/api/ref-lib 路由响应解析）单测。 */
 import { describe, expect, it } from 'vitest'
-import { classifyImport, libBasename, parseApiErrorPayload, parseLibsPayload, parseSessionsPayload } from '../src/client/data.ts'
+import { classifyImport, libBasename, parseApiErrorPayload, parseGroupsPayload, parseLibsPayload, parseSessionsPayload } from '../src/client/data.ts'
 
 describe('parseLibsPayload', () => {
   it('缺失/畸形返回空列表', () => {
@@ -154,5 +154,59 @@ describe('parseSessionsPayload（v12 标题字段）', () => {
         sessions: [{ sessionId: 's1', title: '', count: 1, available: 1, updatedAt: 1 }],
       }),
     ).toEqual([{ sessionId: 's1', count: 1, available: 1, updatedAt: 1 }])
+  })
+})
+
+describe('parseSessionsPayload（v15 工作区字段）', () => {
+  it('解析带 workspace 的会话行', () => {
+    expect(
+      parseSessionsPayload({
+        sessions: [{ sessionId: 's1', workspace: 'deepseek-harness', count: 2, available: 1, updatedAt: 100 }],
+      }),
+    ).toEqual([{ sessionId: 's1', workspace: 'deepseek-harness', count: 2, available: 1, updatedAt: 100 }])
+  })
+
+  it('空 workspace 省略字段（归入「未分组」）', () => {
+    expect(
+      parseSessionsPayload({
+        sessions: [{ sessionId: 's1', workspace: '', count: 1, available: 1, updatedAt: 1 }],
+      }),
+    ).toEqual([{ sessionId: 's1', count: 1, available: 1, updatedAt: 1 }])
+  })
+})
+
+describe('parseGroupsPayload（v16 工作区组概览）', () => {
+  it('缺失/畸形返回空列表', () => {
+    expect(parseGroupsPayload(undefined)).toEqual([])
+    expect(parseGroupsPayload({})).toEqual([])
+    expect(parseGroupsPayload({ groups: 'nope' })).toEqual([])
+  })
+
+  it('解析组概览行（key/count 必填，workspace 可选）', () => {
+    expect(
+      parseGroupsPayload({
+        groups: [
+          { key: 'ws-a', workspace: 'ws-a', count: 3 },
+          { key: '__ungrouped__', count: 1 },
+        ],
+      }),
+    ).toEqual([
+      { key: 'ws-a', workspace: 'ws-a', count: 3 },
+      { key: '__ungrouped__', count: 1 },
+    ])
+  })
+
+  it('跳过缺关键字段/畸形行', () => {
+    expect(
+      parseGroupsPayload({
+        groups: [
+          { key: 'ws-a', count: 2 },
+          { key: '', count: 1 },
+          { key: 'ws-b', count: 'x' },
+          { count: 1 },
+          { key: 'ws-c', count: -1 },
+        ],
+      }),
+    ).toEqual([{ key: 'ws-a', count: 2 }])
   })
 })

@@ -1,6 +1,6 @@
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import { describe, expect, it } from 'vitest'
-import { applyProbe, attachSessionMeta, excludeArchivedSources, filterAvailable, foldRefLibs, planImport, probeLibs, removeLib, statusChanged, upsertLib, type RefLibSourceSessionRow } from '../src/logic.ts'
+import { applyProbe, attachSessionMeta, excludeArchivedSources, filterAvailable, filterSourcesByGroupKey, foldRefLibs, groupKeyOf, groupSourcesByWorkspace, planImport, probeLibs, removeLib, statusChanged, summarizeGroups, UNGROUPED_GROUP_KEY, upsertLib, type RefLibSourceSessionRow } from '../src/logic.ts'
 import type { RefLibEntry } from '../src/spec.ts'
 
 const a: RefLibEntry = { id: 'a', path: '/lib/a' }
@@ -277,5 +277,98 @@ describe('excludeArchivedSources（v14：跨会话导入排除已归档会话）
 
   it('全部归档 → 空列表（不阻断导入的其余步骤）', () => {
     expect(excludeArchivedSources([row('s-a')], ['s-a'])).toEqual([])
+  })
+})
+
+describe('groupSourcesByWorkspace（v15：按注册工作区分组）', () => {
+  const row = (sessionId: string, updatedAt: number, workspace?: string): RefLibSourceSessionRow => ({
+    sessionId,
+    count: 1,
+    available: 1,
+    updatedAt,
+    ...(workspace === undefined ? {} : { workspace }),
+  })
+
+  it('空清单 → 空分组', () => {
+    expect(groupSourcesByWorkspace([])).toEqual([])
+  })
+
+  it('按 workspace 分组，组内保持入参顺序', () => {
+    const sources = [
+      row('s-a', 3, 'ws-a'),
+      row('s-b', 2, 'ws-b'),
+      row('s-c', 1, 'ws-a'),
+    ]
+    expect(groupSourcesByWorkspace(sources)).toEqual([
+      { workspace: 'ws-a', sessions: [sources[0], sources[2]] },
+      { workspace: 'ws-b', sessions: [sources[1]] },
+    ])
+  })
+
+  it('组顺序 = 首次出现顺序（即组内最近活跃降序：listSessions 已按 updatedAt 倒序）', () => {
+    const sources = [
+      row('s-new', 100, 'ws-recent'),
+      row('s-old', 10, 'ws-old'),
+      row('s-mid', 50, 'ws-mid'),
+    ]
+    expect(groupSourcesByWorkspace(sources).map((g) => g.workspace)).toEqual(['ws-recent', 'ws-old', 'ws-mid'])
+  })
+
+  it('未归属工作区（workspace 缺省）归入同一个 undefined 兜底组，与命名组并列', () => {
+    const sources = [
+      row('s-a', 5, 'ws-a'),
+      row('s-loose', 4),
+      row('s-b', 3, 'ws-b'),
+      row('s-loose2', 2),
+    ]
+    const groups = groupSourcesByWorkspace(sources)
+    expect(groups.map((g) => g.workspace)).toEqual(['ws-a', undefined, 'ws-b'])
+    expect(groups[1]?.sessions.map((s) => s.sessionId)).toEqual(['s-loose', 's-loose2'])
+  })
+})
+
+describe('summarizeGroups / filterSourcesByGroupKey（v16 懒加载两级）', () => {
+  const row = (sessionId: string, updatedAt: number, workspace?: string): RefLibSourceSessionRow => ({
+    sessionId,
+    count: 1,
+    available: 1,
+    updatedAt,
+    ...(workspace === undefined ? {} : { workspace }),
+  })
+
+  it('groupKeyOf：workspace 标题原样；缺省 → UNGROUPED_GROUP_KEY', () => {
+    expect(groupKeyOf({ workspace: 'ws-a' })).toBe('ws-a')
+    expect(groupKeyOf({})).toBe(UNGROUPED_GROUP_KEY)
+    expect(groupKeyOf({ workspace: undefined })).toBe(UNGROUPED_GROUP_KEY)
+  })
+
+  it('summarizeGroups：按组聚合 count，组顺序 = 组内最近活跃降序', () => {
+    const sources = [
+      row('s-a', 5, 'ws-a'),
+      row('s-b', 3, 'ws-b'),
+      row('s-c', 4, 'ws-a'),
+      row('s-loose', 2),
+    ]
+    expect(summarizeGroups(sources)).toEqual([
+      { key: 'ws-a', workspace: 'ws-a', count: 2 },
+      { key: 'ws-b', workspace: 'ws-b', count: 1 },
+      { key: UNGROUPED_GROUP_KEY, count: 1 },
+    ])
+  })
+
+  it('summarizeGroups：空清单 → 空数组', () => {
+    expect(summarizeGroups([])).toEqual([])
+  })
+
+  it('filterSourcesByGroupKey：按 key 取子集，保持入参顺序；未分组 key 取兜底组', () => {
+    const sources = [
+      row('s-a', 5, 'ws-a'),
+      row('s-loose', 4),
+      row('s-b', 3, 'ws-b'),
+      row('s-loose2', 2),
+    ]
+    expect(filterSourcesByGroupKey(sources, 'ws-b').map((s) => s.sessionId)).toEqual(['s-b'])
+    expect(filterSourcesByGroupKey(sources, UNGROUPED_GROUP_KEY).map((s) => s.sessionId)).toEqual(['s-loose', 's-loose2'])
+    expect(filterSourcesByGroupKey(sources, 'nope')).toEqual([])
   })
 })

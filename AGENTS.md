@@ -76,7 +76,27 @@
    workspaceRegistry（非 web 组合）或缺省时原样保留不阻断；纯函数
    `excludeArchivedSources`（L0 钉死缺省/空集合/部分/全归档行为）+ 服务层 stub
    集成测试；peer/dev 新增 `@deepseek-ai/dsh-workspace ^0.1.1-rc.2`（与 v11 基线
-   同元组，声明合并经 typecheck 而非断言）；200 测试全过）。
+   同元组，声明合并经 typecheck 而非断言）；200 测试全过）→
+   v15（**跨会话导入按工作区分组 + 懒加载**：跨工作区平铺难选——`listSessions` 经
+   `workspaceRegistry.list()` 的 `sessionIds` **精确映射**（与宿主工作区树同口径）
+   给每个源会话补 `workspace`（注册工作区 display title，wire 可选字段向后兼容）；
+   纯函数 `groupSourcesByWorkspace`（分组键 = workspace，缺省归入「未分组」兜底组；
+   组顺序 = 首次出现顺序 ≈ 组内最近活跃降序，组内保持入参顺序；泛型只约束
+   sessionId/workspace，node 与 client 两半共用）；UI 会话选择步**分组渲染 + 组头
+   可折叠**（默认展开，组键哨兵防同名碰撞），未分组行附 cwd 基名辅助识别；命令
+   `/ref-lib import` 输出同步分组（`工作区 <title>：` / `未分组：` 分段）；**回退
+   标题去"工作区名 · "前缀**（分组后工作区名由组头承担，UI 与命令统一显示"新会话"）；
+   **v16 懒加载**（会话增多后全量 `readTitleSnapshots` 冷读会话日志变卡）——
+   `/api/ref-lib/sessions` 三级契约：`groups=1` 组概览（枚举+归档过滤+workspace
+   映射+计数，**不读标题**）→ 展开某组 `group=<key>` 按组拉取（标题补全只对该组
+   执行，`filterSourcesByGroupKey`）→ 无参数全量（命令/兼容）；node 侧拆
+   `enumerateSources`（公共枚举核心）+ `attachTitles`（标题补全，只对子集执行）+
+   `listSessionGroups` / `listSessionsByGroup`；UI **默认全折叠**，展开按组懒加载
+   并缓存（组内加载 spinner、失败进 flowError 可重试）；组键为服务端下发
+   `UNGROUPED_GROUP_KEY`（`__ungrouped__` 哨兵），client 不再自造；新增 locale
+   `import.group.ungrouped/count`；L0 钉死分组顺序/兜底组/概览聚合/按组过滤 +
+   wire 三级解析 + 路由三级分发 + 服务层两级映射 + render 分组文本；版本
+   0.12.0 → 0.13.0）。
 
 ## 2. 开发规范（必须遵守）
 

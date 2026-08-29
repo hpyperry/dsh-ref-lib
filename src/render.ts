@@ -8,7 +8,7 @@
  */
 
 import { basename } from 'node:path'
-import { filterAvailable } from './logic.ts'
+import { filterAvailable, groupSourcesByWorkspace } from './logic.ts'
 import type { RefLibEntry } from './spec.ts'
 import { sanitizeControlCharacters } from './validate.ts'
 
@@ -160,24 +160,30 @@ export function renderImportSource(source: string, libs: readonly RefLibEntry[])
 }
 
 /**
- * 渲染 `/ref-lib import`（无参）的会话清单：id + 标题 + 条目数——让会话 id 可发现，
- * 用户据此用 `/ref-lib import <id> [路径...]` 继续。
- * @param sessions - 有参考库的源会话清单（listSessions 结果）。
+ * 渲染 `/ref-lib import`（无参）的会话清单：按注册工作区分组（v15），组内 id +
+ * 标题 + 条目数——让会话 id 可发现，用户据此用 `/ref-lib import <id> [路径...]` 继续。
+ * 组顺序 = 组内最近活跃会话降序；未归属工作区的会话归入「未分组」兜底组（行内附
+ * cwd 基名辅助识别）。无标题会话显示"新会话"（v15：分组后不再拼"工作区名 · "前缀）。
+ * @param sessions - 有参考库的源会话清单（listSessions 结果，含 workspace 补全）。
  * @returns 清单文本。
  */
-export function renderImportSessions(sessions: readonly { sessionId: string; title?: string; cwd?: string; count: number }[]): string {
+export function renderImportSessions(sessions: readonly { sessionId: string; title?: string; cwd?: string; workspace?: string; count: number }[]): string {
   if (sessions.length === 0) return '其他会话还没有参考库。'
-  const lines = sessions
-    .map((session) => {
-      // 无标题会话：与 UI 一致的「工作区名 · 新会话」回退（cwd 也缺则只显示"新会话"）。
-      const label =
-        session.title !== undefined && session.title !== ''
+  const blocks = groupSourcesByWorkspace(sessions).map((group) => {
+    const head = group.workspace === undefined ? '未分组' : `工作区 ${group.workspace}`
+    const lines = group.sessions
+      .map((session) => {
+        // 无标题会话：统一显示"新会话"（v15 去"工作区名 · "前缀；未分组行附 cwd 基名）。
+        const label = session.title !== undefined && session.title !== ''
           ? session.title
-          : session.cwd !== undefined && session.cwd !== ''
-            ? `${basename(session.cwd)} · 新会话`
-            : '新会话'
-      return `- ${session.sessionId} 「${sanitizeControlCharacters(label)}」（${session.count} 个条目）`
-    })
-    .join('\n')
-  return `配置过参考库的会话：\n${lines}\n用 /ref-lib import <上面的会话id或标题> [路径...] 查看并导入。`
+          : '新会话'
+        const cwdHint = group.workspace === undefined && session.cwd !== undefined && session.cwd !== ''
+          ? ` · ${basename(session.cwd)}`
+          : ''
+        return `- ${session.sessionId} 「${sanitizeControlCharacters(label)}」（${session.count} 个条目${cwdHint}）`
+      })
+      .join('\n')
+    return `${head}：\n${lines}`
+  })
+  return `配置过参考库的会话：\n${blocks.join('\n')}\n用 /ref-lib import <上面的会话id或标题> [路径...] 查看并导入。`
 }

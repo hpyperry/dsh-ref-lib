@@ -346,6 +346,17 @@ describe('makeRefLibRoutes（v12 跨会话导入）', () => {
           { sessionId: 'session-old', count: 1, available: 1, updatedAt: 500 },
         ]
       },
+      listSessionGroups: (exclude?: string) => {
+        listSessionsCalls.push(exclude ?? '')
+        return [
+          { key: 'ws-a', workspace: 'ws-a', count: 1 },
+          { key: '__ungrouped__', count: 1 },
+        ]
+      },
+      listSessionsByGroup: async (exclude: string | undefined, key: string) => {
+        listSessionsCalls.push(`${exclude ?? ''}#${key}`)
+        return [{ sessionId: 'session-other', count: 2, available: 1, updatedAt: 1000 }]
+      },
       importEntries: async (_session: unknown, plan: unknown) => {
         importCalls.push(plan)
         return { added: [{ id: 'new-1', path: '/lib/a', status: 'available' }], replaced: [] }
@@ -380,6 +391,37 @@ describe('makeRefLibRoutes（v12 跨会话导入）', () => {
     const { res, out } = fakeRes()
     await byPath('/api/ref-lib/sessions').handler(fakeReq({ url: '/api/ref-lib/sessions' }), res)
     expect(out.status).toBe(400)
+  })
+
+  it('GET sessions?groups=1 返回组概览（v16 懒加载第一级）', async () => {
+    const { listSessionsCalls, byPath } = boot()
+    const { res, out } = fakeRes()
+    await byPath('/api/ref-lib/sessions').handler(
+      fakeReq({ url: '/api/ref-lib/sessions?session=session-live&groups=1' }),
+      res,
+    )
+    expect(out.status).toBe(200)
+    expect(listSessionsCalls).toEqual(['session-live'])
+    expect(JSON.parse(out.body)).toEqual({
+      groups: [
+        { key: 'ws-a', workspace: 'ws-a', count: 1 },
+        { key: '__ungrouped__', count: 1 },
+      ],
+    })
+  })
+
+  it('GET sessions?group=<key> 返回单个工作区的会话（v16 懒加载第二级）', async () => {
+    const { listSessionsCalls, byPath } = boot()
+    const { res, out } = fakeRes()
+    await byPath('/api/ref-lib/sessions').handler(
+      fakeReq({ url: '/api/ref-lib/sessions?session=session-live&group=ws-a' }),
+      res,
+    )
+    expect(out.status).toBe(200)
+    expect(listSessionsCalls).toEqual(['session-live#ws-a'])
+    expect(JSON.parse(out.body)).toEqual({
+      sessions: [{ sessionId: 'session-other', count: 2, available: 1, updatedAt: 1000 }],
+    })
   })
 
   it('POST import 提交规划并返回 { added, replaced }', async () => {

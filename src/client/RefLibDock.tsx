@@ -24,7 +24,7 @@ import { IconFolderOpen16 } from '@deepseek-ai/dsh-client-ui-primitives'
 import { Button, Modal } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ImportPlan } from '../logic.ts'
 import type { RefLibEntry } from '../spec.ts'
-import { formatRefLibError, RefLibApiError, type RefLibSourceSession } from './data.ts'
+import { formatRefLibError, RefLibApiError, type RefLibImportGroup, type RefLibSourceSession } from './data.ts'
 import { RefreshGuard } from './refresh-guard.ts'
 import { deriveRefreshTriggers } from './refresh-triggers.ts'
 import { RefLibBrowser } from './RefLibBrowser.tsx'
@@ -42,8 +42,10 @@ export interface RefLibDockInjected {
   remove: (sessionId: SessionId, id: string) => Promise<void>
   /** 更新一个条目的用途说明（POST /api/ref-lib/note，静默；空串清除）。 */
   setNote: (sessionId: SessionId, id: string, note: string) => Promise<void>
-  /** 列出配置过参考库的其他会话（GET /api/ref-lib/sessions，排除当前会话）。 */
-  listSessions: (sessionId: SessionId) => Promise<RefLibSourceSession[]>
+  /** 工作区组概览（v16 懒加载第一级，GET /api/ref-lib/sessions?groups=1，不读标题）。 */
+  listGroups: (sessionId: SessionId) => Promise<RefLibImportGroup[]>
+  /** 单个工作区的会话（v16 懒加载第二级，GET /api/ref-lib/sessions?group=<key>）。 */
+  loadGroupSessions: (sessionId: SessionId, groupKey: string) => Promise<RefLibSourceSession[]>
   /** 只读拉取某会话的参考库条目（GET /api/ref-lib/source——源会话不要求 live）。 */
   loadEntries: (sessionId: SessionId) => Promise<RefLibEntry[]>
   /** 跨会话导入（POST /api/ref-lib/import，静默；plan 由导入流程构建）。 */
@@ -71,7 +73,7 @@ ensureRefLibStyles()
  * @returns 胶囊入口（+ 打开时的管理面板）。
  */
 export function RefLibDock(props: RefLibDockProps): ReactElement {
-  const { sessionId, session, load, add, remove, setNote, listSessions, loadEntries, importEntries, pickDirectory, listDirectory, t } = props
+  const { sessionId, session, load, add, remove, setNote, listGroups, loadGroupSessions, loadEntries, importEntries, pickDirectory, listDirectory, t } = props
   const [open, setOpen] = useState(false)
   const [importOpen, setImportOpen] = useState(false)
   const [libs, setLibs] = useState<RefLibEntry[]>([])
@@ -367,7 +369,8 @@ export function RefLibDock(props: RefLibDockProps): ReactElement {
         }}
         currentLibs={libs}
         t={t}
-        listSessions={() => listSessions(sessionId)}
+        listGroups={() => listGroups(sessionId)}
+        loadGroupSessions={(groupKey) => loadGroupSessions(sessionId, groupKey)}
         loadEntries={loadEntries}
         onImport={async (plan) => {
           await importEntries(sessionId, plan)
