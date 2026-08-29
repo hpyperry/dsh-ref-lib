@@ -213,6 +213,14 @@ export function RefLibDock(props: RefLibDockProps): ReactElement {
     }
   }
 
+  /** ⋯ 菜单「重新扫描」：重拉列表——node 侧 list() 每次读取实时探测目录可用性，
+   * 外部改动目录后手动重扫即刷新状态（refresh 内部归集错误，这里只管 busy）。 */
+  const handleRescan = async (): Promise<void> => {
+    setBusy(true)
+    await refresh()
+    setBusy(false)
+  }
+
   const handleAddPath = async (path: string, note?: string): Promise<void> => {
     setBusy(true)
     setError(null)
@@ -354,6 +362,9 @@ export function RefLibDock(props: RefLibDockProps): ReactElement {
         t={t}
         onRemove={(id) => {
           void handleRemove(id)
+        }}
+        onRescan={() => {
+          void handleRescan()
         }}
         onAddPath={handleAddPath}
         onUpdateNote={handleUpdateNote}

@@ -280,11 +280,11 @@ const CSS = `
 .reflib-panel {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 8px;
   min-width: 0;
 }
 
-/* 顶部状态行（对齐原型）：可用数绿点 / 失效数红点 */
+/* 红绿灯状态行：绿点可用数 / 红点失效数。小于头部副标题（14px）的次级信息行。 */
 .reflib-statusline {
   display: flex;
   align-items: center;
@@ -316,7 +316,7 @@ const CSS = `
   display: flex;
   flex-direction: column;
   gap: 8px;
-  max-height: 320px;
+  max-height: 300px;
   min-height: 0;
   overflow-y: auto;
   margin: 0 -8px;
@@ -339,10 +339,10 @@ const CSS = `
 
 .reflib-row {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 10px;
   min-width: 0;
-  padding: 9px 10px;
+  padding: 10px 12px;
   border-radius: 8px;
   transition: background-color 120ms ease;
 }
@@ -359,6 +359,7 @@ const CSS = `
 .reflib-rowIcon {
   display: inline-flex;
   flex: none;
+  margin-top: 2px;
   color: var(--dsw-alias-label-tertiary);
 }
 
@@ -371,18 +372,42 @@ const CSS = `
   display: flex;
   flex: 1;
   flex-direction: column;
-  gap: 1px;
+  gap: 2px;
+  min-width: 0;
+}
+
+/* 卡片一行：名称（一级信息）+ 状态徽标 */
+.reflib-rowLine1 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   min-width: 0;
 }
 
 .reflib-rowName {
   overflow: hidden;
   color: var(--dsw-alias-label-primary);
-  font-size: 13px;
-  line-height: 18px;
-  font-weight: 500;
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 600;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* 状态徽标：可用（绿）/ 失效（红）——名称旁的轻量状态信息 */
+.reflib-rowStatus {
+  flex: none;
+  padding: 0 7px;
+  border: 1px solid var(--dsw-alias-state-success-primary);
+  border-radius: 9px;
+  color: var(--dsw-alias-state-success-primary);
+  font-size: 10px;
+  line-height: 14px;
+  white-space: nowrap;
+}
+.reflib-rowStatus[data-tone='err'] {
+  border-color: var(--dsw-alias-state-error-primary);
+  color: var(--dsw-alias-state-error-primary);
 }
 
 .reflib-rowPath {
@@ -395,7 +420,7 @@ const CSS = `
   white-space: nowrap;
 }
 
-/* 列表行用途说明（Description，v8）：单行截断，与路径同属次行层级 */
+/* 列表行用途说明（辅助信息，v8）：单行截断，弱于路径 */
 .reflib-rowNote {
   overflow: hidden;
   color: var(--dsw-alias-label-secondary);
@@ -405,45 +430,7 @@ const CSS = `
   white-space: nowrap;
 }
 
-/* 失效条目徽标（v13 UI 打磨）：名称旁红色胶囊，替代整行状态文字（减少三重表达） */
-.reflib-rowBadge {
-  flex: none;
-  padding: 1px 7px;
-  border: 1px solid var(--dsw-alias-state-error-primary);
-  border-radius: 9px;
-  color: var(--dsw-alias-state-error-primary);
-  font-size: 10px;
-  line-height: 14px;
-  white-space: nowrap;
-}
-
-.reflib-rowRemove {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex: none;
-  width: 28px;
-  height: 28px;
-  padding: 0;
-  border: none;
-  border-radius: 8px;
-  background: transparent;
-  color: var(--dsw-alias-label-tertiary);
-  cursor: pointer;
-  transition: background-color 120ms ease, color 120ms ease;
-}
-
-.reflib-rowRemove:hover:not(:disabled) {
-  background: var(--dsw-alias-interactive-bg-hover-danger);
-  color: var(--dsw-alias-state-error-primary);
-}
-
-.reflib-rowRemove:disabled {
-  opacity: 0.4;
-  cursor: default;
-}
-
-/* 详情/编辑入口按钮（与移除同尺寸，非危险 hover） */
+/* ⋯ 操作菜单触发按钮 */
 .reflib-rowAction {
   display: inline-flex;
   align-items: center;
@@ -451,6 +438,7 @@ const CSS = `
   flex: none;
   width: 28px;
   height: 28px;
+  margin-top: -2px;
   padding: 0;
   border: none;
   border-radius: 8px;
@@ -656,52 +644,107 @@ const CSS = `
   }
 }
 
-/* ── 添加表单 ──
-   统一表单（v8 UI 重构）：路径（可输入 / 浏览填充）+ 用途（可选）同一容器，
-   同一「添加」按钮提交——用途与路径强关联，浏览不再直接添加。 */
+/* ── 添加参考库区 ──
+   v16 UI 打磨：区段标题 + 字段化表单（路径输入组 = 输入 + 内嵌浏览；用途说明
+   带标签/提示提升权重）；底行「从会话导入」（ghost 次要）+「添加参考库」（primary
+   主操作）。 */
 .reflib-add {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
   min-width: 0;
 }
 
+/* 区段标题（资源管理界面语义：添加一块可参考的本地项目） */
 .reflib-addLabel {
+  font-size: 13px;
+  line-height: 18px;
+  font-weight: 600;
+  color: var(--dsw-alias-label-primary);
+  margin-bottom: 2px;
+}
+
+/* 字段标签（目录路径 / 用途说明） */
+.reflib-addFieldLabel {
   font-size: 12px;
   line-height: 16px;
   font-weight: 500;
   color: var(--dsw-alias-label-secondary);
 }
 
-.reflib-addRow {
+.reflib-addOptional {
+  margin-left: 2px;
+  font-weight: 400;
+  color: var(--dsw-alias-label-caption);
+}
+
+/* 用途说明提示：说明它是路由元数据（何时参考），不是普通备注 */
+.reflib-addHint {
+  margin-top: -2px;
+  font-size: 11px;
+  line-height: 16px;
+  color: var(--dsw-alias-label-caption);
+}
+
+/* 路径输入组：浏览内嵌于输入控件右端（视觉上属于输入的一部分） */
+.reflib-addPathGroup {
   display: flex;
   align-items: center;
-  gap: 8px;
-  min-width: 0;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-layer-1);
+  transition: border-color 120ms ease;
 }
-
-.reflib-addInputWrap {
-  flex: 1 1 180px;
-  min-width: 0;
+.reflib-addPathGroup:focus-within {
+  border-color: var(--dsw-alias-brand-primary);
 }
-
-/* 输入字体与面板一致（13px，同列表行名），placeholder 不再比整体大；
-   文案已缩短保证完整显示 */
-.reflib-addInputWrap > input {
+.reflib-addPathInput {
+  flex: 1;
+  min-width: 0;
+  height: 32px;
+  border: none;
+  background: transparent;
+}
+.reflib-addPathInput > input {
   width: 100%;
   box-sizing: border-box;
   font-size: 13px;
   line-height: 18px;
 }
-
-/* 全宽「添加」主按钮 */
-.reflib-addSubmit {
+.reflib-addBrowse {
   flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 24px;
+  margin: 0 4px;
+  padding: 0 8px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  font: inherit;
+  font-size: 12px;
+  line-height: 24px;
+  cursor: pointer;
+  transition: background-color 120ms ease, color 120ms ease;
+}
+.reflib-addBrowse:hover:not(:disabled) {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+.reflib-addBrowse:disabled {
+  opacity: 0.4;
+  cursor: default;
 }
 
-/* 从会话导入：与添加按钮同排（对齐原型：输入 + 添加 + 从会话导入 一行） */
-.reflib-importOpen {
-  flex: none;
+/* 底行操作：从会话导入（次要）左、添加参考库（主操作）右 */
+.reflib-addFoot {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 8px;
+  margin-top: 2px;
 }
 
 /* ── /ref-lib 命令结果卡片（conversation.chat.commandview）── */
