@@ -3,7 +3,7 @@
 给 DeepSeek Harness 的每个会话挂一个「只读参考库」：把本地目录（比如你的项目源码、内部文档）登记为参考库后，agent 回答前会**先去这些目录里查证**，查不到才允许走外部途径——而不是凭空猜或者直接上网搜。
 
 ```
-dsh plugin --profile web add @hpyperry/dsh-ref-lib
+dsh plugin --profile web add @hpyperry/dsh-ref-lib@0.17.0
 ```
 
 ## 它解决什么问题
@@ -16,11 +16,13 @@ dsh plugin --profile web add @hpyperry/dsh-ref-lib
 
 ```bash
 # 安装
-dsh plugin --profile web add @hpyperry/dsh-ref-lib
+dsh plugin --profile web add @hpyperry/dsh-ref-lib@0.17.0
 
 # 卸载
 dsh plugin --profile web remove @hpyperry/dsh-ref-lib
 ```
+
+`@0.17.0` 是指定版本号：安装其他版本把 `@0.17.0` 换成对应版本即可（如 `@hpyperry/dsh-ref-lib@0.16.0`）；不带版本号则默认装最新版。
 
 安装完成后重启 `dsh web` 生效。本地开发期想改动即时生效，也可以直接指向仓库本地路径：`dsh plugin --profile web add /path/to/ref-lib`。
 
