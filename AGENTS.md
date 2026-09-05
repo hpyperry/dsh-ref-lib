@@ -115,7 +115,8 @@
    `ctx.sessionController.list({}, signal)` 直接 `{ items }`
    （`@deepseek-ai/dsh-api-session-controller`，`hiddenSessionIds` 降级分支保留）；
    v1/v2 旧日志折叠改 `session.snapshotEvents()`（rc.1 起 `Session` 无 `.events`；
-   rc.1 读取路径 `ignorable` 豁免与 rc.2 一致，`patch-ref-lib-logs.mjs` 修补仍有效）。
+   rc.1 读取路径 `ignorable` 豁免与 rc.2 一致，含 ignorable 标记的旧日志仍可读——
+   原修补/验证脚本已删除，见 §5 附加约定 2）。
    client half：`dsh-client-runtime` 删除（6 个类型迁出）——`ClientContext`→cordis
    `Context`、`SessionId`→`dsh-session/types`、`CommandNode/ConversationNode`→
    `dsh-client-ui-conversation/client`、`DirectoryEntry/DirectoryListing`→
@@ -192,15 +193,18 @@
 | L2 **harness 边界回归（事故防线）** | 真实 `SessionStore` + `JsonlSessionPersistence` + 临时根，跑「写会话 → flush → 全新实例冷加载」回路；**任何写入会话日志/持久化的插件必须包含此测试**，断言日志可加载、无白名单外事件；同时用「陷阱守卫」用例固化事故行为（写白名单外事件 → 必须抛 `SessionFormatUnsupportedError`） | `tests/harness-roundtrip.spec.ts` |
 | L3 开发环境隔离 | **开发/联调一律用隔离 `DSH_HOME`**（默认 `~/.dsh-dev`）+ 独立 profile，真实 `~/.dsh` 零接触；`rm -rf` 即可重置 | `scripts/dev-isolate.sh`（通用用法：`PLUGIN=<插件目录> DEV_HOME=<任意目录> ./scripts/dev-isolate.sh`） |
 | 通道 | client↔node 数据通道**首选 `ctx.webServer` 自注册 HTTP 路由**（`@deepseek-ai/dsh-host-webserver`，`/api/<plugin>/*`，loopback 护栏，参照 dsh-ssh / dsh-persona-memory 先例）；命令/投影仅在无 webServer 的组合兜底 | `src/routes.ts` + `tests/routes.spec.ts` |
-| L4 实验前备份 | 任何要动真实 `~/.dsh/sessions` 的操作前先整目录备份 | 参考 `scripts/patch-ref-lib-logs.mjs` 的备份步骤 |
+| L4 实验前备份 | 任何要动真实 `~/.dsh/sessions` 的操作前先**整目录备份**（`cp -R ~/.dsh ~/.dsh.bak-<时间戳>`），操作后确认无误再清理备份 | — |
 
 附加约定：
 
 1. **不要往会话日志写白名单外事件**（自定义事件类型无法标记 `ignorable`，会让日志被
    整体拒读）。插件 per-session 状态存 dsh home 下 sidecar（`dshHomePath()`），旧
    日志事件仅做一次性迁移折叠。
-2. 已中招的旧日志用 `scripts/patch-ref-lib-logs.mjs` 修补（补 `ignorable: true`），
-   用 `scripts/verify-ref-lib-logs.mjs` 以 GUI 同款加载器验证。
+2. v1/v2 事故日志的处理已随 v17 收口：当时用于补 `ignorable: true` 的修补/验证脚本
+   （`patch-ref-lib-logs.mjs` / `verify-ref-lib-logs.mjs`）**已删除**（2026-09-05，确认
+   各环境无未修补残留）；旧日志如含 `ref-lib/set`，由 v3 起读取时一次性折叠迁移
+   （`foldRefLibs`），无需再手工修补。若未来仍遇到拒绝加载的含自定义事件旧日志，
+   先整目录备份（L4），再按 `KNOWN_SESSION_EVENT_TYPES` 与 `ignorable` 语义处理。
 3. 每个插件交付时，`pnpm test` 必须包含 L0–L2 全部层（L3/L4 是开发流程约定，写入
    插件 README）。
 

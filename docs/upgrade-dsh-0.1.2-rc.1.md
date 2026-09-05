@@ -297,8 +297,8 @@ rc.1 宿主上运行时解析失败。其余平台词 cordis/react/ui-slots/ui-p
    0.1.2 alpha 早期曾删除 `ignorable` 分支（alpha.1 复核时的状态），alpha.2 起 revert
    恢复（`2c6ff296af`）。rc.1 读取路径 `KNOWN_SESSION_EVENT_TYPES.has(t) ||
    event.ignorable === true`（`coordinator.ts:1250`），fail-closed 仅针对**未标记** ignorable
-   的白名单外事件。含义：① v1/v2 时代含 `ref-lib/set` 的旧日志（经
-   `scripts/patch-ref-lib-logs.mjs` 补过 `ignorable: true` 的）在 rc.1 宿主**仍然可读**，
+   的白名单外事件。含义：① v1/v2 时代含 `ref-lib/set` 的旧日志（已按旧版修补工具
+   补过 `ignorable: true` 的）在 rc.1 宿主**仍然可读**，
    不再需要「升级前必须完成折叠迁移」；② 折叠迁移（foldRefLibs）仍是把旧事件一次性收进
    sidecar 的清理目标，可从容在升级后做；③ L2「陷阱守卫」断言在 rc.1 依然成立且与 rc.2
    语义一致（写**未标记** ignorable 的白名单外事件 → 必须抛
