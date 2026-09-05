@@ -7,7 +7,8 @@
 > 2026-09-03 02:27 +0800），原 alpha 时代的「暂缓实施，等发布」决策解除；适配代码按本文档
 > §2 落地为 ref-lib **v17**，但**必须先按 §5 的多版本兼容测试矩阵在隔离环境全绿**，再按 §6
 > 双轨切换正式环境（宿主 0.1.1-rc.2 → 0.1.2-rc.1），生产零影响。
-> 目标版本：ref-lib **v17**（当前基线 v16.1 / 0.15.0，升级落地后 bump 0.16.0）。
+> 目标版本：ref-lib **v17**（当前基线 v16.1 / 0.15.0，升级落地后 bump 0.17.0——
+> 发布号定版；落地代码先经 0.16.0）。
 > 依据：deepseek-harness git tag `dsh-v0.1.2-rc.1`（`a66e470204`）为最终核验对象；初稿核验的
 > alpha.1 合并提交 `cd5ef81481` 之后、rc.1 之前的增量（alpha.2–alpha.5 → rc.1，含两处行为级
 > 变化）已逐项复查，结论见 §1.4；凡引用「已核验」的条目均带 rc.1 源码路径。
@@ -331,7 +332,7 @@ rc.1 宿主上运行时解析失败。其余平台词 cordis/react/ui-slots/ui-p
 | 轨道 | 宿主（@deepseek-ai/dsh CLI） | 插件（ref-lib） | 依赖基线 | 状态 |
 | --- | --- | --- | --- | --- |
 | **轨道 A（生产，现状）** | `0.1.1-rc.2`（本机 `dsh --version` 即此） | v16.1（0.15.0） | peers `^0.1.1-rc.2` | 绿（现网运行中） |
-| **轨道 B（目标）** | `0.1.2-rc.1` | v17（0.16.0，§2 适配后） | peers `^0.1.2-rc.1` | 本文档的验收对象 |
+| **轨道 B（目标）** | `0.1.2-rc.1` | v17（0.17.0，§2 适配后） | peers `^0.1.2-rc.1` | 本文档的验收对象 |
 
 **跨轨道互跑会硬失败（已论证，不必尝试兼容）**。机制（rc.1 复核时修正了初稿的归因）：
 插件 client half 经 cordis fiber inject 声明所需宿主服务（v16.1：`['slots', 'workspaces',
@@ -444,7 +445,7 @@ DEV_HOME="$HOME/.dsh-dev-rc1" PROFILE=ref-lib-rc1 DSH_BIN="$DSH_BIN_RC1" \
 ```bash
 # ── 前置：B 轨矩阵（§5）全绿，含数据平面副本验证 ──
 
-# 1) 发布 v17（0.16.0）到 npm（peer/dev 已对齐 0.1.2-rc.1）
+# 1) 发布 v17（0.17.0）到 npm（peer/dev 已对齐 0.1.2-rc.1）
 # 2) L4 备份（强制）：整目录备份正式 dsh home 与 profile
 cp -R "$HOME/.dsh" "$HOME/.dsh.bak-$(date +%Y%m%d-%H%M%S)"
 # 3) 切换窗口（停服状态下同窗完成；顺序不可颠倒）：
@@ -474,10 +475,10 @@ dsh plugin --profile web add @hpyperry/dsh-ref-lib   # 或升级到 v17
 | `service.ts` 仅迁 apiProxy（§1.1/§2.4） | 迁移 apiProxy **并**把 v1/v2 旧日志折叠的 `session.events` → **`session.snapshotEvents()`** | rc.1 起 `Session` 不再暴露 `.events`（seq/log-offset 重构改为 `snapshotEvents(fromSeq?, toSeqExclusive?)`） |
 | `ctx.sessionController.list({}, signal)`（§1.1） | 同，signal 实参传 `new AbortController().signal` | rc.1 类型签名 signal 为必填 `AbortSignal` |
 | L2 陷阱守卫（§4-1-③） | **未改**，231 测试全过 | rc.1 读取路径 `KNOWN || ignorable`（coordinator.ts:1250）与 rc.2 一致 |
-| 版本号 | package.json 0.15.0 → **0.16.0** | 目标版本 v17 |
+| 版本号 | package.json 0.15.0 → **0.17.0**（发布号定版；落地代码先经 0.16.0） | 目标版本 v17 |
 | §2.6：AGENTS §2/§3 链接 `develop/basic/` → `docs/cordis-tutorial/` | **未改**（AGENTS 仍指向官网 `<.../develop/basic/>`） | 官网 URL 未确认改版；0.1.2 源码内 `docs/cordis-tutorial` 仅作本地查证路径，不构成对外链接依据 |
 
-**⚠️ 正式环境警示**：v17（0.16.0）依赖族为 0.1.2-rc.1，**只能在 0.1.2-rc.1（及以上）宿主运行**——
+**⚠️ 正式环境警示**：v17（0.17.0）依赖族为 0.1.2-rc.1，**只能在 0.1.2-rc.1（及以上）宿主运行**——
 若正式环境（宿主 0.1.1-rc.2）的 ref-lib 以「本地 link 本仓库」方式安装，宿主重启即会加载到
 v17 client（inject `'uiWorkspace'` 在 rc.2 宿主不存在 → 客户端加载失败）。切换前先确认正式
 profile 的 ref-lib 安装形态（npm 发布版 0.15.0 不受影响），并按 §6 同窗升级宿主 + 插件。

@@ -127,7 +127,8 @@
    import type {} 收口，非 ui-conversation 传递）；tsdown `PLATFORM_EXTERNALS` 移除
    `dsh-client-runtime/client`。peer **16** 包（删 runtime/apiproxy + 增
    session-controller/ui-chat/ui-workspace；api-remotes 因 npm 缺 client 类型不加）、
-   dev 新增 ui-renderer/host-directory-picker；version 0.15.0 → 0.16.0；多版本兼容
+   dev 新增 ui-renderer/host-directory-picker；version 0.15.0 → 0.17.0（v17 发布号
+   定版；落地代码先经 0.16.0）；多版本兼容
    双轨矩阵与正式环境切换流程见升级文档 §5/§6）。
 
 ## 2. 开发规范（必须遵守）
