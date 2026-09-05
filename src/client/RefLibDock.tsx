@@ -19,7 +19,9 @@
 import { useEffect, useRef, useState } from 'react'
 import type { ReactElement } from 'react'
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
-import type { DirectoryListing, SessionId } from '@deepseek-ai/dsh-client-runtime/client'
+import type { DirectoryListing } from '@deepseek-ai/dsh-host-directory-picker/types'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
+import type { ChatSnapshot } from '@deepseek-ai/dsh-client-ui-chat/client'
 import { IconFolderOpen16 } from '@deepseek-ai/dsh-client-ui-primitives'
 import { Button, Modal } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ImportPlan } from '../logic.ts'
@@ -73,7 +75,10 @@ ensureRefLibStyles()
  * @returns 胶囊入口（+ 打开时的管理面板）。
  */
 export function RefLibDock(props: RefLibDockProps): ReactElement {
-  const { sessionId, session, load, add, remove, setNote, listGroups, loadGroupSessions, loadEntries, importEntries, pickDirectory, listDirectory, t } = props
+  const { session, useChat, load, add, remove, setNote, listGroups, loadGroupSessions, loadEntries, importEntries, pickDirectory, listDirectory, t } = props
+  // v17：dock owner 携带 `InputZone.session`（SessionSnapshot，含 sessionId）；
+  // 顶层 props 不再直接提供 sessionId。
+  const sessionId = session.sessionId
   const [open, setOpen] = useState(false)
   const [importOpen, setImportOpen] = useState(false)
   const [libs, setLibs] = useState<RefLibEntry[]>([])
@@ -171,14 +176,16 @@ export function RefLibDock(props: RefLibDockProps): ReactElement {
     }
   }, [open])
 
-  // 发消息即刷新（交互钩子）：dock owner 的 `session` 是**响应式会话快照**
-  // （ConversationRoot `useSession(s => s)`，每次会话 store 发布重渲染）——用户
-  // 发消息落盘后产生 user 消息节点（`kind: 'user'`），计数 +1 触发静默刷新；
-  // 流式 assistant 回复不改变 user 计数，不会每 token 刷新。
+  // 发消息即刷新（交互钩子）：dock owner 经 ui-chat 标准 hook `useChat` 读
+  // `s.legacy.nodes`（v17：0.1.2 起 `SessionSnapshot` 不再携带 `nodes`，
+  // conversation-nodes 迁至 ui-chat，`ChatSnapshot.legacy` 为兼容投影，官方
+  // StatsLine 同款读法）——用户发消息落盘后产生 user 消息节点（`kind: 'user'`），
+  // 计数 +1 触发静默刷新；流式 assistant 回复不改变 user 计数，不会每 token 刷新。
   // 信号盲区（rc.7 查证，见 refresh-triggers.ts 与设计文档 §16）：steer 打断消息
   // 折叠为 'steering' 节点不触发；忙碌期排队消息的 user 节点在 step 领取时才落盘
   // （刷新延迟）；外部文件操作无会话事件（下次 GUI 交互同步）。
-  const { userMessageCount, refLibCommandDone } = deriveRefreshTriggers(session.nodes)
+  const chatNodes = useChat((s: ChatSnapshot) => s.legacy.nodes)
+  const { userMessageCount, refLibCommandDone } = deriveRefreshTriggers(chatNodes)
   useEffect(() => {
     void refresh(true)
   }, [userMessageCount])

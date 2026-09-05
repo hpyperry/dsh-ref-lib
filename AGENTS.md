@@ -108,7 +108,27 @@
    peer/dev 新增 `@deepseek-ai/dsh-host-apiproxy ^0.1.1-rc.2`；纯函数
    `excludeHiddenSources`（L0 钉死缺省/部分/全滤）+ 服务层 apiProxy stub 4 条
    （子代理/blank/调用失败/无服务）；231 测试全过，dev 实测 blank 会话（Redis
-   残留）被正确剔除）。
+   残留）被正确剔除）→
+   v17（**依赖基线升级 dsh 0.1.1-rc.2 → 0.1.2-rc.1（2026-09-03 正式发布）+ v16.1
+   apiProxy 迁移**：破坏面与迁移方案见 `docs/upgrade-dsh-0.1.2-rc.1.md`。node half
+   仅 `service.ts`：`ctx.apiProxy.sessions.list()`（`dsh-host-apiproxy` 删除）→
+   `ctx.sessionController.list({}, signal)` 直接 `{ items }`
+   （`@deepseek-ai/dsh-api-session-controller`，`hiddenSessionIds` 降级分支保留）；
+   v1/v2 旧日志折叠改 `session.snapshotEvents()`（rc.1 起 `Session` 无 `.events`；
+   rc.1 读取路径 `ignorable` 豁免与 rc.2 一致，`patch-ref-lib-logs.mjs` 修补仍有效）。
+   client half：`dsh-client-runtime` 删除（6 个类型迁出）——`ClientContext`→cordis
+   `Context`、`SessionId`→`dsh-session/types`、`CommandNode/ConversationNode`→
+   `dsh-client-ui-conversation/client`、`DirectoryEntry/DirectoryListing`→
+   `dsh-host-directory-picker/types`（npm rc.1 的 `dsh-api-remotes` 无 ./client 类型
+   产物，故不走文档初拟的 remotes 收口，见升级文档 §2.1 注）；`ctx.workspaces`→
+   `ctx.uiWorkspace`（inject `'uiWorkspace'`）；dock 的 `session.nodes`→ui-chat 标准
+   hook `useChat(s => s.legacy.nodes)`、`sessionId` 取自 `InputZone.session.sessionId`；
+   `ctx.slots` 类型来源为 `@deepseek-ai/dsh-client-ui-renderer/client`（经 client 入口
+   import type {} 收口，非 ui-conversation 传递）；tsdown `PLATFORM_EXTERNALS` 移除
+   `dsh-client-runtime/client`。peer **16** 包（删 runtime/apiproxy + 增
+   session-controller/ui-chat/ui-workspace；api-remotes 因 npm 缺 client 类型不加）、
+   dev 新增 ui-renderer/host-directory-picker；version 0.15.0 → 0.16.0；多版本兼容
+   双轨矩阵与正式环境切换流程见升级文档 §5/§6）。
 
 ## 2. 开发规范（必须遵守）
 

@@ -10,13 +10,13 @@
 
 import type { UserConfig } from 'tsdown'
 
-/** 平台模块（loader 模块表条目）：运行时提供，禁止内联。 */
+/** 平台模块（loader 模块表条目）：运行时提供，禁止内联。v17：`dsh-client-runtime` 包
+ * 在 0.1.2 删除、引用全为 type-only（擦除）——已移出该表，防误引入 value import。 */
 const PLATFORM_EXTERNALS = [
   'react',
   'react/jsx-runtime',
   '@deepseek-ai/cordis',
   '@deepseek-ai/dsh-client-locale/client',
-  '@deepseek-ai/dsh-client-runtime/client',
   '@deepseek-ai/dsh-client-ui-primitives',
   '@deepseek-ai/dsh-client-ui-slots',
 ]

@@ -27,12 +27,12 @@ afterEach(async () => {
   root = undefined
 })
 
-/** fake session（per-session 数据操作）。 */
+/** fake session（per-session 数据操作；rc.1 起 Session 经 snapshotEvents() 读事件）。 */
 function fakeSession(): Session {
   const id = `session-test-${++counter}`
   const events: SessionEvent[] = []
   const header = { version: 0, id, createdAt: Date.now() } as SessionHeader
-  return { id, header, events } as unknown as Session
+  return { id, header, snapshotEvents: () => events } as unknown as Session
 }
 
 /** 构造与用户 profile 等价的组合（ref-lib 插件，存储根指向临时目录）。 */

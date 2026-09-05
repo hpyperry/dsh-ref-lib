@@ -53,7 +53,7 @@ describe('harness 边界回归（会话日志可加载性）', () => {
     const entry = await service.add(session, libDir)
     expect(service.list(session)).toEqual([entry])
     await service.remove(session, entry.id)
-    expect(session.events).toEqual([]) // v3：插件操作零日志污染
+    expect(session.snapshotEvents()).toEqual([]) // v3：插件操作零日志污染（rc.1 起经 snapshotEvents）
     // 模拟真实对话内容（平衡的一轮）
     session.append('turn/start', { turn: 1 })
     session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })

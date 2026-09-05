@@ -28,7 +28,7 @@ import {
   Modal,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
-import type { SessionId } from '@deepseek-ai/dsh-client-runtime/client'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { ImportPlan } from '../logic.ts'
 import type { RefLibEntry } from '../spec.ts'
 import { classifyImport, formatRefLibError, libBasename, type ImportClassification, type RefLibImportGroup, type RefLibSourceSession } from './data.ts'

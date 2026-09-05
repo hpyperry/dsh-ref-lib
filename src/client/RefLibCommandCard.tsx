@@ -12,7 +12,7 @@
 
 import { useState } from 'react'
 import type { ReactElement } from 'react'
-import type { CommandNode } from '@deepseek-ai/dsh-client-runtime/client'
+import type { CommandNode } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import {
   IconCheckOutline16,

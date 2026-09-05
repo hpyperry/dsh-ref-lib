@@ -7,12 +7,12 @@ import RefLibPlugin from '../src/index.ts'
 
 let counter = 0
 
-/** fake session（装配测试只验证服务注册，不操作数据）。 */
+/** fake session（装配测试只验证服务注册，不操作数据；rc.1 起读事件走 snapshotEvents）。 */
 function fakeSession(): Session {
   const id = `session-test-${++counter}`
   const events: SessionEvent[] = []
   const header = { version: 0, id, createdAt: Date.now() } as SessionHeader
-  return { id, header, events } as unknown as Session
+  return { id, header, snapshotEvents: () => events } as unknown as Session
 }
 
 /** 装配测试：模拟 loader 装载插件（await ctx.plugin 装配 Service 类）。 */

@@ -39,10 +39,9 @@ import type { SessionTitleObservationResult } from '@deepseek-ai/dsh-session-que
 // 官方声明合并：加载 ctx.workspaceRegistry（WorkspaceRegistry）——v14 归档过滤
 // 读 `archivedSessionIds` 展示层归档集合（会话仍在 persistence，sidecar 枚举包含）。
 import type {} from '@deepseek-ai/dsh-workspace'
-// 官方声明合并：加载 ctx.apiProxy（ApiProxy）——v16.1 会话可见性（子代理/blank）
-// 与侧边栏同源判定（`sessions.list` 的 SessionSummary）。
-import type {} from '@deepseek-ai/dsh-host-apiproxy'
-import { RpcId } from '@deepseek-ai/dsh-host-apiproxy'
+// 官方声明合并：加载 ctx.sessionController（v17：0.1.2 起 `dsh-host-apiproxy` 删除，
+// v16.1 会话可见性改经 `@deepseek-ai/dsh-api-session-controller` 的 sessionController.list()）。
+import type {} from '@deepseek-ai/dsh-api-session-controller'
 import {
   attachSessionMeta,
   excludeArchivedSources,
@@ -420,8 +419,9 @@ export class RefLibService extends Service {
    * v16 懒加载第一级：工作区组概览（`groups=1`）。只做 sidecar 枚举 + 归档过滤 +
    * workspace 映射 + 组内计数聚合——**不读标题、不探测可用性**（展开某组时才做），
    * 会话数量级增长下保持轻量。组顺序 = 组内最近活跃会话降序（枚举按 mtime 倒序后
-   * 首次出现顺序）。v16.1 起为排除不可见会话需调一次 `apiProxy.sessions.list()`
-   * （宿主优化路径：live 事件折叠 + 冷会话 size-cap 探测 + 投影缓存，与侧边栏同源）。
+   * 首次出现顺序）。v16.1 起为排除不可见会话需调一次 `ctx.sessionController.list()`
+   * （v17 迁移：0.1.2 宿主经 dsh-api-session-controller；宿主优化路径：live 事件
+   * 折叠 + 冷会话 size-cap 探测 + 投影缓存，与侧边栏同源）。
    * @param excludeSessionId - 排除的会话 id（当前会话）。
    * @returns 组概览（key 回传给 {@link listSessionsByGroup} 做第二级加载）。
    */
@@ -445,24 +445,22 @@ export class RefLibService extends Service {
     )
   }
 
-  private rpcCounter = 0
-
   /**
    * 宿主判定的"侧边栏不可见"会话 id 集合（v16.1）：子代理（`origin === 'subagent'`）
-   * + 空会话（`blank`）。经 `ctx.apiProxy.sessions.list()` 一次拿到——与宿主侧边栏
-   * **同源同逻辑**（live 事件折叠 + 冷会话 size-cap 探测 + 投影缓存，见 host
-   * api-proxy 的 session.list）。宿主服务缺失（非 web 组合）或读取异常时降级为
-   * 空集合（不过滤，不阻断导入）。
+   * + 空会话（`blank`）。v17 起经 `ctx.sessionController.list({}, signal)` 一次拿到
+   * （0.1.2 宿主：`dsh-host-apiproxy` 删除，`dsh-api-session-controller` 的
+   * `sessionController` 取代；返回无 RpcResponse 信封，直接 `{ items }`）——与宿主
+   * 侧边栏**同源同逻辑**（live 事件折叠 + 冷会话 size-cap 探测 + 投影缓存）。
+   * 宿主服务缺失（非 web 组合）或读取异常时降级为空集合（不过滤，不阻断导入）。
    * @returns 不可见会话 id 集合。
    */
   private async hiddenSessionIds(): Promise<ReadonlySet<string>> {
     const ids = new Set<string>()
-    const apiProxy = this.ctx.get('apiProxy')
-    if (apiProxy === undefined) return ids
+    const controller = this.ctx.get('sessionController')
+    if (controller === undefined) return ids
     try {
-      const response = await apiProxy.sessions.list({ rpcId: RpcId(`ref-lib-hidden-${++this.rpcCounter}`), payload: {} })
-      if (!response.result.ok) return ids
-      for (const item of response.result.value.items) {
+      const { items } = await controller.list({}, new AbortController().signal)
+      for (const item of items) {
         if (item.origin === 'subagent' || item.blank) ids.add(String(item.sessionId))
       }
     } catch (error) {
@@ -702,8 +700,10 @@ export class RefLibService extends Service {
       if (stored !== undefined) return stored
     }
     // v1/v2 遗留：从会话日志的 `ref-lib/set` 事件折叠（取最后一个完整快照）。
-    // 一次性落盘，保证迁移结果对父会话继承可见。
-    const fromEvents = foldRefLibs(session.events)
+    // 一次性落盘，保证迁移结果对父会话继承可见。v17：rc.1 起 Session 不再暴露
+    // `.events`，改经 `snapshotEvents()`（rc.1 读路径对 ignorable 标记语义与 rc.2
+    // 一致，补过 ignorable 的旧日志仍可读）。
+    const fromEvents = foldRefLibs(session.snapshotEvents())
     if (fromEvents.length > 0) {
       this.persistSync(session.id, fromEvents)
       return fromEvents

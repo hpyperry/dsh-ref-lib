@@ -17,7 +17,7 @@ import type { RefLibEntry } from '../src/spec.ts'
 
 let counter = 0
 
-/** fake session：内存事件流 + id/header（与真实 Session 的 events/header 同形）。 */
+/** fake session：内存事件流 + id/header（rc.1 起 Session 经 snapshotEvents() 读事件）。 */
 function fakeSession(options: { parentSession?: string; events?: readonly SessionEvent[] } = {}): Session {
   const id = `session-test-${++counter}`
   const events: SessionEvent[] = options.events === undefined ? [] : [...options.events]
@@ -27,7 +27,7 @@ function fakeSession(options: { parentSession?: string; events?: readonly Sessio
     createdAt: Date.now(),
     ...(options.parentSession === undefined ? {} : { parentSession: options.parentSession }),
   } as SessionHeader
-  return { id, header, events } as unknown as Session
+  return { id, header, snapshotEvents: () => events } as unknown as Session
 }
 
 /** sidecar 文件路径（与服务端同方案：id 编码为路径段 + .json）。 */
@@ -914,26 +914,18 @@ describe('RefLibService v16.1（导入来源排除不可见会话——子代理
     await rm(tmp, { recursive: true, force: true })
   })
 
-  /** apiProxy stub：SessionSummary 带 blank / origin（与侧边栏同源）。 */
+  /** sessionController stub（v17：apiProxy → sessionController）：list 返回 SessionSummary items。 */
   function provideSessionSummaries(ctx: Context, items: Array<{ sessionId: string; blank?: boolean; origin?: 'subagent' }>): void {
-    ctx.provide('apiProxy', {
-      sessions: {
-        list: async () => ({
-          rpcId: 'stub',
-          result: {
-            ok: true,
-            value: {
-              items: items.map((item) => ({
-                sessionId: item.sessionId,
-                updatedAt: 1,
-                running: false,
-                blank: item.blank ?? false,
-                ...(item.origin === undefined ? {} : { origin: item.origin }),
-              })),
-            },
-          },
-        }),
-      },
+    ctx.provide('sessionController', {
+      list: async () => ({
+        items: items.map((item) => ({
+          sessionId: item.sessionId,
+          updatedAt: 1,
+          running: false,
+          blank: item.blank ?? false,
+          ...(item.origin === undefined ? {} : { origin: item.origin }),
+        })),
+      }),
     } as never)
   }
 
@@ -986,13 +978,13 @@ describe('RefLibService v16.1（导入来源排除不可见会话——子代理
     const service = new RefLibService(ctx, { root: tmp })
     const sessionA = fakeSession()
     await service.add(sessionA, dir)
-    ctx.provide('apiProxy', {
-      sessions: { list: async () => { throw new Error('boom') } },
+    ctx.provide('sessionController', {
+      list: async () => { throw new Error('boom') },
     } as never)
     expect(await service.listSessionGroups()).toEqual([{ key: '__ungrouped__', count: 1 }])
   })
 
-  it('宿主无 apiProxy 时降级不过滤', async () => {
+  it('宿主无 sessionController 时降级不过滤', async () => {
     const dir = join(tmp, 'lib-a')
     await mkdir(dir)
     const service = new RefLibService(new Context(), { root: tmp })

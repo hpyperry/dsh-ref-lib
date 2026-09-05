@@ -9,17 +9,23 @@
  * 数据通道（v4/v5）：client 经**普通同源 fetch** 访问插件在宿主 `ctx.webServer`
  * 上自注册的 /api/ref-lib/* HTTP 路由（node 端读写 sidecar）——静默双向、
  * 不渲染命令卡片、不执行命令、不产生用户消息。路由 loopback-only 护栏见
- * `src/routes.ts`。目录选择走 `ctx.workspaces.pickDirectory()`（host 原生 OS
- * 选择器），另提供路径输入直加（优化点 2：绕开卡顿的原生对话框）。
+ * `src/routes.ts`。目录选择走 `ctx.uiWorkspace.pickDirectory()`（host 原生 OS
+ * 选择器，v17：0.1.2 起 `ctx.workspaces` 迁至 `ctx.uiWorkspace`），另提供路径
+ * 输入直加（优化点 2：绕开卡顿的原生对话框）。
  * 文案经 `ctx.locale` 全量本地化（zh/en，优化点 2）。
  * @module @hpyperry/dsh-ref-lib/src/client
  */
 
-import type { ClientContext, SessionId } from '@deepseek-ai/dsh-client-runtime/client'
+import { type Context } from '@deepseek-ai/cordis'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
 // Side-effect type imports：加载 slot 声明合并（conversation.input.dock 由
-// ui-conversation 声明）与 locale 服务的类型。
+// ui-conversation 声明；commandview 槽位与 useChat 声明自 0.1.2 起在 ui-chat；
+// ctx.uiWorkspace 在 ui-workspace）与 locale 服务的类型。
 import type {} from '@deepseek-ai/dsh-client-ui-slots'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
+import type {} from '@deepseek-ai/dsh-client-ui-chat/client'
+import type {} from '@deepseek-ai/dsh-client-ui-workspace/client'
+import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type { RefLibEntry } from '../spec.ts'
 import type { ImportPlan } from '../logic.ts'
@@ -28,8 +34,8 @@ import { RefLibCommandCard } from './RefLibCommandCard.tsx'
 import { RefLibDock, type RefLibDockInjected } from './RefLibDock.tsx'
 import { zh, en, type RefLibKey } from './locales.ts'
 
-/** 所需服务（cordis fiber inject）。 */
-export const inject = ['slots', 'workspaces', 'locale']
+/** 所需服务（cordis fiber inject）。v17：`workspaces` → `uiWorkspace`（0.1.2 迁移）。 */
+export const inject = ['slots', 'uiWorkspace', 'locale']
 
 /** 本插件文案命名空间。 */
 const NS = 'ref-lib'
@@ -75,7 +81,7 @@ async function api<T>(path: string, payload?: unknown, method = 'POST'): Promise
  * 注册输入框上方的「参考库」入口与管理面板。
  * @param ctx - client 根上下文。
  */
-export function apply(ctx: ClientContext): void {
+export function apply(ctx: Context): void {
   // 注册本插件文案命名空间（zh/en 逐键对齐，编译期校验）。
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'ref-lib: dictionaries')
 
@@ -115,8 +121,8 @@ export function apply(ctx: ClientContext): void {
     importEntries: async (sessionId: SessionId, plan: ImportPlan): Promise<void> => {
       await api('/import', { session: sessionId, plan })
     },
-    pickDirectory: () => ctx.workspaces.pickDirectory(),
-    listDirectory: (path, signal) => ctx.workspaces.listDirectory(path, signal),
+    pickDirectory: () => ctx.uiWorkspace.pickDirectory(),
+    listDirectory: (path, signal) => ctx.uiWorkspace.listDirectory(path, signal),
   })
 
   ctx.slots.inject('conversation.input.dock', () =>

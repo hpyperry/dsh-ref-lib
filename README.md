@@ -100,6 +100,7 @@ pnpm build       # 构建 node half（tsc）+ client bundle（tsdown）→ lib/
 
 - **代码结构**：`src/` 是 node half（服务、`/api/ref-lib/*` 路由、`/ref-lib` 命令、上下文注入），`src/client/` 是 web half（dock 胶囊、管理面板、目录浏览器、本地化），`tests/` 是测试。
 - **隔离开发环境**：`scripts/dev-isolate.sh` 用独立的 `DSH_HOME`（默认 `~/.dsh-dev`）启动插件，真实 `~/.dsh` 零接触，`rm -rf` 即可重置。启动、安装、热更新、重置的完整用法见仓库 `AGENTS.md`。
+- **指定 dsh 版本测试（不依赖 npm 全局安装）**：`DSH_BIN="$(DSH_VERSION=0.1.2-rc.1 ./scripts/dsh-local.sh)" DEV_HOME="$HOME/.dsh-dev-rc1" ./scripts/dev-isolate.sh`——`dsh-local.sh` 把目标版本幂等装到 `~/.dsh-tools/<版本>/`（非全局），dev-isolate 经 `DSH_BIN` 调用它；详见两个脚本头注释与 `docs/upgrade-dsh-0.1.2-rc.1.md` §5.3。
 - **热更新**：改 `src/client/*` 后跑 `pnpm build:client`，浏览器约 0.5 秒内自动生效；改 node half 需要重启 `dsh web`。
 
 ## License

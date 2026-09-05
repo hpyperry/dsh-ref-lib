@@ -10,7 +10,7 @@
  * src/client/refresh-triggers.ts 头部说明），本测试把该契约固化下来。
  */
 import { describe, expect, it } from 'vitest'
-import type { ConversationNode } from '@deepseek-ai/dsh-client-runtime/client'
+import type { ConversationNode } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import { deriveRefreshTriggers } from '../src/client/refresh-triggers.ts'
 
 /** 构造最小会话节点（仅测试派生逻辑所需的字段；kind 为判别键）。 */

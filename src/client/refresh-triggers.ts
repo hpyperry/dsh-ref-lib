@@ -33,7 +33,7 @@
  * @module @hpyperry/dsh-ref-lib/src/client/refresh-triggers
  */
 
-import type { ConversationNode } from '@deepseek-ai/dsh-client-runtime/client'
+import type { ConversationNode } from '@deepseek-ai/dsh-client-ui-conversation/client'
 
 /** 一次快照派生的刷新触发计数（RefLibDock 两个 effect 的依赖值）。 */
 export interface RefreshTriggerCounts {

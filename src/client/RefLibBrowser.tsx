@@ -23,7 +23,7 @@ import {
   IconWarningOutline16,
   Modal,
 } from '@deepseek-ai/dsh-client-ui-primitives'
-import type { DirectoryEntry, DirectoryListing } from '@deepseek-ai/dsh-client-runtime/client'
+import type { DirectoryEntry, DirectoryListing } from '@deepseek-ai/dsh-host-directory-picker/types'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
 
 /** 面板组件依赖的注入面（由 RefLibDock 提供）。 */

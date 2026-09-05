@@ -13,12 +13,20 @@
 #   PLUGIN=/path/to/other-plugin ./scripts/dev-isolate.sh  # 隔离其他插件（默认本插件）
 #   DEV_HOME=/tmp/dsh-dev ./scripts/dev-isolate.sh --dump-config  # 透传 dsh 参数
 #
+# 用哪个版本的 dsh：
+#   DSH_BIN=<绝对路径> ./scripts/dev-isolate.sh   # 指定 dsh 可执行文件（推荐：
+#                                                 #   版本化本地安装见 scripts/dsh-local.sh，
+#                                                 #   不依赖/不修改 npm 全局安装）
+#   默认不设 DSH_BIN 时用 PATH 上的 dsh（向后兼容）。
+#
 # 清理：rm -rf "$DEV_HOME" 即完全重置开发环境。
 set -euo pipefail
 
 PLUGIN="${PLUGIN:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 DEV_HOME="${DEV_HOME:-$HOME/.dsh-dev}"
 PROFILE="${PROFILE:-web}"
+# dsh 可执行文件：默认 PATH 上的 dsh；测试非全局版本时用 DSH_BIN 显式指定。
+DSH_BIN="${DSH_BIN:-dsh}"
 
 # 包名以插件 package.json 的 name 为准（目录名可能 ≠ 包名，如 @scope/pkg）
 PLUGIN_NAME="$(node -e 'const fs=require("node:fs");const j=JSON.parse(fs.readFileSync(process.argv[1]+"/package.json","utf8"));process.stdout.write(j.name||"")' "$PLUGIN" 2>/dev/null || true)"
@@ -29,8 +37,8 @@ mkdir -p "$DEV_HOME"
 # 首次运行：把插件装进隔离 home 的 profile（与真实环境完全独立）
 if [ ! -e "$DEV_HOME/profiles/$PROFILE/node_modules/$PLUGIN_NAME" ]; then
   echo "首次运行：安装插件 '$PLUGIN'（${PLUGIN_NAME}）到隔离环境 DSH_HOME=$DEV_HOME (profile=$PROFILE) ..."
-  DSH_HOME="$DEV_HOME" dsh plugin --profile "$PROFILE" add "$PLUGIN"
+  DSH_HOME="$DEV_HOME" "$DSH_BIN" plugin --profile "$PROFILE" add "$PLUGIN"
 fi
 
 echo "启动隔离开发环境：DSH_HOME=${DEV_HOME}（真实 ${HOME}/.dsh 不受影响；Ctrl-C 退出，rm -rf $DEV_HOME 重置）"
-exec env DSH_HOME="$DEV_HOME" dsh --profile "$PROFILE" "$@"
+exec env DSH_HOME="$DEV_HOME" "$DSH_BIN" --profile "$PROFILE" "$@"
