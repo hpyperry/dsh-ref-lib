@@ -703,7 +703,7 @@ export class RefLibService extends Service {
     // 一次性落盘，保证迁移结果对父会话继承可见。v17：rc.1 起 Session 不再暴露
     // `.events`，改经 `snapshotEvents()`。
     //
-    // ⚠️ v18 事实修正（见 `docs/upgrade-dsh-0.1.7-rc.2.md` §3.2 B3）：`SESSION_FORMAT_VERSION`
+    // ⚠️ v18 事实修正（见 `next` 分支的 `docs/upgrade-dsh-0.1.7-rc.2.md` §3.2 B3）：`SESSION_FORMAT_VERSION`
     // 在 ≤0.1.2-rc.1 为 0、0.1.3-alpha.2 起为 2、0.1.5 起为 3、0.1.7 起为 4；而 v0→v1
     // **历史迁移边拒绝未知事件类型——即使带 `ignorable: true`**
     // （`packages/session/session-format-v0-to-v1/src/validation.ts`）。因此本折叠路径

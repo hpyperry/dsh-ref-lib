@@ -15,12 +15,18 @@
   **npm 未发布**（账号锁定），解锁后 `npm publish --tag latest|next`（带 `-rc` 的版本不会被
   npm 自动设成 `latest`，必须显式 `--tag`）。另：`dsh plugin add` 本质是转发 pnpm，
   所以本地路径、`pnpm pack` 打出的 tarball、git/npm 版本都能装；要"冻结副本"用
-  `INSTALL_MODE=pack`（§6）。落地全记录见 `docs/upgrade-dsh-0.1.7-rc.2.md` §9。
-  **真实环境已切换（同日，不等 npm）**：全局 `dsh` 升到 `0.1.5-rc.3`，真实 profile
-  `web` 的插件依赖改为 `file:~/.dsh-pkgs/0.1.5-rc.3/hpyperry-dsh-ref-lib-0.1.5-rc.3.tgz`
-  （独立副本，非软链）；升级前整目录备份 `~/.dsh.bak-20260925-141619`，并按 §6.3 扫描
-  处置了 2 个含 `ref-lib/set` 的旧日志（详见升级文档 §9.7）。**改 profile 或换插件集都要
-  重启 `dsh web` 才生效。**
+  `INSTALL_MODE=pack`（§6）。落地全记录见 `next` 分支的 `docs/upgrade-dsh-0.1.7-rc.2.md` §9。
+  **真实环境（2026-09-25，含当日二次变更）**：当天曾把全局 `dsh` 升到 `0.1.5-rc.3`、把真实
+  profile `web` 的依赖切到 pack 冻结副本（`file:` 规格，非软链；升级前按 L4 整目录备份，
+  并依 §6.3 扫描处置了 2 个含 `ref-lib/set` 的旧日志，记录见 `next` 分支的升级文档
+  §9.7/§9.8）——**以上是历史落地过程，不是当前状态**。随后用户**清理了 dsh 历史环境**
+  （多版本残留）：旧备份与仓库外的 tarball 目录均已删除，`~/.dsh/profiles/web` 回到干净
+  初始态（`dependencies: {}`，插件未安装）；tarball 默认位置也改为**仓库根**
+  （`<repo>/hpyperry-dsh-ref-lib-<版本>.tgz`，§6，`.gitignore` 已排除 `*.tgz`）。
+  **当前**：全局 `dsh` = `0.1.5-rc.3`（与 main 轨插件版本一致），**插件尚未装回真实 profile**
+  ——agent 沙箱无仓库外写权限，需用户在自己终端执行：
+  `pnpm pack && dsh plugin --profile web add hpyperry-dsh-ref-lib-0.1.5-rc.3.tgz`。
+  **改 profile 或换插件集都要重启 `dsh web` 才生效。**
 - **自包含工程**：`package.json` / `tsconfig.json` / `src/` / `tests/` / `scripts/` /
   构建配置与 `README.md` 齐全，可独立安装/构建/验证（安装见 `README.md`「📦 安装」、
   构建/验证见「🧑‍💻 开发」）。
@@ -133,7 +139,7 @@
    **【v18 订正】该结论自 dsh 0.1.3-alpha.2 起不成立**：`SESSION_FORMAT_VERSION` 在该版
    升到 2，v0 日志须经 v0→v1 历史迁移边，而该边**拒绝未知事件类型——即使带
    `ignorable: true`**，含 `ref-lib/set` 的旧日志被整体拒读。详见 §5 附加约定 2 与
-   `docs/upgrade-dsh-0.1.7-rc.2.md` §3.2 B3。
+   `next` 分支的 `docs/upgrade-dsh-0.1.7-rc.2.md` §3.2 B3。
    原修补/验证脚本已删除，见 §5 附加约定 2）。
    client half：`dsh-client-runtime` 删除（6 个类型迁出）——`ClientContext`→cordis
    `Context`、`SessionId`→`dsh-session/types`、`CommandNode/ConversationNode`→
@@ -150,7 +156,7 @@
    定版；落地代码先经 0.16.0）；多版本兼容
    双轨矩阵与正式环境切换流程见升级文档 §5/§6）→
    v18（**依赖基线升级 dsh 0.1.2-rc.1 → 0.1.5-rc.2（npm `latest`）+ 双分支轨道建立**：
-   评估与迁移方案见 `docs/upgrade-dsh-0.1.7-rc.2.md`（该文档本次评估同时覆盖 0.1.7-rc.2 线）。
+   评估与迁移方案见 `next` 分支的 `docs/upgrade-dsh-0.1.7-rc.2.md`（该文档本次评估同时覆盖 0.1.7-rc.2 线）。
    实测结论：0.1.2-rc.1 → 0.1.7-rc.2 共 3432 提交，但落到本插件消费面的破坏**只有两处**
    ——① ui-primitives 图标改名（`Icon*<Size>` → `Icon*<Weight>`，**0.1.7-alpha.1 起**；
    0.1.5/0.1.6 尚无此改动，故本轨不受影响）；② `dsh-session-persistence-jsonl`
@@ -254,7 +260,7 @@
    有专门测试钉死）。结论：**含 `ref-lib/set` 的旧日志在 ≥0.1.3-alpha.2 宿主上被整体拒读，
    读取阶段即失败**，`foldRefLibs` 拿不到事件、无法折叠——该路径保留只为兼容旧宿主，
    不再视为可靠迁移手段（`src/service.ts` 已注明）。**升级宿主到 0.1.3+ 之前**，先按
-   `docs/upgrade-dsh-0.1.7-rc.2.md` §6.3 的脚本扫一遍。**【2026-09-25 二次订正——重要】**
+   `next` 分支的 `docs/upgrade-dsh-0.1.7-rc.2.md` §6.3 的脚本扫一遍。**【2026-09-25 二次订正——重要】**
    第一版 §6.3 的脚本用 node `zlib.zstdDecompressSync` 整文件解压，**只解第一帧**，
    而会话日志是**多帧 zstd（每行一帧，实测单文件最多 18,132 帧）** ⇒ 恒报"零命中"的
    **假阴性**；改用 `zstd -d -c` 重扫后，真实 `~/.dsh` **确有 2 个日志命中** `ref-lib/set`
@@ -296,8 +302,13 @@ TRACK=next ./scripts/dev-isolate.sh   # next 轨（跟 dsh npm next），  home=
 ```bash
 INSTALL_MODE=pack TRACK=next ./scripts/dev-isolate.sh   # 冻结副本，适合"边跑边改别的分支"
 ```
-tarball 落在 `~/.dsh-pkgs/<版本>/`（`PKG_ROOT` 可改）；profile 清单里记的是 tarball 路径，
-所以**建议保留这些 tarball**（删了当前安装仍能用，但之后该 profile 再跑 `pnpm install` 会缺源）。
+tarball 落在 **插件目录（仓库根）本身**：`<repo>/hpyperry-dsh-ref-lib-<版本>.tgz`（2026-09-25
+起默认，**不建任何子目录**；文件名自带版本号，多版本共存不撞名；`PKG_ROOT` 仍可改成别处）。
+`.gitignore` 已排除 `*.tgz`；`package.json` 的 `files` 只有 `lib/` + `cordis.patch.yml`，
+不会被 pack 进 tarball 自身（实测 tar 列表里 `.tgz` 命中 0 条）。
+profile 清单里记的是 tarball 路径，所以**建议保留这个 tarball**（删了当前安装仍能用，但之后
+该 profile 再跑 `pnpm install` 会缺源）；反过来，删仓库根那个 `.tgz` 之前先确认没有 profile
+还依赖它（`pack` 模式下会）。
 
 **两条轨同时跑（都保留热更新）**：给另一轨开 worktree，各用各的目录与 `lib/`：
 
