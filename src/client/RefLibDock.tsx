@@ -22,10 +22,14 @@ import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots
 import type { DirectoryListing } from '@deepseek-ai/dsh-host-directory-picker/types'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { ChatSnapshot } from '@deepseek-ai/dsh-client-ui-chat/client'
-// v19（dsh 0.1.7+）：ui-primitives 图标改名 <Glyph><Size> → <Glyph><Weight>；
-// 本文件用的是 Regular（1px 描边 = 旧 *16/*14 的等价视觉，Medium 是 1.3px 强调）。
-import { IconFolderOpenRegular } from '@deepseek-ai/dsh-client-ui-primitives'
-import { Button, Modal } from '@deepseek-ai/dsh-client-ui-primitives'
+// 图标经 './icons.ts' 跨版本取值（0.1.7 起 ui-primitives 图标改名，见该模块说明）。
+import {
+  IconFolderOpen,
+} from './icons.ts'
+import {
+  Button,
+  Modal,
+} from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ImportPlan } from '../logic.ts'
 import type { RefLibEntry } from '../spec.ts'
 import { formatRefLibError, RefLibApiError, type RefLibImportGroup, type RefLibSourceSession } from './data.ts'
@@ -346,7 +350,7 @@ export function RefLibDock(props: RefLibDockProps): ReactElement {
           }}
         >
           <span className="reflib-chipIcon">
-            <IconFolderOpenRegular size={14} />
+            <IconFolderOpen size={14} />
           </span>
           <span className="reflib-chipLabel">{t('dock.label')}</span>
           {availableCount > 0 && <span className="reflib-chipBadge">{availableCount}</span>}

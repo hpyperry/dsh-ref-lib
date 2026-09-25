@@ -51,6 +51,48 @@ dsh_resolve_version() {
   dsh_track_version "${DSH_TRACK:-${TRACK:-next}}"
 }
 
+# 判断某个版本是否落在 `>=A <B` 形式的宿主区间内（落在区间内返回 0，否则 1）。
+#
+# 为什么自己写而不是用 semver 包：本仓库不依赖 semver，而这里只需要「区间成员判定 +
+# 预发布感知比较」（0.1.7-rc.2 < 0.1.7-rc.3 < 0.1.7 < 0.2.0），30 行足够且可读。
+# 用法：dsh_version_in_range <版本> <区间>
+dsh_version_in_range() {
+  local version="$1" range="$2"
+  command -v node >/dev/null 2>&1 || { echo "dsh-track: 需要 node 校验宿主区间" >&2; return 1; }
+  node -e '
+const [v, range] = process.argv.slice(1)
+function parse(s) {
+  const m = /^(\d+)\.(\d+)\.(\d+)(?:-(.*))?$/.exec(s)
+  if (m === null) return null
+  return { nums: [Number(m[1]), Number(m[2]), Number(m[3])], pre: m[4] ? m[4].split(".") : [] }
+}
+function cmp(a, b) {
+  const A = parse(a), B = parse(b)
+  if (A === null || B === null) return NaN
+  for (let i = 0; i < 3; i++) if (A.nums[i] !== B.nums[i]) return A.nums[i] < B.nums[i] ? -1 : 1
+  if (A.pre.length === 0 && B.pre.length === 0) return 0
+  if (A.pre.length === 0) return 1      // 正式版 > 同号预发布
+  if (B.pre.length === 0) return -1
+  const n = Math.max(A.pre.length, B.pre.length)
+  for (let i = 0; i < n; i++) {
+    const x = A.pre[i], y = B.pre[i]
+    if (x === undefined) return -1
+    if (y === undefined) return 1
+    if (x === y) continue
+    const nx = /^\d+$/.test(x), ny = /^\d+$/.test(y)
+    if (nx && ny) return Number(x) < Number(y) ? -1 : 1
+    return x < y ? -1 : 1
+  }
+  return 0
+}
+const lo = /(?:^|\s)>=([^\s]+)/.exec(range)
+const hi = /(?:^|\s)<([^\s]+)/.exec(range)
+if (lo !== null && !(cmp(v, lo[1]) >= 0)) process.exit(1)
+if (hi !== null && !(cmp(v, hi[1]) < 0)) process.exit(1)
+process.exit(0)
+' "${version}" "${range}"
+}
+
 # 只读探测某个安装目录里已装的 dsh 版本（未装则打印空串）。
 dsh_installed_version() {
   local prefix="$1" manifest="$1/node_modules/@deepseek-ai/dsh/package.json"

@@ -9,11 +9,23 @@
 - **`@hpyperry/dsh-ref-lib`**：只读参考库插件（node half + client UI，per-session 隔离）。
   自包含工程：`package.json` / `tsconfig.json` / `src/` / `tests/` / `scripts/` / 构建配置与
   `README.md` 齐全，可独立安装、构建、验证（安装见 `README.md`「📦 安装」，开发见「🧑‍💻 开发」）。
-- **版本号约定**：**插件 `version` = 它所跟踪的 dsh 版本号**。当前跟踪 dsh npm **`next`**
-  通道（**`0.1.7-rc.2`**，适用 dsh 0.1.7+ 宿主）；该通道发新版 → 同步改 `version` 并复跑门禁。
-  历史上跟 `latest` 的 **`0.1.5-rc.3`**（适用 0.1.5 / 0.1.6 宿主）作为**已发布版本**保留在
-  tag `v0.1.5-rc.3`（`archive/next-0.1.7-rc.2` 亦留作历史），那份实现继续可用、不再迭代。
-  给用户看的版本对应表见 `README.md`「📦 安装」。
+- **版本号约定（v20 起）**：**插件 `version` 是插件自己的 semver**（当前 `0.18.0`），
+  **不再跟 dsh 版本号绑定**。能跑在哪些宿主由 `peerDependencies` 声明：14 条 dsh-* 统一
+  `>=0.1.5-rc.2 <0.2.0-0`（`-0` 是 semver 惯用法，顺带把 `0.2.0` 的预发布也挡在外面）。
+  **为什么现在能解耦**：两代宿主唯一的 client 破坏是图标改名，而 `src/client/icons.ts`
+  做了一次运行时取值回退（`…Regular ?? …16 ?? …14`，纯逻辑在 `src/client/glyph.ts`，
+  L0 见 `tests/glyph.spec.ts`）⇒ **一份 bundle 同时支持 0.1.5 / 0.1.6 / 0.1.7+**。
+  历史包袱（**不要再回去**）：v18–v19 让 `version` 跟随 dsh（`0.1.5-rc.3`、`0.1.7-rc.2`），
+  代价是①版本号数值倒退（npm 上早有 `0.17.0`，`0.1.x` 永远"低于"它，`latest` 只能靠
+  `dist-tag add` 硬指）②插件被迫继承 dsh 的 `-rc` 后缀，永远没有自己的稳定版。
+  给用户看的说明见 `README.md`「📦 安装」。
+- **devDeps 必须显式 pin 整族**（2026-09-25 实测踩坑）：peer 区间放宽到 `>=0.1.5-rc.2` 之后，
+  **不再能靠区间把 dev/test 依赖树钉在同一代**——pnpm 会按其他依赖者的约束把 peer 解析成
+  `0.1.5-rc.3`，于是出现 `dsh-session`（格式 v3）与 `dsh-session-persistence-jsonl`
+  （目录 v4）**混装**，L2 直接红：`format catalog v4 does not match Session v3`。
+  所以 `devDependencies` 现在把 **14 个 dsh-* peer 全部 pin `0.1.7-rc.2`**（加上原本的
+  ui-renderer / host-directory-picker / session-persistence 共 18 个 dsh 包 + cordis 插件 2 个）。
+  加新 dsh 包时**同时**加 peer 与 devDep pin；升级基线时整族一起升。
 - **单轨（2026-09-25 起）**：不再维护并行分支，`main` 只跟一条通道（现为 `next`）。v19 的适配
   工作（图标改名 `Icon*<Size>` → `Icon*<Weight>` 等）原在归档 tag `archive/next-0.1.7-rc.2` 上，
   已**取回并入 `main`**（tag 仅作历史）。理由：两条轨会让 `package.json`（version / `dsh-*`
@@ -150,8 +162,8 @@ TRACK=main ./scripts/dev-isolate.sh   # 测别的 dist-tag（main = latest，0.1
 
 1. **解析版本**：`TRACK=<npm dist-tag>`（默认 `next` = 插件所跟踪的通道；`main` = `latest`）→ 该 tag 当前版本
    （可用 `DSH_VERSION=<版本>` 钉死；也可 `DSH_CACHE_DIR=<目录>` 复用已下载版本，省去每次下载）。
-2. **校验版本一致**：插件 `package.json` 的 `version` 必须等于该通道的 dsh 版本
-   （见 §1 版本号约定）；不等只警告，`STRICT_VERSION=1` 直接报错退出——专治"拿错版本测错通道"。
+2. **校验宿主范围**：dsh 版本必须落在插件 `package.json` 声明的 `@deepseek-ai/dsh-session`
+   peer 区间内（见 §1 版本号约定）；不落在区间内只警告，`STRICT_VERSION=1` 直接报错退出。
 3. **构建插件**（`BUILD=1` 默认）：先 `pnpm build`，避免吃到过期 `lib/`（改完源码忘了构建是最常见的假故障）。
 4. **准备隔离 home**：`<repo>/.dsh-dev/<track>`（**在仓库内，已 gitignore**）；**sk 自动就位**（隔离 home 缺
    `.credentials.yaml` 时从真实 home 只读复制，权限 600；`SEED_CREDENTIALS=0|force` 可调），
@@ -181,7 +193,7 @@ profile 清单里记的是 tarball 路径，所以**建议保留这个 tarball**
 
 **"两条轨同时跑"的做法已废弃**（`git worktree add ../ref-lib-next next` + `PLUGIN=… TRACK=next`）：
 单轨不需要 worktree。要试别的 dsh 版本，用 `TRACK=<dist-tag>`（或 `DSH_VERSION=<版本>` 钉死）即可；
-插件版本不一致只会警告，`STRICT_VERSION=1` 才报错。
+宿主不在 peer 区间内只会警告，`STRICT_VERSION=1` 才报错。
 
 > **只看不启**：`./scripts/dev-isolate.sh --check`（任意轨道）只解析版本、做一致性校验并打印
 > "会装什么/装到哪/哪个端口"，不下载 CLI、不装插件、不启动 web——改脚本或换轨道后先干跑一遍最省事。
@@ -204,9 +216,9 @@ profile 清单里记的是 tarball 路径，所以**建议保留这个 tarball**
 - shell 注意：macOS 自带 bash 3.2 把多字节字符当变量名字符，变量后紧跟中文标点必须写
   `${VAR}`（写成 `$VAR（` 会报 unbound variable）；同一 `local` 语句里也不能引用本句刚声明的变量。
 
-## 7. 版本沿革（v3 → v19）
+## 7. 版本沿革（v3 → v20）
 
-> 每版做了什么、当时什么约束。v19 已并入 `main`（见 §1「单轨」）。
+> 每版做了什么、当时什么约束。v19 已并入 `main`；**v20 起版本号与 dsh 解耦**（见 §1）。
 
 - **v3**（sidecar 存储，2026-08-17 事故修复）
 - **v4**（`ctx.webServer` 路由通道）
@@ -400,3 +412,27 @@ profile 清单里记的是 tarball 路径，所以**建议保留这个 tarball**
     所跟踪通道）；隔离 home 从 `~/.dsh-dev-<track>` 改为仓库内 **`.dsh-dev/<track>`**（已
     gitignore，脚本用 `git check-ignore` 实测）——这样 agent/CI 也能直接起这个环境；
     端口 3090；测老线用 `TRACK=main`（3091）。
+- **v20**（**版本号与 dsh 解耦 + 一份 bundle 通吃 0.1.5 / 0.1.6 / 0.1.7+**：
+  v18–v19"让 version 跟随 dsh"的两条代价（版本号数值倒退到 `0.1.x`、插件永远只有 `-rc`
+  预发布）已经开始影响发布语义，本次把耦合解开：
+  - **图标运行时兜底**：新增 `src/client/glyph.ts`（纯逻辑 `pickGlyph`：
+    `…Regular ?? …16 ?? …14`，两代都缺就抛错）+ `src/client/icons.ts`
+    （`import * as primitives` 后按名取值）；5 个 client 文件改为从 `./icons.ts` 取图标，
+    其余 primitives（`Button`/`Modal`/`Input`/`Menu`）照旧直取。**这是"一份 bundle 支持
+    两代宿主"的关键**——v19 的直接改名把插件钉死在 0.1.7+ 上。L0 见 `tests/glyph.spec.ts`
+    （7 条：新名优先 / 旧 16 / 旧 14 / 都不在时抛错 / 裸名不算合法旧名 / 无中缀字形同规则）。
+  - **版本与 peer**：`version` `0.1.7-rc.2` → **`0.18.0`**（插件自己的线，且 > npm 上的
+    遗留 `0.17.0`，不再倒挂）；14 条 dsh-* peer → **`>=0.1.5-rc.2 <0.2.0-0`**
+    （`-0` 是 semver 惯用法，把 `0.2.0` 的预发布也排除在外）。
+  - **`scripts/dsh-track.sh`** 新增 `dsh_version_in_range`（约 30 行手写比较器，预发布感知：
+    `0.1.7-rc.2 < 0.1.7-rc.3 < 0.1.7 < 0.2.0-0`；仓库不依赖 semver 包）；
+    `dev-isolate.sh` 的 `STRICT_VERSION` 语义由"版本号必须等于 dsh 版本"改为
+    "dsh 版本必须落在 peer 区间内"，`--check` 会打印校验结果。
+  - **实测**：13 个新图标名在 0.1.7-rc.2 的 types + js 里齐备、旧名 0 命中；0.1.5-rc.3
+    反之（13 个旧名齐备、`Regular` 0 命中）⇒ **两代确实不共存，兜底两条路都真的在用**。
+    产物 `lib/client.js`：13 个基名以字面量出现、取值函数原样保留（动态拼 key），
+    `require` 仍只有 3 个且全在宿主 seed 表内。
+  - 门禁：typecheck / lint / **test 233**（+7）/ build 四绿。
+  - **遗留**：npm 账号仍锁定（`whoami` 401），"发布到 npm"未发生；旧 GitHub Release
+    `v0.1.5-rc.3` / `v0.1.7-rc.2` 已删除（**git tag 保留**，需要时可从 tag 重新生成产物），
+    `v0.18.0` 是当前唯一 Release。

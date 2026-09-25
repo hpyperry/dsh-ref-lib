@@ -15,24 +15,25 @@
 
 import { useEffect, useState } from 'react'
 import type { ReactElement } from 'react'
-// v19（dsh 0.1.7+）：ui-primitives 图标改名 <Glyph><Size> → <Glyph><Weight>；
-// 本文件用的是 Regular（1px 描边 = 旧 *16/*14 的等价视觉，Medium 是 1.3px 强调）。
+// 图标经 './icons.ts' 跨版本取值（0.1.7 起 ui-primitives 图标改名，见该模块说明）。
 import {
   Button,
-  IconEditOutlineRegular,
-  IconEllipsisOutlineRegular,
-  IconFolderOpenRegular,
-  IconLoadingOutlineRegular,
-  IconPlusOutlineRegular,
-  IconRefreshOutlineRegular,
-  IconSearchOutlineRegular,
-  IconTrashOutlineRegular,
-  IconWarningOutlineRegular,
   Input,
   Menu,
   Modal,
   type MenuEntry,
 } from '@deepseek-ai/dsh-client-ui-primitives'
+import {
+  IconEditOutline,
+  IconEllipsisOutline,
+  IconFolderOpen,
+  IconLoadingOutline,
+  IconPlusOutline,
+  IconRefreshOutline,
+  IconSearchOutline,
+  IconTrashOutline,
+  IconWarningOutline,
+} from './icons.ts'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
 import type { RefLibEntry } from '../spec.ts'
 import { libBasename } from './data.ts'
@@ -140,10 +141,10 @@ export function RefLibPanel(props: RefLibPanelProps): ReactElement {
     const unavailable = entry.status !== undefined && entry.status !== 'available'
     const locked = busy || removingId !== null
     return [
-      { id: 'edit', label: t('menu.edit'), icon: <IconEditOutlineRegular size={14} />, disabled: locked || unavailable },
-      { id: 'rescan', label: t('menu.rescan'), icon: <IconRefreshOutlineRegular size={14} />, disabled: locked },
+      { id: 'edit', label: t('menu.edit'), icon: <IconEditOutline size={14} />, disabled: locked || unavailable },
+      { id: 'rescan', label: t('menu.rescan'), icon: <IconRefreshOutline size={14} />, disabled: locked },
       { type: 'separator', id: 'sep-remove' },
-      { id: 'remove', label: t('menu.remove'), icon: <IconTrashOutlineRegular size={14} />, danger: true, disabled: locked },
+      { id: 'remove', label: t('menu.remove'), icon: <IconTrashOutline size={14} />, danger: true, disabled: locked },
     ]
   }
 
@@ -159,7 +160,7 @@ export function RefLibPanel(props: RefLibPanelProps): ReactElement {
       <div className="reflib-panel">
         {error !== null && (
           <div className="reflib-error" role="alert">
-            <IconWarningOutlineRegular size={14} className="reflib-errorIcon" />
+            <IconWarningOutline size={14} className="reflib-errorIcon" />
             <span>{error}</span>
           </div>
         )}
@@ -182,12 +183,12 @@ export function RefLibPanel(props: RefLibPanelProps): ReactElement {
         )}
         {loading ? (
           <div className="reflib-status" role="status">
-            <IconLoadingOutlineRegular size={20} className="reflib-spin reflib-statusIcon" />
+            <IconLoadingOutline size={20} className="reflib-spin reflib-statusIcon" />
             <span className="reflib-statusText">{t('list.loading')}</span>
           </div>
         ) : libs.length === 0 ? (
           <div className="reflib-status">
-            <IconFolderOpenRegular size={22} className="reflib-statusIcon" />
+            <IconFolderOpen size={22} className="reflib-statusIcon" />
             <span className="reflib-statusText">{t('list.empty')}</span>
             <span className="reflib-statusHint">{t('list.empty.hint')}</span>
           </div>
@@ -208,8 +209,8 @@ export function RefLibPanel(props: RefLibPanelProps): ReactElement {
                   >
                     <div className="reflib-row">
                       {unavailable
-                        ? <IconWarningOutlineRegular size={16} className="reflib-rowIcon reflib-rowIconWarn" />
-                        : <IconFolderOpenRegular size={16} className="reflib-rowIcon" />}
+                        ? <IconWarningOutline size={16} className="reflib-rowIcon reflib-rowIconWarn" />
+                        : <IconFolderOpen size={16} className="reflib-rowIcon" />}
                       <div className="reflib-rowBody">
                         <div className="reflib-rowLine1">
                           <span className="reflib-rowName" title={entry.path}>
@@ -247,7 +248,7 @@ export function RefLibPanel(props: RefLibPanelProps): ReactElement {
                               setMenuOpenId(menuOpenId === entry.id ? null : entry.id)
                             }}
                           >
-                            <IconEllipsisOutlineRegular size={14} />
+                            <IconEllipsisOutline size={14} />
                           </button>
                         )}
                         items={entryMenuItems(entry)}
@@ -358,7 +359,7 @@ export function RefLibPanel(props: RefLibPanelProps): ReactElement {
                 void handleBrowse()
               }}
             >
-              <IconSearchOutlineRegular size={13} />
+              <IconSearchOutline size={13} />
               {t('add.browse')}
             </button>
           </div>
@@ -389,7 +390,7 @@ export function RefLibPanel(props: RefLibPanelProps): ReactElement {
             <Button
               variant="ghost"
               size="sm"
-              icon={<IconFolderOpenRegular size={14} />}
+              icon={<IconFolderOpen size={14} />}
               disabled={busy || picking}
               onClick={onImportOpen}
             >
@@ -398,7 +399,7 @@ export function RefLibPanel(props: RefLibPanelProps): ReactElement {
             <Button
               variant="primary"
               size="sm"
-              icon={<IconPlusOutlineRegular size={14} />}
+              icon={<IconPlusOutline size={14} />}
               disabled={busy || picking || draft.trim() === ''}
               onClick={() => {
                 void handleSubmit()

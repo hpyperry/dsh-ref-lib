@@ -14,14 +14,13 @@ import { useState } from 'react'
 import type { ReactElement } from 'react'
 import type { CommandNode } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
-// v19（dsh 0.1.7+）：ui-primitives 图标改名 <Glyph><Size> → <Glyph><Weight>；
-// 本文件用的是 Regular（1px 描边 = 旧 *16/*14 的等价视觉，Medium 是 1.3px 强调）。
+// 图标经 './icons.ts' 跨版本取值（0.1.7 起 ui-primitives 图标改名，见该模块说明）。
 import {
-  IconCheckOutlineRegular,
-  IconCopyOutlineRegular,
-  IconLoadingOutlineRegular,
-  IconWarningOutlineRegular,
-} from '@deepseek-ai/dsh-client-ui-primitives'
+  IconCheckOutline,
+  IconCopyOutline,
+  IconLoadingOutline,
+  IconWarningOutline,
+} from './icons.ts'
 import { ensureRefLibStyles } from './styles.ts'
 
 /** 完整 props：commandview 运行时套件 + owner（node）+ 本地化 seat。 */
@@ -67,8 +66,8 @@ export function RefLibCommandCard(props: RefLibCommandCardProps): ReactElement {
   return (
     <div className="reflib-cmd" data-state={running ? 'running' : error ? 'error' : 'ok'}>
       <div className="reflib-cmdHead">
-        {running && <IconLoadingOutlineRegular size={14} className="reflib-spin reflib-cmdHeadIcon" />}
-        {!running && error && <IconWarningOutlineRegular size={14} className="reflib-cmdHeadIcon" />}
+        {running && <IconLoadingOutline size={14} className="reflib-spin reflib-cmdHeadIcon" />}
+        {!running && error && <IconWarningOutline size={14} className="reflib-cmdHeadIcon" />}
         <span className="reflib-cmdName">/ref-lib</span>
         <span className="reflib-cmdSummary" data-error={error || undefined}>{summary}</span>
         {!running && text !== undefined && text !== '' && (
@@ -79,7 +78,7 @@ export function RefLibCommandCard(props: RefLibCommandCardProps): ReactElement {
             title={t('command.copy')}
             onClick={() => { void copy() }}
           >
-            {copied ? <IconCheckOutlineRegular size={14} /> : <IconCopyOutlineRegular size={14} />}
+            {copied ? <IconCheckOutline size={14} /> : <IconCopyOutline size={14} />}
             {copied ? t('command.copied') : t('command.copy')}
           </button>
         )}

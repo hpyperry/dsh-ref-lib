@@ -3,8 +3,8 @@
 给 DeepSeek Harness 的每个会话挂一个「只读参考库」：把本地目录（比如你的项目源码、内部文档）登记为参考库后，agent 回答前会**先去这些目录里查证**，查不到才允许走外部途径——而不是凭空猜或者直接上网搜。
 
 ```
-gh release download v0.1.7-rc.2 --repo hpyperry/dsh-ref-lib --pattern '*.tgz'
-dsh plugin --profile web add ./hpyperry-dsh-ref-lib-0.1.7-rc.2.tgz
+gh release download v0.18.0 --repo hpyperry/dsh-ref-lib --pattern '*.tgz'
+dsh plugin --profile web add ./hpyperry-dsh-ref-lib-0.18.0.tgz
 ```
 
 ## 它解决什么问题
@@ -18,31 +18,30 @@ dsh plugin --profile web add ./hpyperry-dsh-ref-lib-0.1.7-rc.2.tgz
 **当前用 GitHub Release 的 tarball 安装**（npm 上还没有新版，原因见下）：
 
 ```bash
-# 1) 取对应版本的 tarball（也可以直接在浏览器打开 releases 页面下载）
-gh release download v0.1.7-rc.2 --repo hpyperry/dsh-ref-lib --pattern '*.tgz'
+# 1) 取最新 tarball（也可以直接在浏览器打开 releases 页面下载）
+gh release download v0.18.0 --repo hpyperry/dsh-ref-lib --pattern '*.tgz'
 
 # 2) 装进 profile
-dsh plugin --profile web add ./hpyperry-dsh-ref-lib-0.1.7-rc.2.tgz
+dsh plugin --profile web add ./hpyperry-dsh-ref-lib-0.18.0.tgz
 
 # 卸载
 dsh plugin --profile web remove @hpyperry/dsh-ref-lib
 ```
 
-**插件版本号 = 它对应的 dsh 版本号**（跟着 dsh 走，一眼就能对上）：
+**一个插件版本通吃多代宿主**：插件自己按语义化版本号发布，能装在哪些 dsh 上由它的
+`peerDependencies` 声明——当前是 `>=0.1.5-rc.2 <0.2.0-0`，也就是 **dsh 0.1.5 / 0.1.6 / 0.1.7+ 都能用同一份包**。
 
-| 你的 dsh 版本 | 装哪个插件版本 | 跟的是 dsh 的哪个通道 |
-| --- | --- | --- |
-| `0.1.7-rc.2`（及 0.1.7+ 系列） | **`0.1.7-rc.2`** | npm `next`（预发布通道） |
-| `0.1.5-rc.3`（及 0.1.5 / 0.1.6 系列） | **`0.1.5-rc.3`** | npm `latest`（稳定通道） |
+> 为什么能这样：这两代宿主唯一的客户端破坏是图标改名（0.1.7 起 `Icon*16` → `Icon*Regular`，
+> 且两代名字不共存）。插件在取值处做了一次运行时回退（新名优先、旧名兜底），所以同一份
+> bundle 在两代宿主上都能正确渲染，不必按宿主分版本发布。
 
-**两条线各自只声明自己真实支持的宿主**：装错版本会被 peer 兼容闸门拒绝——`plugin add` 报不兼容、不安装，
-运行时该插件行被置 `disabled` 并写 stderr，不会加载半个坏插件。
+宿主不在这个范围里（比如将来的 `0.2.x`）时，dsh 的 peer 兼容闸门会拒绝加载该插件并在
+stderr 打印原因（`plugin add` 会直接报不兼容、不安装），不会白屏。
 
-> ⚠️ **别用不带版本号的 `dsh plugin add @hpyperry/dsh-ref-lib`**。npm 上这个包目前只发布到
-> **`0.17.0`**（目标宿主是 dsh 0.1.1-rc.2 那一代），而它的 peer 区间 `^0.1.2-rc.1` **能通过**
-> 0.1.7 的兼容闸门：装得上、闸门放行，但 bundle 里是 0.1.7 起已被删除的旧图标名（`Icon*16` /
-> `Icon*14`），结果是**白屏**。npm 上目前**没有** `0.1.5-rc.3` / `0.1.7-rc.2`
-> （账号未解锁，见「发布」节），所以带版本号的 npm 安装命令现在同样取不到包——请用上面的 tarball 方式。
+> ⚠️ **npm 上暂时不要裸装**：这个包在 npm 上只发布到历史的 **`0.17.0`**（目标宿主是 dsh
+> 0.1.1-rc.2 那一代），而它的 peer 区间 `^0.1.2-rc.1` **能通过** 0.1.7 的兼容闸门——
+> 装得上、闸门放行，但 bundle 里是 0.1.7 起已被删除的旧图标名，结果是**白屏**。
+> 新版（`0.18.0` 及以后）**尚未发布到 npm**（账号锁定，见「发布」节），请用上面的 tarball 方式装。
 
 安装完成后重启 `dsh web` 生效。本地开发期想改动即时生效，也可以直接指向仓库本地路径：`dsh plugin --profile web add /path/to/ref-lib`。
 
@@ -131,7 +130,7 @@ pnpm build       # 构建 node half（tsc）+ client bundle（tsdown）→ lib/
 
   - 隔离 home 放在**仓库内**（`.dsh-dev/<track>`，**已 gitignore**）——这样 agent/CI 也能直接起环境，不依赖 `$HOME` 写权限。home 里有从真实 home 复制来的 sk 与会话副本，脚本启动时用 `git check-ignore` **实测**它确实被忽略，没被忽略就直接报错退出（删掉 `.gitignore` 里那行会立刻失败）。
   - **每次运行只重装插件**；home 里的 `sessions/`、`storages/`、`.credentials.yaml`、`settings.yaml` **一律保留**（想清插件自身数据才用 `RESET_PLUGIN_DATA=1`）。
-  - 脚本会校验插件 `version` 是否等于该通道的 dsh 版本（跟版本号约定对齐），不一致会警告；`STRICT_VERSION=1` 直接报错。
+  - 脚本会校验**宿主范围**——dsh 版本是否落在插件 `package.json` 声明的 `dsh-*` peer 区间内，不在范围内会警告；`STRICT_VERSION=1` 直接报错。
   - 其余开关（`BUILD` / `SEED_CREDENTIALS` / `KEEP_TOOLS` / `DSH_CACHE_DIR` / `PORT` / `DSH_VERSION`）见脚本头注释。想彻底重置：`rm -rf .dsh-dev/next`（**会连会话与 sk 一起删**）。`TRACK` 可传任意 npm dist-tag（默认 `next` = 本插件所跟踪的通道，端口 3090；`main` = `latest`，端口 3091）。
   - **默认是 link 安装**：profile 指向仓库目录，改代码能热更新。要一份不受仓库影响的冻结副本：`INSTALL_MODE=pack`（先 `pnpm pack` 再装，自带构建产物；tarball 打在仓库根，已 gitignore）。
 - **只想拿一个指定版本的 dsh**：`scripts/dsh-local.sh`（stdout 只打印 bin 路径，非全局安装）。
@@ -145,13 +144,13 @@ pnpm build       # 构建 node half（tsc）+ client bundle（tsdown）→ lib/
 
 ### 发布（维护者）
 
-插件 `version` = 它所跟踪的 dsh 版本号（当前跟 dsh npm `next` = `0.1.7-rc.2`；`latest` 线为 `0.1.5-rc.3`）。
-两条线的发布动作完全一样，只有版本号与 tag 不同——**跟 dsh 的节奏走：dsh 发新版 → 同步改号 → 复跑门禁 → 打 tag**。
+插件按**自己的语义化版本号**发布（当前 `0.18.0`），不再跟 dsh 版本号绑定；能装在哪代 dsh
+由 `package.json` 的 `dsh-*` peer 区间决定。dsh 发新版时只需要复核这个区间，不必改版本号。
 
 **打 tag 即自动打包并挂 Release（推荐）**——把 `package.json` 的 `version` 改成目标版本并提交，然后：
 
 ```bash
-git tag -a v0.1.7-rc.2 -m "0.1.7-rc.2" && git push origin v0.1.7-rc.2
+git tag -a v0.18.0 -m "0.18.0" && git push origin v0.18.0
 ```
 
 [`.github/workflows/release.yml`](.github/workflows/release.yml) 会跑门禁 → 构建 → `pnpm pack`，
@@ -165,14 +164,24 @@ git tag -a v0.1.7-rc.2 -m "0.1.7-rc.2" && git push origin v0.1.7-rc.2
 `latest = 0.17.0`，那版是 0.1.1-rc.2 时代的产物，见「安装」节的警告）。解锁后：
 
 ```bash
-npm publish --tag next      # 例：0.1.7-rc.2（带 -rc 的预发布）
-npm publish --tag latest    # 例：0.1.5-rc.3（正式版）
+npm publish --tag latest    # 例：0.18.0（正式版，同时把 latest 从 0.17.0 挪过来）
+npm publish --tag next      # 例：0.19.0-rc.1（预发布）
 ```
 
 同一个 workflow 里已有「发布到 npm」一步，**只在仓库配置了 `NPM_TOKEN` secret 时才执行**；
 配好后打 tag 即自动按版本号选 `next` / `latest`，不需要本地 npm 登录。
-在此之前，**`latest` 指向的是上游遗留的 `0.17.0`，不带版本号安装会拿到它**（白屏，见「安装」节）——
-所以正式发布前先发一版稳定号把 `latest` 顶掉，别让用户裸装。
+
+另外两件**只有账号解锁后才能做**的事（`0.17.0` 无法删除——见
+[npm unpublish 政策](https://docs.npmjs.com/policies/unpublish)：超过 72 小时只能走 deprecation，
+且 `name@version` 永久不可复用）：
+
+```bash
+# ① 废弃所有会白屏的旧版本
+npm deprecate "@hpyperry/dsh-ref-lib@<=0.17.0" "旧版本基于 dsh 0.1.1-rc.2；在 0.1.7+ 宿主上会白屏，请升级"
+# ② 确认 latest 指向新稳定版（正常发布时会自动指过去，可用这条兜底/核对）
+npm dist-tag add @hpyperry/dsh-ref-lib@0.18.0 latest
+```
+
 - 发布包只含 `lib/` 与 `cordis.patch.yml`（`pnpm build` 先清空 `lib/` 再构建，不会带历史残留）；
   用户也可直接装打出的 tarball：`dsh plugin --profile web add ./hpyperry-dsh-ref-lib-<版本>.tgz`。
 - CI（[`.github/workflows/ci.yml`](.github/workflows/ci.yml)）在 push `main` 与所有 PR 上跑同样的四道门禁。

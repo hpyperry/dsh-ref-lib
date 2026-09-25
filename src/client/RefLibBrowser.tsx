@@ -13,18 +13,19 @@
 
 import { useEffect, useRef, useState } from 'react'
 import type { ReactElement } from 'react'
-// v19（dsh 0.1.7+）：ui-primitives 图标改名 <Glyph><Size> → <Glyph><Weight>；
-// 本文件用的是 Regular（1px 描边 = 旧 *16/*14 的等价视觉，Medium 是 1.3px 强调）。
+// 图标经 './icons.ts' 跨版本取值（0.1.7 起 ui-primitives 图标改名，见该模块说明）。
 import {
   Button,
-  IconChevronRightOutlineRegular,
-  IconEditOutlineRegular,
-  IconFolderCloseRegular,
-  IconFolderOpenRegular,
-  IconLoadingOutlineRegular,
-  IconWarningOutlineRegular,
   Modal,
 } from '@deepseek-ai/dsh-client-ui-primitives'
+import {
+  IconChevronRightOutline,
+  IconEditOutline,
+  IconFolderClose,
+  IconFolderOpen,
+  IconLoadingOutline,
+  IconWarningOutline,
+} from './icons.ts'
 import type { DirectoryEntry, DirectoryListing } from '@deepseek-ai/dsh-host-directory-picker/types'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
 
@@ -138,7 +139,7 @@ export function RefLibBrowser(props: RefLibBrowserProps): ReactElement {
       <div className="reflib-panel">
         {error !== null && (
           <div className="reflib-error" role="alert">
-            <IconWarningOutlineRegular size={14} className="reflib-errorIcon" />
+            <IconWarningOutline size={14} className="reflib-errorIcon" />
             <span>{error}</span>
           </div>
         )}
@@ -149,7 +150,7 @@ export function RefLibBrowser(props: RefLibBrowserProps): ReactElement {
               <span className="reflib-browserCrumbs" role="navigation">
                 {crumbs.map((crumb, index) => (
                   <span key={crumb.path} className="reflib-browserCrumb">
-                    {index > 0 && <IconChevronRightOutlineRegular size={12} className="reflib-browserCrumbChevron" />}
+                    {index > 0 && <IconChevronRightOutline size={12} className="reflib-browserCrumbChevron" />}
                     <button
                       type="button"
                       className="reflib-browserCrumbBtn"
@@ -171,7 +172,7 @@ export function RefLibBrowser(props: RefLibBrowserProps): ReactElement {
                 disabled={loading}
                 onClick={openPathEditor}
               >
-                <IconEditOutlineRegular size={14} />
+                <IconEditOutline size={14} />
               </button>
             </>
           ) : (
@@ -207,12 +208,12 @@ export function RefLibBrowser(props: RefLibBrowserProps): ReactElement {
         {/* 目录列表 */}
         {loading ? (
           <div className="reflib-status" role="status">
-            <IconLoadingOutlineRegular size={20} className="reflib-spin reflib-statusIcon" />
+            <IconLoadingOutline size={20} className="reflib-spin reflib-statusIcon" />
             <span className="reflib-statusText">{t('browser.loading')}</span>
           </div>
         ) : listing !== null && listing.entries.length === 0 ? (
           <div className="reflib-status">
-            <IconFolderOpenRegular size={22} className="reflib-statusIcon" />
+            <IconFolderOpen size={22} className="reflib-statusIcon" />
             <span className="reflib-statusText">{t('browser.empty')}</span>
           </div>
         ) : (
@@ -229,7 +230,7 @@ export function RefLibBrowser(props: RefLibBrowserProps): ReactElement {
                     navigate(entry.path)
                   }}
                 >
-                  <IconFolderCloseRegular size={16} className="reflib-browserRowIcon" />
+                  <IconFolderClose size={16} className="reflib-browserRowIcon" />
                   <span className="reflib-browserRowName">{entry.name}</span>
                 </button>
               ))}

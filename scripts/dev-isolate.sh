@@ -134,10 +134,17 @@ PLUGIN_NAME="$(node -p 'require(process.argv[1]).name' "${PLUGIN}/package.json" 
 PLUGIN_VERSION="$(node -p 'require(process.argv[1]).version' "${PLUGIN}/package.json" 2>/dev/null || true)"
 # pnpm/npm 的 tarball 命名：去 scope 的 `@`，`/` 换成 `-`（@scope/name → scope-name-<版本>.tgz）
 PKG_BASENAME="$(printf '%s' "${PLUGIN_NAME}" | sed 's|^@||; s|/|-|g')-${PLUGIN_VERSION}.tgz"
-if [ "${PLUGIN_VERSION}" != "${VERSION}" ]; then
-  msg="插件版本 ${PLUGIN_VERSION} ≠ dsh ${TRACK} 解析出的 ${VERSION}（约定：插件 version = 它所跟踪的 dsh 版本号；故意测别的 dist-tag 时可忽略）"
+# ── 2) 校验宿主范围（版本号不再跟 dsh 走，见 AGENTS.md §1）────────────────────
+# 约定：插件 version 是**插件自己的 semver**；能跑在哪些宿主由 peerDependencies 声明。
+# 所以这里校验的是「dsh 版本 ∈ 插件声明的 dsh-* peer 区间」，而不是版本号相等。
+HOST_RANGE="$(node -p 'require(process.argv[1]).peerDependencies["@deepseek-ai/dsh-session"] ?? ""' "${PLUGIN}/package.json" 2>/dev/null || true)"
+[ -n "${HOST_RANGE}" ] || die "读不出 ${PLUGIN}/package.json 里 @deepseek-ai/dsh-session 的 peer 区间"
+if ! dsh_version_in_range "${VERSION}" "${HOST_RANGE}"; then
+  msg="dsh ${VERSION}（通道 ${TRACK}）不在插件声明的宿主范围内（${HOST_RANGE}）——插件版本 ${PLUGIN_VERSION}"
   if [ "${STRICT_VERSION}" = "1" ]; then die "${msg}"; fi
   note "⚠️  ${msg}"
+else
+  note "宿主范围校验通过：dsh ${VERSION} ∈ ${HOST_RANGE}"
 fi
 
 # ── 2) 构建插件（避免吃到过期 lib/）──────────────────────────────────────────
