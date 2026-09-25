@@ -16,6 +16,11 @@
   npm 自动设成 `latest`，必须显式 `--tag`）。另：`dsh plugin add` 本质是转发 pnpm，
   所以本地路径、`pnpm pack` 打出的 tarball、git/npm 版本都能装；要"冻结副本"用
   `INSTALL_MODE=pack`（§6）。落地全记录见 `docs/upgrade-dsh-0.1.7-rc.2.md` §9。
+  **真实环境已切换（同日，不等 npm）**：全局 `dsh` 升到 `0.1.5-rc.3`，真实 profile
+  `web` 的插件依赖改为 `file:~/.dsh-pkgs/0.1.5-rc.3/hpyperry-dsh-ref-lib-0.1.5-rc.3.tgz`
+  （独立副本，非软链）；升级前整目录备份 `~/.dsh.bak-20260925-141619`，并按 §6.3 扫描
+  处置了 2 个含 `ref-lib/set` 的旧日志（详见升级文档 §9.7）。**改 profile 或换插件集都要
+  重启 `dsh web` 才生效。**
 - **自包含工程**：`package.json` / `tsconfig.json` / `src/` / `tests/` / `scripts/` /
   构建配置与 `README.md` 齐全，可独立安装/构建/验证（安装见 `README.md`「📦 安装」、
   构建/验证见「🧑‍💻 开发」）。
@@ -249,9 +254,13 @@
    有专门测试钉死）。结论：**含 `ref-lib/set` 的旧日志在 ≥0.1.3-alpha.2 宿主上被整体拒读，
    读取阶段即失败**，`foldRefLibs` 拿不到事件、无法折叠——该路径保留只为兼容旧宿主，
    不再视为可靠迁移手段（`src/service.ts` 已注明）。**升级宿主到 0.1.3+ 之前**，先按
-   `docs/upgrade-dsh-0.1.7-rc.2.md` §6.3 的脚本（会话日志是 `session.jsonl.zstd`，**必须
-   解压后再扫，直接 grep 会假阴性**）确认各 dsh home 无命中；命中则先整目录备份（L4）
-   并在旧宿主上处置。本机 2026-09-25 实测 81 个日志文件零命中。
+   `docs/upgrade-dsh-0.1.7-rc.2.md` §6.3 的脚本扫一遍。**【2026-09-25 二次订正——重要】**
+   第一版 §6.3 的脚本用 node `zlib.zstdDecompressSync` 整文件解压，**只解第一帧**，
+   而会话日志是**多帧 zstd（每行一帧，实测单文件最多 18,132 帧）** ⇒ 恒报"零命中"的
+   **假阴性**；改用 `zstd -d -c` 重扫后，真实 `~/.dsh` **确有 2 个日志命中** `ref-lib/set`
+   （共 7 个事件，见升级文档 §6.3 表格），已在升级宿主前整目录备份（L4）后删除。
+   命中时的两条出路：删除会话，或按 §6.3 末尾的"离线重编码为 `session.v3.jsonl.zstd`"
+   路径保留（已在临时安装里验证：干净 0.1.5-rc.3 冷读通过）。
 3. 每个插件交付时，`pnpm test` 必须包含 L0–L2 全部层（L3/L4 是开发流程约定，写入
    插件 README）。
 
