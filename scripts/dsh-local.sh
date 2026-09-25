@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# dsh-local.sh —— 取一份**版本化、非全局**的 dsh CLI 用于测试（双轨：main / next）。
+# dsh-local.sh —— 取一份**版本化、非全局**的 dsh CLI 用于测试（跟 dsh 通道：main=latest；next 预留）。
 #
 # stdout **只打印 dsh bin 的绝对路径**（便于 `DSH_BIN="$(...)"` 捕获）；进度/提示走 stderr。
 #
@@ -25,8 +25,8 @@
 #                              直接跑 dev-isolate.sh 时由它自动删）
 #
 # 典型配合（dev-isolate.sh 已内置同样的流程，一般直接用那个即可）：
-#   DSH_BIN="$(DSH_TRACK=next ./scripts/dsh-local.sh)" \
-#     TRACK=next DEV_HOME="$HOME/.dsh-dev-next" ./scripts/dev-isolate.sh
+#   DSH_BIN="$(DSH_TRACK=main ./scripts/dsh-local.sh)" \
+#     DEV_HOME="$HOME/.dsh-dev-main" ./scripts/dev-isolate.sh
 set -euo pipefail
 
 SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

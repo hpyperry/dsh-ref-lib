@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# dev-isolate.sh —— 启动**隔离**的 dsh web 联调环境（main / next 双轨）。
+# dev-isolate.sh —— 启动**隔离**的 dsh web 联调环境（默认跟 dsh npm `latest` 单轨）。
 #
-# 设计目标（2026-09-25 修订，配合双轨发布与"插件版本号跟 dsh 一致"的约定）：
+# 设计目标（2026-09-25 修订；`TRACK=next` 作为预留能力保留——当前只有 main 一条轨，
+# 双轨已收敛，见 AGENTS.md §1「单轨」）：
 #
 #   1) **跟 dsh 通道走**：TRACK=main → npm `latest`（dsh 主线）；TRACK=next → npm `next`。
 #      版本由 registry 实时解析（也可 DSH_VERSION 显式钉），并校验被测插件的
@@ -31,9 +32,7 @@
 #   PROFILE=web             profile 名
 #   PORT=<端口>             web 端口（默认 main=3090 / next=3091）
 #   PLUGIN=<目录>           被测插件目录（默认本仓库根；相对路径会转成绝对路径）
-#                           两轨同时跑的做法：给另一轨开 worktree 再指过来
-#                             git worktree add ../ref-lib-next next
-#                             PLUGIN=../ref-lib-next TRACK=next ./scripts/dev-isolate.sh
+#                           单轨用不上；留给"在别处 checkout 测同一插件"的场景
 #   BUILD=1|0               启动前构建插件（默认 1，避免吃到过期 lib/）
 #   SEED_CREDENTIALS=1|0|force  复制真实 home 的 sk 进隔离 home（默认 1=仅缺失时）
 #   SEED_SETTINGS=1|0       顺带复制非密钥 settings.yaml（默认 1=仅缺失时）

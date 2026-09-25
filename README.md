@@ -24,12 +24,15 @@ dsh plugin --profile web remove @hpyperry/dsh-ref-lib
 
 **插件版本号 = 它对应的 dsh 版本号**（跟着 dsh 走，一眼就能对上）：
 
-| 你的 dsh 版本 | 装哪个插件版本 | 来自哪条分支 | 跟的是 dsh 的哪个通道 |
-| --- | --- | --- | --- |
-| `0.1.5-rc.3`（及 0.1.5 / 0.1.6 系列） | **`0.1.5-rc.3`** | `main` | npm `latest`（主线） |
-| `0.1.7-rc.2`（及 0.1.7 以后） | **`0.1.7-rc.2`** | `next` | npm `next` |
+| 你的 dsh 版本 | 装哪个插件版本 | 跟的是 dsh 的哪个通道 |
+| --- | --- | --- |
+| `0.1.5-rc.3`（及 0.1.5 / 0.1.6 系列） | **`0.1.5-rc.3`** | npm `latest`（主线） |
 
-安装命令写 `@hpyperry/dsh-ref-lib@<你的 dsh 版本>` 即可。装错轨时：在 dsh 0.1.7+ 上装主线版会被直接拒绝（`plugin add` 报不兼容并不安装）；反向（0.1.5/0.1.6 上装 `next` 版）会缺图标，所以请按上表选。不带版本号默认装 npm 上的最新版。
+安装命令写 `@hpyperry/dsh-ref-lib@<你的 dsh 版本>` 即可。当前**只支持 dsh `latest` 这一条轨**：
+在 0.1.7+ 宿主上装会被 peer 兼容闸门直接拒绝（`plugin add` 报不兼容、不安装，也不会白屏）。
+曾经并行的 `next` 轨（插件 `0.1.7-rc.2`，适配 dsh 0.1.7+）已**归档为 tag `archive/next-0.1.7-rc.2`**——
+将来 dsh 0.1.7 成为 `latest` 时，`git branch next archive/next-0.1.7-rc.2` 即可取回那份适配工作。
+不带版本号默认装 npm 上的最新版。
 
 安装完成后重启 `dsh web` 生效。本地开发期想改动即时生效，也可以直接指向仓库本地路径：`dsh plugin --profile web add /path/to/ref-lib`。
 
@@ -108,35 +111,33 @@ pnpm build       # 构建 node half（tsc）+ client bundle（tsdown）→ lib/
 ```
 
 - **代码结构**：`src/` 是 node half（服务、`/api/ref-lib/*` 路由、`/ref-lib` 命令、上下文注入），`src/client/` 是 web half（dock 胶囊、管理面板、目录浏览器、本地化），`tests/` 是测试。
-- **一条命令起联调环境（双轨）**：`scripts/dev-isolate.sh` 会自动做四件事——按通道拉一份**临时** dsh（不装全局）、把 sk 从真实 home 复制进隔离 home、**重装插件**（吃到当前分支最新构建）、启动 web。真实 `~/.dsh` 全程零写入。
+- **一条命令起联调环境**：`scripts/dev-isolate.sh` 会自动做四件事——按通道拉一份**临时** dsh（不装全局）、把 sk 从真实 home 复制进隔离 home、**重装插件**（吃到当前分支最新构建）、启动 web。真实 `~/.dsh` 全程零写入。
 
   ```bash
-  ./scripts/dev-isolate.sh              # main 轨：跟 dsh npm latest，home=~/.dsh-dev-main，端口 3090
-  TRACK=next ./scripts/dev-isolate.sh   # next 轨：跟 dsh npm next，  home=~/.dsh-dev-next，端口 3091
+  ./scripts/dev-isolate.sh              # 跟 dsh npm latest，home=~/.dsh-dev-main，端口 3090
   ```
 
   - 隔离 home 固定在**用户目录**（`~/.dsh-dev-<track>`），脚本会拒绝任何落在代码库内的 home 路径——home 里有 sk 与真实会话，绝不能进仓库。
   - **每次运行只重装插件**；home 里的 `sessions/`、`storages/`、`.credentials.yaml`、`settings.yaml` **一律保留**（想清插件自身数据才用 `RESET_PLUGIN_DATA=1`）。
   - 脚本会校验插件 `version` 是否等于该通道的 dsh 版本（跟版本号约定对齐），不一致会警告；`STRICT_VERSION=1` 直接报错。
-  - 其余开关（`BUILD` / `SEED_CREDENTIALS` / `KEEP_TOOLS` / `DSH_CACHE_DIR` / `PORT` / `DSH_VERSION`）见脚本头注释。想彻底重置：`rm -rf ~/.dsh-dev-main`（**会连会话与 sk 一起删**）。
-  - **默认是 link 安装**：profile 指向仓库目录，改代码能热更新，但**切分支会影响正在跑的环境**。要一份不受仓库影响的冻结副本：`INSTALL_MODE=pack`（先 `pnpm pack` 再装，自带构建产物）；两条轨想同时跑就各用各的 worktree：`git worktree add ../ref-lib-next next` 然后 `PLUGIN=../ref-lib-next TRACK=next ./scripts/dev-isolate.sh`。
+  - 其余开关（`BUILD` / `SEED_CREDENTIALS` / `KEEP_TOOLS` / `DSH_CACHE_DIR` / `PORT` / `DSH_VERSION`）见脚本头注释。想彻底重置：`rm -rf ~/.dsh-dev-main`（**会连会话与 sk 一起删**）。`TRACK=next` 能力保留着（跟 dsh npm `next` 通道），当前没有对应分支，等 dsh 0.1.7 上 `latest` 时可用。
+  - **默认是 link 安装**：profile 指向仓库目录，改代码能热更新。要一份不受仓库影响的冻结副本：`INSTALL_MODE=pack`（先 `pnpm pack` 再装，自带构建产物；tarball 打在仓库根，已 gitignore）。
 - **只想拿一个指定版本的 dsh**：`scripts/dsh-local.sh`（stdout 只打印 bin 路径，非全局安装）。
 
   ```bash
-  DSH_TRACK=main ./scripts/dsh-local.sh --print-version       # 该通道当前版本号
-  DSH_BIN="$(DSH_TRACK=next ./scripts/dsh-local.sh)"          # 装到临时目录并打印 bin
-  DSH_CACHE_DIR=~/.dsh-tools DSH_TRACK=next ./scripts/dsh-local.sh   # 缓存复用，不重复下载
+  ./scripts/dsh-local.sh --print-version                       # 该通道当前版本号
+  DSH_BIN="$(./scripts/dsh-local.sh)"                          # 装到临时目录并打印 bin
+  DSH_CACHE_DIR=~/.dsh-tools ./scripts/dsh-local.sh            # 缓存复用，不重复下载
   ```
 - **热更新**：改 `src/client/*` 后跑 `pnpm build:client`，浏览器约 0.5 秒内生效；改 node half 需要重启 `dsh web`。
 
 ### 发布（维护者）
 
-版本号跟 dsh 走：`main` 分支发 dsh `latest` 对应的版本，`next` 分支发 dsh `next` 对应的版本。
-发布前确认 `pnpm typecheck && pnpm lint && pnpm test && pnpm build` 全绿，且 `version` 等于该通道的 dsh 版本。
+版本号跟 dsh 走、且只跟 `latest` 通道：插件 `version` = 当前 `npm view @deepseek-ai/dsh dist-tags.latest`。
+发布前确认 `pnpm typecheck && pnpm lint && pnpm test && pnpm build` 全绿，且 `version` 等于该版本。
 
 ```bash
-git checkout main && npm publish --tag latest   # 例：0.1.5-rc.3
-git checkout next && npm publish --tag next     # 例：0.1.7-rc.2
+npm publish --tag latest   # 例：0.1.5-rc.3
 ```
 
 - **带 `-rc` 的版本号不会被 npm 自动设为 `latest`**，必须显式指定 `--tag`。

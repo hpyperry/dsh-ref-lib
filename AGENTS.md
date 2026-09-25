@@ -7,12 +7,16 @@
 ## 1. 项目定位
 
 - **`@hpyperry/dsh-ref-lib`**：只读参考库插件（node half + client UI，per-session 隔离）。
-- **版本号约定（v18 起）**：**插件 `version` = 它所跟踪的 dsh 版本号**，一条主线一条
-  next 线：`main` 分支跟 dsh npm **`latest`**（当前 `0.1.5-rc.3`，适用 dsh 0.1.5 / 0.1.6 宿主），
-  `next` 分支跟 dsh npm **`next`**（当前 `0.1.7-rc.2`，适用 dsh 0.1.7+ 宿主）。dsh 发新版 →
-  对应分支同步改 version（并复跑门禁）；README「📦 安装」有给用户看的对应表。
-- **当前发布状态（2026-09-25）**：两分支均已推送 `origin`（`main` / `next`）；
-  **npm 未发布**（账号锁定），解锁后 `npm publish --tag latest|next`（带 `-rc` 的版本不会被
+- **版本号约定（v18 起）**：**插件 `version` = 它所跟踪的 dsh 版本号**，只跟 dsh npm
+  **`latest`** 这一条通道（当前 `0.1.5-rc.3`，适用 dsh 0.1.5 / 0.1.6 宿主）。dsh `latest`
+  发新版 → 同步改 version（并复跑门禁）；README「📦 安装」有给用户看的对应表。
+  **单轨（2026-09-25 决定）**：双轨太乱已收敛——`next` 轨（插件 `0.1.7-rc.2`，适配 dsh
+  0.1.7+）**归档为 tag `archive/next-0.1.7-rc.2`**，其独有工作（图标改名 `Icon*<Size>` →
+  `Icon*<Weight>` 的 v19 适配等）都在那个 tag 里；将来 dsh 0.1.7 成为 `latest` 时
+  `git branch next archive/next-0.1.7-rc.2` 取回即可。**不要再引入 second branch**：
+  两轨会让版本号/peer/安装表/轨道措辞在同一批文件里分叉，合并必冲突。
+- **当前发布状态（2026-09-25）**：`main` 已推送 `origin`（另有归档 tag）；
+  **npm 未发布**（账号锁定），解锁后 `npm publish --tag latest`（带 `-rc` 的版本不会被
   npm 自动设成 `latest`，必须显式 `--tag`）。另：`dsh plugin add` 本质是转发 pnpm，
   所以本地路径、`pnpm pack` 打出的 tarball、git/npm 版本都能装；要"冻结副本"用
   `INSTALL_MODE=pack`（§6）。落地全记录见 `docs/upgrade-dsh-0.1.7-rc.2.md` §9。
@@ -179,8 +183,9 @@
    （v17 沿革相应表述与 §5 附加约定 2 已订正）；legacy `foldRefLibs` 仅对 ≤0.1.2-rc.1
    宿主可能生效，保留但已在 `src/service.ts` 注明"不是可靠迁移手段"。
    version 0.17.0 → **`0.1.5-rc.3`**（自 v18 起版本号跟 dsh 走，见 §1 版本号约定）；
-   本轨跟 dsh npm `latest`，适用 0.1.5/0.1.6 宿主；0.1.7+ 宿主走新增的 `next` 分支
-   （v19，版本 `0.1.7-rc.2`）。依赖族先按 `0.1.5-rc.2` 落地并通过四道门禁 + L3，
+   本轨跟 dsh npm `latest`，适用 0.1.5/0.1.6 宿主。**v19（next 轨，版本 `0.1.7-rc.2`，
+   适配 dsh 0.1.7+ 的图标改名等）已于 2026-09-25 归档为 tag `archive/next-0.1.7-rc.2`**
+   ——支持面收敛到 latest 单轨，见 §1「单轨」条。依赖族先按 `0.1.5-rc.2` 落地并通过四道门禁 + L3，
    随后在 `latest` 的 `0.1.5-rc.3` 上复跑同样全绿（devDeps 与 CLI 均已对齐 rc.3）。
 
 ## 2. 开发规范（必须遵守）
@@ -212,12 +217,12 @@
 - 门禁：`pnpm typecheck`（`tsc --noEmit`）/ `pnpm lint`（eslint + prettier，见
   `eslint.config.js`）/ `pnpm test`（必须含 L0–L2 全部层，见 §5）/ `pnpm build`
   （`tsc` + `tsdown`）。
-- **双轨共享文件：两边保持一致（否则合并必冲突）**。`main` 跟 dsh `latest`、`next` 跟
-  dsh `next`，两条轨长期并存：`docs/*`、`scripts/*`、`.gitignore`、`src/**`、`tests/**`
-  这类"两条轨都要有"的文件，改动后在另一条轨提交**内容完全相同**的版本（沿用既有的
-  "与 next / main 同步"提交习惯）。只改一边 → 合并干净；**只在一边删文件 → 下次合并
-  必然 `modify/delete` 冲突**，所以要删就两边一起删、要留就两边都留。版本号、轨道措辞
-  这类本就该不同的内容，集中放在各自独有的段落里，别混进共享文件的同一段。
+- **单轨（2026-09-25）**：只维护 `main`（跟 dsh npm `latest`）。历史上并行的 `next` 轨
+  （插件 `0.1.7-rc.2`，适配 dsh 0.1.7+）已归档为 tag `archive/next-0.1.7-rc.2`，理由：
+  两轨会让 `package.json`（version / `dsh-*` peer 与 devDeps）、`pnpm-lock.yaml`、
+  `README.md` 的安装表、`AGENTS.md` 的轨道措辞在同一批文件里分叉，**合并必冲突**
+  （实测：裸 merge 在这 4 个文件冲突；`-X ours` 又会把两边字段混在一起、并静默丢掉共享
+  改动，所以不采用）。将来的版本升级直接在 `main` 上做，用 `DSH_VERSION=<版本>` 做隔离验证。
 
 ## 3. 参考速查
 
@@ -248,7 +253,7 @@
 | L0 纯函数单测 | logic/render/parse 等无副作用逻辑，快而密 | `tests/logic.spec.ts` 等 |
 | L1 装配/装载测试 | 真实 `cordis-plugin-loader` 装载插件组合，验证服务/命令注册不炸 | `tests/loader.spec.ts` |
 | L2 **harness 边界回归（事故防线）** | 真实 `SessionStore` + `JsonlSessionPersistence` + 临时根，跑「写会话 → flush → 全新实例冷加载」回路；**任何写入会话日志/持久化的插件必须包含此测试**，断言日志可加载、无白名单外事件；同时用「陷阱守卫」用例固化事故行为（写白名单外事件 → 必须抛 `SessionFormatUnsupportedError`） | `tests/harness-roundtrip.spec.ts` |
-| L3 开发环境隔离 | **开发/联调一律用隔离 `DSH_HOME`**（`~/.dsh-dev-<track>`，在 `$HOME` 下、绝不在代码库内）+ 独立 profile，真实 `~/.dsh` 零接触 | `scripts/dev-isolate.sh`（双轨用法与全部开关见 §6） |
+| L3 开发环境隔离 | **开发/联调一律用隔离 `DSH_HOME`**（`~/.dsh-dev-<track>`，在 `$HOME` 下、绝不在代码库内）+ 独立 profile，真实 `~/.dsh` 零接触 | `scripts/dev-isolate.sh`（用法与全部开关见 §6） |
 | 通道 | client↔node 数据通道**首选 `ctx.webServer` 自注册 HTTP 路由**（`@deepseek-ai/dsh-host-webserver`，`/api/<plugin>/*`，loopback 护栏，参照 dsh-ssh / dsh-persona-memory 先例）；命令/投影仅在无 webServer 的组合兜底 | `src/routes.ts` + `tests/routes.spec.ts` |
 | L4 实验前备份 | 任何要动真实 `~/.dsh/sessions` 的操作前先**整目录备份**（`cp -R ~/.dsh ~/.dsh.bak-<时间戳>`），操作后确认无误再清理备份 | — |
 
@@ -276,11 +281,11 @@
 3. 每个插件交付时，`pnpm test` 必须包含 L0–L2 全部层（L3/L4 是开发流程约定，写入
    插件 README）。
 
-## 6. 开发环境速查（2026-09-25 重写：双轨 + 临时版本 + 插件重装但保留 sk/会话）
+## 6. 开发环境速查（2026-09-25：临时版本 + 插件重装但保留 sk/会话）
 
 ```bash
-./scripts/dev-isolate.sh              # main 轨（跟 dsh npm latest），home=~/.dsh-dev-main，端口 3090
-TRACK=next ./scripts/dev-isolate.sh   # next 轨（跟 dsh npm next），  home=~/.dsh-dev-next，端口 3091
+./scripts/dev-isolate.sh              # 跟 dsh npm latest，home=~/.dsh-dev-main，端口 3090
+TRACK=next ./scripts/dev-isolate.sh   # 预留（跟 dsh npm next）；当前无 next 分支，见 §1
 ```
 
 **`scripts/dev-isolate.sh` 每次运行固定做六件事**（全部实现在脚本里，无需手工步骤）：
@@ -306,7 +311,7 @@ TRACK=next ./scripts/dev-isolate.sh   # next 轨（跟 dsh npm next），  home=
 | `pack` | 先 `pnpm pack` 打成 tarball 再装，profile 里是**独立副本**（自带 `lib/`） | 不影响，删仓库都不影响 | 无 |
 
 ```bash
-INSTALL_MODE=pack TRACK=next ./scripts/dev-isolate.sh   # 冻结副本，适合"边跑边改别的分支"
+INSTALL_MODE=pack ./scripts/dev-isolate.sh   # 冻结副本：切分支/改源码都不影响这个环境
 ```
 tarball 落在 **插件目录（仓库根）本身**：`<repo>/hpyperry-dsh-ref-lib-<版本>.tgz`（2026-09-25
 起默认，**不建任何子目录**；文件名自带版本号，多版本共存不撞名；`PKG_ROOT` 仍可改成别处）。
@@ -316,12 +321,9 @@ profile 清单里记的是 tarball 路径，所以**建议保留这个 tarball**
 该 profile 再跑 `pnpm install` 会缺源）；反过来，删仓库根那个 `.tgz` 之前先确认没有 profile
 还依赖它（`pack` 模式下会）。
 
-**两条轨同时跑（都保留热更新）**：给另一轨开 worktree，各用各的目录与 `lib/`：
-
-```bash
-git worktree add ../ref-lib-next next
-PLUGIN=../ref-lib-next TRACK=next ./scripts/dev-isolate.sh    # main 轨仍在主 checkout 跑 3090
-```
+**"两条轨同时跑"的做法已废弃**（`git worktree add ../ref-lib-next next` + `PLUGIN=… TRACK=next`）：
+单轨不需要 worktree。要试别的 dsh 版本，钉一个版本即可（`TRACK=next DSH_VERSION=0.1.7-rc.2 ./scripts/dev-isolate.sh`，
+插件版本不一致只会警告，`STRICT_VERSION=1` 才报错）。
 
 > **只看不启**：`./scripts/dev-isolate.sh --check`（任意轨道）只解析版本、做一致性校验并打印
 > "会装什么/装到哪/哪个端口"，不下载 CLI、不装插件、不启动 web——改脚本或换轨道后先干跑一遍最省事。
