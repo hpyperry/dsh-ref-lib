@@ -31,7 +31,7 @@ set -euo pipefail
 
 SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib/dsh-track.sh
-. "${SELF_DIR}/lib/dsh-track.sh"
+. "${SELF_DIR}/dsh-track.sh"
 
 PRINT_VERSION_ONLY=0
 for arg in "$@"; do

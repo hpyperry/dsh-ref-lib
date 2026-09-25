@@ -46,7 +46,7 @@ set -euo pipefail
 
 SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib/dsh-track.sh
-. "${SELF_DIR}/lib/dsh-track.sh"
+. "${SELF_DIR}/dsh-track.sh"
 
 PLUGIN="${PLUGIN:-$(cd "${SELF_DIR}/.." && pwd)}"
 TRACK="${TRACK:-main}"
@@ -60,6 +60,10 @@ REAL_HOME="${REAL_HOME:-${HOME}/.dsh}"
 STRICT_VERSION="${STRICT_VERSION:-0}"
 
 die() { echo "dev-isolate: ✖ $*" >&2; exit 1; }
+CHECK_ONLY=0
+for a in "$@"; do
+  if [ "$a" = "--check" ]; then CHECK_ONLY=1; fi
+done
 note() { echo "dev-isolate: $*"; }
 
 case "${TRACK}" in
@@ -67,6 +71,9 @@ case "${TRACK}" in
   next) PORT="${PORT:-3091}" ;;
   *) die "未知 TRACK '${TRACK}'（只支持 main / next）" ;;
 esac
+# 版本解析库读的是 DSH_TRACK：这里同步一次并 export，两个名字永远一致。
+DSH_TRACK="${TRACK}"
+export DSH_TRACK
 DEV_HOME="${DEV_HOME:-${HOME}/.dsh-dev-${TRACK}}"
 
 # ── 0) home 安全护栏：绝对路径 + 在 $HOME 下 + 绝不在代码库里（sk/会话防泄漏）──
@@ -118,6 +125,14 @@ if [ "${BUILD}" = "1" ]; then
   rm -f "${build_log}"
   note "插件已构建（${PLUGIN_VERSION}）"
 fi
+if [ "${CHECK_ONLY}" = "1" ]; then
+  note "干跑结束（--check）：不装 CLI、不装插件、不启动 web"
+  note "  通道=${TRACK}  dsh 版本=${VERSION}  插件版本=${PLUGIN_VERSION}"
+  note "  隔离 home=${DEV_HOME}  端口=${PORT}  profile=${PROFILE}"
+  note "  构建=${BUILD}  重装插件=每次  清插件数据=${RESET_PLUGIN_DATA}"
+  exit 0
+fi
+
 [ -f "${PLUGIN}/lib/index.js" ] || die "缺少 ${PLUGIN}/lib/index.js（先构建，或 BUILD=1）"
 [ -f "${PLUGIN}/lib/client.js" ] || die "缺少 ${PLUGIN}/lib/client.js（先构建，或 BUILD=1）"
 

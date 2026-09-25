@@ -1,4 +1,5 @@
-# 依赖与构建产物
+# 依赖与构建产物（注意：`lib/` 会匹配**任意层级**的 lib 目录，
+# 所以脚本等源码不要放 scripts/lib/ 这类路径下，否则会被静默忽略）
 node_modules/
 .pnpm-store/
 lib/
