@@ -7,6 +7,10 @@
 ## 1. 项目定位
 
 - **`@hpyperry/dsh-ref-lib`**：只读参考库插件（node half + client UI，per-session 隔离）。
+- **版本号约定（v18 起）**：**插件 `version` = 它所跟踪的 dsh 版本号**，一条主线一条
+  next 线：`next` 分支跟 dsh npm **`next`**（当前 `0.1.7-rc.2`，适用 dsh 0.1.7+ 宿主）；
+  `main` 分支跟 dsh npm **`latest`**（当前 `0.1.5-rc.3`，适用 dsh 0.1.5 / 0.1.6 宿主）。
+  dsh 发新版 → 对应分支同步改 version（并复跑门禁）；README「📦 安装」有给用户看的对应表。
 - **自包含工程**：`package.json` / `tsconfig.json` / `src/` / `tests/` / `scripts/` /
   构建配置与 `README.md` 齐全，可独立安装/构建/验证（安装见 `README.md`「📦 安装」、
   构建/验证见「🧑‍💻 开发」）。
@@ -149,7 +153,7 @@
    打印原因**，而不是静默加载后因图标名缺失白屏——闸门见
    `packages/boot/app-boot/src/plugin-compatibility.ts`（不满足的插件行置 `disabled`，
    非致命，profile 仍可启动；可用 `dsh plugin allow-version` 精确豁免）。
-   devDeps 7 包精确 pin `0.1.5-rc.2`；peer 集合与 cordis `^4.0.1`（0.1.5-rc.2 vendored
+   devDeps 7 包精确 pin `0.1.5-rc.3`；peer 集合与 cordis `^4.0.1`（0.1.5 线 vendored
    4.0.2，npm latest 4.0.4，均在范围内）不变。新增 `dsh.client.external: []`
    （显式声明"基线之外无额外 module-table 请求"）；tsdown `PLATFORM_EXTERNALS` 移除
    从不在宿主 seed 表里的 `dsh-client-locale/client`（此前仅因 type-only 擦除而无害）。
@@ -158,8 +162,9 @@
    `ignorable: true`**，故"补过 ignorable 的旧日志仍可读"自 0.1.3-alpha.2 起不再成立
    （v17 沿革相应表述与 §5 附加约定 2 已订正）；legacy `foldRefLibs` 仅对 ≤0.1.2-rc.1
    宿主可能生效，保留但已在 `src/service.ts` 注明"不是可靠迁移手段"。
-   version 0.17.0 → 0.18.0（**`latest` 轨**：0.1.5/0.1.6 宿主）；0.1.7+ 宿主走新增的
-   `next` 分支（v19））→
+   version 0.17.0 → **`0.1.5-rc.3`**（自 v18 起版本号跟 dsh 走，见 §1 版本号约定）；
+   本轨跟 dsh npm `latest`，适用 0.1.5/0.1.6 宿主；0.1.7+ 宿主走新增的 `next` 分支
+   （v19，版本 `0.1.7-rc.2`））→
    v19（**`next` 轨：dsh 0.1.7-rc.2 兼容**，本分支自 v18 分出，v18 的全部改动一并在内）：
    目标宿主 = npm `next` 通道 / checkout HEAD（`dsh-v0.1.7-rc.2`，2026-09-25）。
    - **图标改名（本轨唯一的 client 破坏）**：ui-primitives 自 **0.1.7-alpha.1** 起把共享图标
@@ -174,7 +179,7 @@
      artwork 里，`size` prop 全部不用动）、`IconFolderClose16 → IconFolderCloseRegular`。
    - **peer**：14 条 dsh-* 由 `>=0.1.5-rc.2 <0.1.7-alpha.1` 改为 **`^0.1.7-rc.2`**
      （0.1.7 宿主上通过；0.1.5/0.1.6 宿主上 **0.1.7 之前的宿主没有 peer 闸门**，
-     装错会因图标缺失而白屏 → README 已写明"0.19.x 只装 0.1.7+ 宿主"）。
+     装错会因图标缺失而白屏 → README 已写明"`0.1.7-rc.2` 只装 0.1.7+ 宿主"）。
      devDeps 7 包精确 pin `0.1.7-rc.2`；cordis peer `^4.0.1`（0.1.7 vendored 4.0.4 覆盖）。
    - **`SESSION_FORMAT_VERSION` = 4**（0.1.7 起）→ 旧日志处理同 v18 订正（v0→v1 迁移边拒绝
      未知事件即使带 ignorable），且 §5 附加约定 2 的解压扫描同样适用（`session.v*.jsonl.zstd`）。
@@ -190,7 +195,8 @@
      `ctx.uiWorkspace.createDirectory`（目录浏览器"新建文件夹"）、
      `ctx.inputTriggers`（`/ref-lib` 参数补全）。`ui-dockkit` 虽进 seed 表但自述
      "not as a stable API"，**不要依赖**。
-   - version 0.18.0 → **0.19.0**（`next` 轨）。
+   - version 跟 dsh 走（见 §1 版本号约定）：本轨 **`0.1.7-rc.2`**（= dsh npm `next`），
+     `main` 轨为 **`0.1.5-rc.3`**（= dsh npm `latest`）。
 
 ## 2. 开发规范（必须遵守）
 

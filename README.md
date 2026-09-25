@@ -3,7 +3,7 @@
 给 DeepSeek Harness 的每个会话挂一个「只读参考库」：把本地目录（比如你的项目源码、内部文档）登记为参考库后，agent 回答前会**先去这些目录里查证**，查不到才允许走外部途径——而不是凭空猜或者直接上网搜。
 
 ```
-dsh plugin --profile web add @hpyperry/dsh-ref-lib@0.19.0
+dsh plugin --profile web add @hpyperry/dsh-ref-lib@0.1.7-rc.2
 ```
 
 ## 它解决什么问题
@@ -16,19 +16,20 @@ dsh plugin --profile web add @hpyperry/dsh-ref-lib@0.19.0
 
 ```bash
 # 安装
-dsh plugin --profile web add @hpyperry/dsh-ref-lib@0.19.0
+dsh plugin --profile web add @hpyperry/dsh-ref-lib@0.1.7-rc.2
 
 # 卸载
 dsh plugin --profile web remove @hpyperry/dsh-ref-lib
 ```
 
-`@0.19.0` 是指定版本号：安装其他版本把 `@0.19.0` 换成对应版本即可（如 `@hpyperry/dsh-ref-lib@0.18.0`）；不带版本号则默认装最新版。
+**插件版本号 = 它对应的 dsh 版本号**（跟着 dsh 走，一眼就能对上）：
 
-> **宿主版本对应关系（两条发布轨，别装错）**：
-> - **dsh 0.1.7+**（npm `next` 通道）→ 本版本 **`0.19.x`**（`next` 分支，peer `^0.1.7-rc.2`）；
-> - **dsh 0.1.5 / 0.1.6**（npm `latest` 通道）→ **`0.18.x`**（`main` 分支，peer `>=0.1.5-rc.2 <0.1.7-alpha.1`）。
->
-> 两个版本族**不通用**：dsh 0.1.7 重命名了宿主 UI 图标（`Icon*16` → `Icon*<Weight>`），0.18.x 在 0.1.7 上会因图标缺失白屏；反之 0.19.x 在 0.1.5 上同样会缺图标（0.1.7 之前的宿主还没有版本闸门）。在 0.1.7+ 宿主上装 0.18.x 时，harness 会在启动时把本插件标记为不兼容并跳过（stderr 打印原因），不会静默半可用。
+| 你的 dsh 版本 | 装哪个插件版本 | 来自哪条分支 | 跟的是 dsh 的哪个通道 |
+| --- | --- | --- | --- |
+| `0.1.7-rc.2`（及 0.1.7 以后） | **`0.1.7-rc.2`** | `next` | npm `next` |
+| `0.1.5-rc.3`（及 0.1.5 / 0.1.6 系列） | **`0.1.5-rc.3`** | `main` | npm `latest`（主线） |
+
+安装命令写 `@hpyperry/dsh-ref-lib@<你的 dsh 版本>` 即可。装错轨时：在 dsh 0.1.7+ 上装主线版会被直接拒绝（`plugin add` 报不兼容并不安装）；反向（0.1.5/0.1.6 上装 `next` 版）会缺图标，所以请按上表选。不带版本号默认装 npm 上的最新版。
 
 安装完成后重启 `dsh web` 生效。本地开发期想改动即时生效，也可以直接指向仓库本地路径：`dsh plugin --profile web add /path/to/ref-lib`。
 
