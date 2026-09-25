@@ -12,7 +12,8 @@
 > 依据：
 > - 参考库 checkout `/Users/hpy/dev/PROJECTS/deepseek-harness` @ `477b4f4205`（tag `dsh-v0.1.7-rc.2`，
 >   2026-09-25；root `package.json` version `0.1.7-rc.2`）——**只读查证**，未做任何写入；
-> - 本机运行宿主 `dsh --version` = **0.1.2-rc.1**（`~/.local/share/fnm/.../@deepseek-ai/dsh/package.json`）；
+> - 本机运行宿主 `dsh --version` = **0.1.2-rc.1**（评估时；**2026-09-25 当天已升级为 `0.1.5-rc.3`**，
+>   见 §9.7）；
 > - npm registry dist-tags（2026-09-25 实测，见 §1.2）；
 > - **探针工程实测**：把本仓库源码复制到 `.probe-017/`（评估后已删除），peer/dev 全族换到
 >   `0.1.7-rc.2` 后 `pnpm install` + `tsc --noEmit` + `vitest run`，得到本文档 §3.1 的
@@ -70,7 +71,7 @@ AGENTS.md 链、右栏 tab 注册表），但**没有任何内建能力提供「
 
 | 坐标 | 版本 | 证据 |
 | --- | --- | --- |
-| **本机运行宿主** | `0.1.2-rc.1` | `dsh --version`；`~/.local/share/fnm/node-versions/v22.22.3/installation/lib/node_modules/@deepseek-ai/dsh/package.json` version |
+| **本机运行宿主**（评估时） | `0.1.2-rc.1` | `dsh --version`；`~/.local/share/fnm/node-versions/v22.22.3/installation/lib/node_modules/@deepseek-ai/dsh/package.json` version ⇒ **当天已升级为 `0.1.5-rc.3`（§9.7）** |
 | **参考库 checkout HEAD** | `0.1.7-rc.2` | `git -C /Users/hpy/dev/PROJECTS/deepseek-harness describe --tags` → `dsh-v0.1.7-rc.2`；HEAD `477b4f4205`（2026-09-25） |
 | **npm `@deepseek-ai/dsh` dist-tags** | `latest` = `0.1.5-rc.3`；`next` = `0.1.7-rc.2`；`alpha` = `0.1.7-alpha.2` | `curl -s https://registry.npmjs.org/@deepseek-ai%2Fdsh` |
 
@@ -304,8 +305,10 @@ TypeError: JsonlSessionPersistence is not a constructor
     在 ≥0.1.3-alpha.2 的宿主上会在 v0→v1 边被**整体拒读**；
   - 于是 `foldRefLibs(session.snapshotEvents())` 这条 legacy 迁移路径**再也不可能被触发**——
     它已是不可达代码，且 AGENTS.md §5 注 2 与 `src/service.ts` 注释的相应声明**现在是错的**。
-- **本机数据实测（§6.3）：零命中**，所以这是**文档纠正**，不是数据救援；但换环境（他机/他 profile）
-  仍应按 §6.3 的脚本先扫一遍再升宿主。
+- **本机数据实测（§6.3，订正后）：命中 2 个日志 / 7 个 `ref-lib/set` 事件**。
+  第一版文档写"零命中"是**假阴性**（扫描脚本只解了 zstd 第一帧，见 §6.3 的订正说明）；
+  这 2 个会话已在真实环境升级前整目录备份后删除。⇒ 这是**真实数据影响**，
+  换环境（他机/他 profile）**必须**按 §6.3 的脚本先扫一遍再升宿主。
 
 #### B4（**互操作 BREAKING：具名导出改窄**）`PERSONA_SECTION`、`input.images`、`commands.execute` 等
 
@@ -748,40 +751,75 @@ TRACK=next INSTALL_MODE=pack ./scripts/dev-isolate.sh
 `RESET_PLUGIN_DATA=1`）；`DEV_HOME` 若落在代码库内会被直接拒绝（sk 防泄漏）。
 彻底重置某条轨：`rm -rf ~/.dsh-dev-main`。详见 `AGENTS.md` §6。
 
-### 6.3 数据平面检查：legacy `ref-lib/set` 日志扫描（**升级宿主前执行**）
+### 6.3 数据平面检查：legacy 日志扫描（**升级宿主前执行**）
 
-会话日志是 **zstd 压缩**（`session.jsonl.zstd`），`grep` 直接扫会**假阴性**——必须解压后再扫：
+> ⚠️ **2026-09-25 订正（重要）**：本文档第一版给的扫描脚本是 **node `zlib.zstdDecompressSync`
+> 整文件解压**，它**只解第一帧**，而 dsh 的会话日志是**多帧 zstd —— 每行一帧**
+> （实测单文件最多 18,132 帧）⇒ 只看到头行、恒报"零命中"，是**假阴性**。据此得出的
+> "本机零命中"结论**是错的**：改用下面的脚本重扫，真实 `~/.dsh` 里**确有 2 个日志命中**
+> `ref-lib/set`（见下方实测结果）。**升级宿主前必须用本节脚本重扫。**
+
+正确的扫法（`zstd -d -c` 会连续解出全部帧；**不要**用 `grep` 直接扫压缩流）：
 
 ```bash
-cd /tmp && cat > scan.mjs <<'EOF'
-import { readdirSync, readFileSync } from 'node:fs'
-import { join } from 'node:path'
-import zlib from 'node:zlib'
-const root = process.argv[2]
-function walk(dir) {
-  for (const e of readdirSync(dir, { withFileTypes: true })) {
-    const p = join(dir, e.name)
-    if (e.isDirectory()) { walk(p); continue }
-    const buf = readFileSync(p)
-    let text
-    try {
-      text = buf.subarray(0, 4).equals(Buffer.from([0x28,0xb5,0x2f,0xfd]))
-        ? zlib.zstdDecompressSync(buf).toString('utf8') : buf.toString('utf8')
-    } catch (e) { text = '<decompress-failed ' + e.message + '>' }
-    const n = (text.match(/ref-lib\/set/g) ?? []).length
-    const ig = (text.match(/"ignorable":true/g) ?? []).length
-    if (n || ig) console.log(`${n} ref-lib/set | ${ig} ignorable | ${p}`)
-  }
-}
-walk(root)
-EOF
-node scan.mjs "$HOME/.dsh/sessions"
+# ① 精确扫描：只看事件信封（"type":"ref-lib/set"），不会把正文里的同名提及算进去
+for f in $(find "$HOME/.dsh/sessions" -name 'session*.jsonl.zstd' ! -name '*.bak-*'); do
+  n=$(zstd -d -c -q "$f" 2>/dev/null | grep -c '"type":"ref-lib/set"')
+  [ "$n" != "0" ] && echo "$n  $f"
+done
+
+# ② 通用扫描：列出每个日志里的事件类型分布，与 build 期词表对照
+#    （词表 = KNOWN_SESSION_EVENT_TYPES〔packages/core/session/src/known-event-types.ts，
+#      生成物〕∪ RELEASED_V0_EVENT_DISPOSITIONS ∪ {compact/* 四个旧名}；不在其中的即"未知事件"）
+for f in $(find "$HOME/.dsh/sessions" -name 'session*.jsonl.zstd' ! -name '*.bak-*'); do
+  echo "--- $f"
+  zstd -d -c -q "$f" | node -e '
+    let s = ""; process.stdin.on("data", d => s += d).on("end", () => {
+      const c = new Map()
+      for (const line of s.split("\n")) {
+        if (!line.trim()) continue
+        let r; try { r = JSON.parse(line) } catch { continue }
+        if (typeof r.seq !== "number") continue        // 只统计事件行（chunk 行是 seq0）
+        c.set(r.type, (c.get(r.type) ?? 0) + 1)
+      }
+      for (const [t, n] of [...c].sort((a, b) => b[1] - a[1])) console.log(String(n).padStart(7), t)
+    })'
+done
 ```
 
-**本次实测结果（2026-09-25，`--Users-hpy-*` 全部 11 个项目目录 / 81 个日志文件，
-含 2026-08-17 事故当天的两个 `.bak-*` 备份）：零命中 `ref-lib/set`、零命中 `"ignorable":true`。**
-⇒ 本机升级到 0.1.3+ 宿主**不存在**旧会话不可读风险（B3 只落到文档纠正）。
-**换机器/换 profile 仍须先跑这段扫描。**
+**2026-09-25 实测结果（订正后）**：11 个项目目录 / 79 个日志（现行 `session.jsonl.zstd`，
+另有若干 `.bak-*`）、145,328 个事件行；格式全部为 **v0**（0.1.2-rc.1 写的）。
+未知事件类型**只有 `ref-lib/set`，分布在 2 个日志**：
+
+| 日志 | 命中 | seq |
+| --- | --- | --- |
+| `--Users-hpy-Documents-Deepseek~0020Harness--/session-32cd0b38-…` | 1 | 13619 |
+| `--Users-hpy-dev-PROJECTS-dsh-plugins--/session-7d1537fb-…` | 6 | 303636 / 303641 / 303644 / 303647 / 303650 / 303653 |
+
+7 个事件都带 `ignorable: true`（当年修补脚本补的），但 **v0→v1 历史迁移边不接受 ignorable**
+（§3.2 B3），所以这 2 个会话在 ≥0.1.3-alpha.2 宿主上**读不出来**：
+
+```
+SessionFormatUnsupportedError: format v0 contains unknown historical event type "ref-lib/set"
+  at seq 13619; migration refuses unknown historical events even when ignorable
+  … (source v0 artifact remains unchanged …)
+```
+
+**处置（本机 2026-09-25 已执行）**：整目录备份（L4）→ 删除这 2 个会话目录。
+判据：**失败读取是只读的**——对副本实测读失败前后 sha256 一致、目录内无新增文件，
+日志字节不变，所以"删掉/留着"都不影响其余数据。
+
+**另一条可选路径（已在临时安装里验证可行，本次未采用）**：把日志离线迁移并重编码成当前格式，
+与原始 v0 日志并存（不改原文件）。做法：在 `/tmp` 的 0.1.5-rc.3 临时安装里放开 4 道
+**历史 vocabulary 闸门**（`dsh-session-format-v0-to-v1` 的坐标校验与 payload 校验、
+`dsh-session-format-v1-to-v2` 的 `transformReleasedEvent`、`dsh-session-format-v2-to-v3`
+的 `assertEvent` 对"未分类事件"的拒绝），用 `sessionFormatCatalog.createRestore(header, {validation:'transformed'})`
+跑官方迁移链，再 `encodeCurrentHeader` / `encodeCurrentEvent` 写成
+`session.v3.jsonl.zstd`（**每行一帧**，文件名必须带 `vN`，否则报
+`resolved JSONL source filename identifies v0, but its header identifies v1`）。
+验证方式：用**未打补丁**的干净 0.1.5-rc.3 冷读该目录 → 读取成功、事件摘要与迁移链输出一致
+（本机两条日志分别 457 / 2435 事件，7 个 `ref-lib/set` 作为 ignorable 事件保留）。
+注意 `SESSION_FORMAT_VERSION` 0.1.5 起为 3，故目标文件名是 `session.v3.jsonl.zstd`。
 
 ---
 
@@ -801,7 +839,7 @@ node scan.mjs "$HOME/.dsh/sessions"
 
 | 级别 | 风险 | 处置 |
 | --- | --- | --- |
-| **P0** | 旧日志不可读（B3）——他机若存在含 `ref-lib/set` 的 v0 日志，升级宿主后那些会话**永久打不开** | 升级宿主**前**跑 §6.3 扫描；命中则先备份（L4）并在旧宿主上处置；文档同步纠正 |
+| **P0** | 旧日志不可读（B3）——存在含 `ref-lib/set` 的 v0 日志时，升级宿主后那些会话**打不开** | 升级宿主**前**跑 §6.3 扫描；命中则先备份（L4）再处置（删会话 / 离线重编码）。**本机已实测命中 2 个日志**（7 事件），备份后已删；§6.3 已订正第一版的假阴性脚本 |
 | **P1** | 图标改名导致白屏（B1） | 本次升级的**第一件事**；按 §4.2 落地后 L3 冒烟必须逐个确认图标可见 |
 | **P1** | L2 防线失效（B2） | §4.3；L2 是 AGENTS §5 的硬性门禁，**不得以"只是测试"为由跳过** |
 | **P2** | `snapshotEvents()` deprecated（B4） | §4.4-3 |
@@ -948,6 +986,24 @@ home 护栏）、`scripts/dsh-local.sh`（通道→版本解析、临时/缓存�
 - **npm 未发布**（账号锁定）——解锁后按 §9.4 两条命令发布；
 - 右栏 tab / `pinnedSessionIds` / `createDirectory` / `inputTriggers` 四条增强仍待排期（§7.3）；
 - legacy `foldRefLibs` + `snapshotEvents()` 冻结中（D4）。
+
+### 9.7 真实环境切换记录（2026-09-25，npm 仍未解锁）
+
+用 §9.4 的 **tarball 通道**把真实环境切到 `main` 轨（不需要 npm 发布）：
+
+| 步骤 | 命令 | 结果 |
+| --- | --- | --- |
+| ① 备份（L4） | `cp -R ~/.dsh ~/.dsh.bak-<ts>` | `~/.dsh.bak-20260925-141619`（111 MB） |
+| ② 处置 P0 日志 | 见 §6.3 | 删除 2 个含 `ref-lib/set` 的会话目录（日志 79 → 77） |
+| ③ 打 tarball | `git checkout main && pnpm install && pnpm build && pnpm pack --pack-destination ~/.dsh-pkgs/0.1.5-rc.3` | `hpyperry-dsh-ref-lib-0.1.5-rc.3.tgz`（82 文件 / 202,232 B，version `0.1.5-rc.3`） |
+| ④ 升宿主 | `npm i -g @deepseek-ai/dsh@0.1.5-rc.3` | `dsh --version` = `0.1.5-rc.3`（全局装在 fnm 的 `installation` 前缀，`npm prefix -g` 已核对） |
+| ⑤ 换插件 | `dsh plugin --profile web add file:~/.dsh-pkgs/0.1.5-rc.3/hpyperry-dsh-ref-lib-0.1.5-rc.3.tgz` | profile 依赖变为 `file:` 规格；`node_modules/@hpyperry/dsh-ref-lib` 是**独立副本**（与 tarball 逐文件 `diff -rq` 一致，82 文件） |
+| ⑥ 清历史残留 | `rm node_modules/@dsh-plugins/ref-lib` | 删掉 8-17 遗留的指向仓库的野软链 |
+| ⑦ 重启 GUI | 在跑 `dsh web` 的终端 Ctrl-C 后重启 | 宿主换版 + 插件换版都要重启才生效（client 扫描按包名解析，无 HMR） |
+
+要点：**`dsh plugin add` 转发 pnpm ⇒ 本地 tarball 就能装**，npm 账号锁定不影响自己这台机器；
+但面向用户的正式分发仍需 `npm publish`。升级后**恢复/写入过的老会话日志会落盘成 v3**，
+此后不能再用 0.1.2-rc.1 打开（只读打开不写盘）。
 
 ---
 
