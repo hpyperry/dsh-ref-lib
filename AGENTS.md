@@ -67,6 +67,10 @@
   **tag 名必须 = `v<package.json version>`**，不一致会失败；`workflow_dispatch` 则只出 artifact）。
 - 单轨维护（见 §1「单轨」）：不要在 `main` 之外开长期分支，也不要为"另一条轨"改
   `package.json` 的 version / `dsh-*` 区间——试别的 dsh 版本用 `DSH_VERSION=<版本>` 钉住。
+- **GitHub 一律用 `gh`**：release / PR / workflow / API / 登录检查都用 `gh`（remote 保持
+  HTTPS + gh 凭据，`gh auth status` 可查）；**不要**把 remote 换成 `git@github.com` 的 SSH、
+  也不要开 ssh 隧道。**代理不用管**——不为 `git push` / `gh` 去改代理或绕过代理；真失败就把
+  原始报错贴出来，别自己发明绕行方案。
 
 ## 3. 参考速查
 
