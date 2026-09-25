@@ -9,7 +9,8 @@
  *   （`outcome !== null`）的节点计数——`/ref-lib` 命令完成后 +1，驱动「命令执行
  *   即刷新」。
  *
- * 派生依据已在 deepseek-harness @ dsh-v0.1.0-rc.7 源码逐条查证（设计文档 §16）：
+ * 派生依据见设计文档 §16（当时按 deepseek-harness `dsh-v0.1.0-rc.7` 源码逐条查证；
+ * v17 迁移后节点改由 ui-chat 的 `legacy.nodes` 投影提供）：
  * - dock 槽位 owner 的 `session` 是响应式会话快照：ConversationRoot 经
  *   `useSession(s => s)` 订阅会话 store，每次发布都重渲染 dock（
  *   `ui-conversation/src/client/skeleton/ConversationRoot.tsx`）；
@@ -45,7 +46,7 @@ export interface RefreshTriggerCounts {
 
 /**
  * 从会话快照节点列表派生刷新触发计数。
- * @param nodes - `session.nodes`（窗口内全部会话节点，结构子集即可）。
+ * @param nodes - `legacy.nodes`（ui-chat 投影的窗口内会话节点，结构子集即可）。
  * @returns 两个计数；空列表返回 `{ userMessageCount: 0, refLibCommandDone: 0 }`。
  */
 export function deriveRefreshTriggers(nodes: readonly ConversationNode[]): RefreshTriggerCounts {

@@ -94,7 +94,7 @@ describe('harness 边界回归（会话日志可加载性）', () => {
     const handle = await second.backend.open(sessionId, 'read')
     const { events } = await handle.read()
     expect(events.map((event) => event.type)).toEqual(['turn/start', 'turn/end'])
-    expect(events.filter((event) => event.type === 'ref-lib/set')).toEqual([])
+    expect(events.filter((event) => (event.type as string) === 'ref-lib/set')).toEqual([])
     await handle.close()
     await second.ctx.fiber.dispose()
   })
@@ -109,8 +109,9 @@ describe('harness 边界回归（会话日志可加载性）', () => {
     const session = first.store.create(sessionId)
     const writer = await claimWrite(first, session)
     session.append('turn/start', { turn: 1 })
-    // 旧版行为：往会话日志写自定义事件（v1/v2 的 ref-lib/set，无 ignorable 标记）
-    session.append('ref-lib/set', { libs: [] })
+    // 旧版行为：往会话日志写自定义事件（v1/v2 的 ref-lib/set，无 ignorable 标记）。
+    // 该类型已不在官方 SessionEventMap 内（本插件不再声明它），这里刻意绕过类型检查。
+    ;(session.append as unknown as (type: string, data: unknown) => void)('ref-lib/set', { libs: [] })
     session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
     expect(await first.store.flush(session)).toBe(true)
     await writer.close()

@@ -7,8 +7,9 @@
  * 写入该标记的途径——旧版把状态写成 `ref-lib/set` 事件，会导致任何包含该事件的
  * 会话日志被整体拒读（连写它的 harness 自己也读不回，SessionFormatUnsupportedError）。
  * v3 起 per-session 列表存为 dsh home 下的 sidecar JSON
- * （`<dshHome>/plugin-data/ref-lib/<sessionId>.json`）；旧日志中的 `ref-lib/set`
- * 事件仅在冷读时折叠迁移一次。
+ * （`<dshHome>/plugin-data/ref-lib/<sessionId>.json`）。v1/v2 的 `ref-lib/set` 事件
+ * **不做迁移**：含它的旧日志在 ≥0.1.3-alpha.2 宿主上读取阶段就被整体拒读
+ * （见 `docs/upgrade-dsh-0.1.7-rc.2.md` §3.2 B3），折叠路径无从触达，已删除。
  *
  * **fork 继承（2026-08-23 加固）**：dsh 的「分支会话」在宿主创建**新会话**
  * （`SessionStore.fork()` 铸造新 id，header 携带 `parentSession`）。本服务在
@@ -47,7 +48,6 @@ import {
   excludeArchivedSources,
   excludeHiddenSources,
   filterSourcesByGroupKey,
-  foldRefLibs,
   probeLibs,
   removeLib,
   summarizeGroups,
@@ -681,8 +681,8 @@ export class RefLibService extends Service {
     return libs.map((entry) => ({ ...entry, id: randomUUID() }))
   }
 
-  /** 解析父会话的有效参考库列表：优先经 live 父会话（覆盖父为 legacy/惰性子会话的
-   * 折叠路径），父会话不可得时兜底直接读其 sidecar 文件。 */
+  /** 解析父会话的有效参考库列表：优先经 live 父会话（覆盖父会话尚未落盘 sidecar
+   * 的情形），父会话不可得时兜底直接读其 sidecar 文件。 */
   private resolveParentLibs(parentId: string): readonly RefLibEntry[] {
     // 官方类型（dsh-session 声明合并 ctx.sessions: SessionStore）——不再用本地 as 断言。
     const parent = this.ctx.get('sessions')?.get(SessionId(parentId))
@@ -692,28 +692,12 @@ export class RefLibService extends Service {
     return this.readSidecar(file) ?? []
   }
 
-  /** 冷读：sidecar 文件 → 旧日志事件迁移 → 父会话继承 → 空列表。 */
+  /** 冷读：sidecar 文件 → 父会话继承 → 空列表。 */
   private loadFromStorage(session: Session): readonly RefLibEntry[] {
     const file = this.pathOf(session.id)
     if (existsSync(file)) {
       const stored = this.readSidecar(file)
       if (stored !== undefined) return stored
-    }
-    // v1/v2 遗留：从会话日志的 `ref-lib/set` 事件折叠（取最后一个完整快照）。
-    // 一次性落盘，保证迁移结果对父会话继承可见。v17：rc.1 起 Session 不再暴露
-    // `.events`，改经 `snapshotEvents()`。
-    //
-    // ⚠️ v18 事实修正（见 `docs/upgrade-dsh-0.1.7-rc.2.md` §3.2 B3）：`SESSION_FORMAT_VERSION`
-    // 在 ≤0.1.2-rc.1 为 0、0.1.3-alpha.2 起为 2、0.1.5 起为 3、0.1.7 起为 4；而 v0→v1
-    // **历史迁移边拒绝未知事件类型——即使带 `ignorable: true`**
-    // （`packages/session/session-format-v0-to-v1/src/validation.ts`）。因此本折叠路径
-    // **只在 ≤0.1.2-rc.1 的宿主上可能生效**：在那之后的宿主上，含 `ref-lib/set` 的 v0 日志
-    // 在读取阶段就被整体拒读（`SessionFormatUnsupportedMigrationError`），`foldRefLibs`
-    // 永远拿不到事件。此路径保留仅为兼容旧宿主，不是可靠的迁移手段；新日志不含任何自定义事件。
-    const fromEvents = foldRefLibs(session.snapshotEvents())
-    if (fromEvents.length > 0) {
-      this.persistSync(session.id, fromEvents)
-      return fromEvents
     }
     // fork 继承（legacy 子会话兜底）：复制父列表、重新铸造条目 id 并**落盘自身
     // sidecar**——与 session/created 物化（materializeInheritance）同一语义：fork

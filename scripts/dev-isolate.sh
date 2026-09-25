@@ -1,36 +1,35 @@
 #!/usr/bin/env bash
-# dev-isolate.sh —— 启动**隔离**的 dsh web 联调环境（默认跟 dsh npm `latest` 单轨）。
+# dev-isolate.sh —— 启动**隔离**的 dsh web 联调环境（默认跟 dsh npm `latest`）。
 #
-# 设计目标（2026-09-25 修订；`TRACK=next` 作为预留能力保留——当前只有 main 一条轨，
-# 双轨已收敛，见 AGENTS.md §1「单轨」）：
+# 设计目标（2026-09-25 修订；插件当前只跟 dsh `latest` 一条线，见 AGENTS.md §1）：
 #
-#   1) **跟 dsh 通道走**：TRACK=main → npm `latest`（dsh 主线）；TRACK=next → npm `next`。
-#      版本由 registry 实时解析（也可 DSH_VERSION 显式钉），并校验被测插件的
+#   1) **跟 dsh dist-tag 走**：`TRACK` 给 npm dist-tag（默认 `main` = `latest`，也可传
+#      `next` 等）。版本由 registry 实时解析（也可 DSH_VERSION 显式钉），并校验被测插件的
 #      package.json version 是否与之一致（不一致只警告；STRICT_VERSION=1 则报错退出）。
 #   2) **CLI 用临时下载**：每次运行 `npm install --prefix <mktemp 临时目录>` 拉一份该版本的
 #      dsh，**不装全局、不动 PATH、不碰 `which dsh` 那份**；退出时自动删除该临时目录
 #      （KEEP_TOOLS=1 保留，DSH_CACHE_DIR=… 改成按版本缓存复用）。
-#   3) **home 隔离在用户目录**：默认 `$HOME/.dsh-dev-<track>`；**拒绝**落在代码库内的 home
-#      ——home 里有 sk（`.credentials.yaml`）与真实会话，绝不能进仓库。
+#   3) **home 隔离在用户目录**：默认 `$HOME/.dsh-dev-<TRACK>`（main ⇒ `~/.dsh-dev-main`）；
+#      **拒绝**落在代码库内的 home——home 里有 sk（`.credentials.yaml`）与真实会话，绝不能进仓库。
 #   4) **每次重装插件、其余一律保留**：每次运行都 `plugin remove` + `plugin add`（吃到当前
-#      分支最新构建），但**从不删除** home 里的 sessions / storages / settings.yaml /
+#      源码最新构建），但**从不删除** home 里的 sessions / storages / settings.yaml /
 #      `.credentials.yaml` / `.anonymous-user-id`；插件自身数据默认也保留，只有显式
 #      RESET_PLUGIN_DATA=1 才清。
 #   5) **sk 自动就位**：隔离 home 缺凭证时，从真实 home 只读复制 `.credentials.yaml`
 #      （权限 600）过去，让隔离环境也能真的对话；文件始终留在用户目录，不进代码库。
 #
 # 用法：
-#   ./scripts/dev-isolate.sh                          # main 轨，home=~/.dsh-dev-main，端口 3090
-#   TRACK=next ./scripts/dev-isolate.sh               # next 轨，home=~/.dsh-dev-next，端口 3091
+#   ./scripts/dev-isolate.sh                          # 默认：跟 dsh latest，home=~/.dsh-dev-main，端口 3090
+#   TRACK=next ./scripts/dev-isolate.sh               # 任意 npm dist-tag（如 next）→ 端口 3091
 #   PORT=4000 ./scripts/dev-isolate.sh --no-open      # 自定义端口 + 透传 dsh 参数
 #   RESET_PLUGIN_DATA=1 ./scripts/dev-isolate.sh      # 顺带清插件自身数据（会话/sk 不动）
 #
 # 环境变量：
-#   TRACK=main|next         跟哪条 dsh 通道（默认 main）
+#   TRACK=<npm dist-tag>    跟哪个 dsh dist-tag（默认 main = latest）
 #   DSH_VERSION=<版本>      显式钉 dsh 版本（覆盖 TRACK 解析）
-#   DEV_HOME=<目录>         隔离 home（默认 ~/.dsh-dev-<track>；必须在 $HOME 下）
+#   DEV_HOME=<目录>         隔离 home（默认 ~/.dsh-dev-<TRACK>；必须在 $HOME 下）
 #   PROFILE=web             profile 名
-#   PORT=<端口>             web 端口（默认 main=3090 / next=3091）
+#   PORT=<端口>             web 端口（默认 main=3090、其他 dist-tag=3091）
 #   PLUGIN=<目录>           被测插件目录（默认本仓库根；相对路径会转成绝对路径）
 #                           单轨用不上；留给"在别处 checkout 测同一插件"的场景
 #   BUILD=1|0               启动前构建插件（默认 1，避免吃到过期 lib/）
@@ -84,10 +83,10 @@ for a in "$@"; do
 done
 note() { echo "dev-isolate: $*"; }
 
+# 端口：main 用 3090；测别的 dist-tag 用 3091，避免与默认实例撞端口。
 case "${TRACK}" in
   main) PORT="${PORT:-3090}" ;;
-  next) PORT="${PORT:-3091}" ;;
-  *) die "未知 TRACK '${TRACK}'（只支持 main / next）" ;;
+  *) PORT="${PORT:-3091}" ;;
 esac
 # 版本解析库读的是 DSH_TRACK：这里同步一次并 export，两个名字永远一致。
 DSH_TRACK="${TRACK}"
@@ -127,7 +126,7 @@ PLUGIN_VERSION="$(node -p 'require(process.argv[1]).version' "${PLUGIN}/package.
 # pnpm/npm 的 tarball 命名：去 scope 的 `@`，`/` 换成 `-`（@scope/name → scope-name-<版本>.tgz）
 PKG_BASENAME="$(printf '%s' "${PLUGIN_NAME}" | sed 's|^@||; s|/|-|g')-${PLUGIN_VERSION}.tgz"
 if [ "${PLUGIN_VERSION}" != "${VERSION}" ]; then
-  msg="插件版本 ${PLUGIN_VERSION} ≠ dsh ${TRACK} 通道版本 ${VERSION}（约定：两者一致；多半是当前分支与被测通道不匹配）"
+  msg="插件版本 ${PLUGIN_VERSION} ≠ dsh ${TRACK} 解析出的 ${VERSION}（约定：插件 version = dsh latest 的版本号；故意测别的 dist-tag 时可忽略）"
   if [ "${STRICT_VERSION}" = "1" ]; then die "${msg}"; fi
   note "⚠️  ${msg}"
 fi

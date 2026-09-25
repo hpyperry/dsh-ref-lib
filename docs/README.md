@@ -9,9 +9,9 @@
 | `v9-library-availability-design.md` | v9「参考库可用性状态」设计稿（状态探测、失效提示、命令卡片、刷新策略） | 历史记录 |
 | `prototype-session-import.html` | v12「跨会话导入」的静态交互原型（浏览器直接打开） | 参考原型 |
 
-`upgrade-dsh-0.1.7-rc.2.md` 里有两节**至今有效**，被代码和 `AGENTS.md` 引用：
+`upgrade-dsh-0.1.7-rc.2.md` 里有两节**至今有效**，被 `AGENTS.md` 引用：
 
-- **§3.2 B3**——`SESSION_FORMAT_VERSION` 的事实修正（`src/service.ts` 注释引用）；
+- **§3.2 B3**——`SESSION_FORMAT_VERSION` 的事实修正（这类旧日志在 ≥0.1.3-alpha.2 宿主上读取即被整体拒读）；
 - **§6.3**——升级宿主前的旧日志扫描流程（`AGENTS.md` §5 附加约定 2 引用）。
 
 该文里"双轨 / `next` 分支"的描述属当时状态：`next` 轨已归档为 tag `archive/next-0.1.7-rc.2`。

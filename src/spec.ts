@@ -1,16 +1,17 @@
 /**
- * ref-lib 类型与事件声明。
+ * ref-lib 类型声明。
  *
- * 参考库列表是 **per-session** 数据。**v3（2026-08-17 事故修复）起不再写入
- * `ref-lib/set` 会话事件**：harness 加载器不认仓库白名单外的自定义事件类型
- * （且 `session.append()` 无法写入 `ignorable` 标记），会把整条会话日志拒读。
- * v3 状态存于 dsh home 下 sidecar JSON（见 `service.ts`）。下方的
- * `SessionEventMap` 声明仅保留供**旧日志迁移折叠**（`foldRefLibs` 类型安全地
- * 读取历史 `ref-lib/set` 事件）。无全局配置。
+ * 参考库列表是 **per-session** 数据。**v3（2026-08-17 事故修复）起不再向会话日志写入
+ * 自定义事件**：harness 的会话加载器只认仓库白名单 `KNOWN_SESSION_EVENT_TYPES` 内的
+ * 事件类型，白名单外的必须带 `ignorable: true` 信封标记，而 `session.append()` 没有写入
+ * 该标记的途径——写进去会让**整条会话日志被拒读**。v3 起状态存 dsh home 下 sidecar JSON
+ * （见 `service.ts`）。
+ *
+ * v1/v2 用过的 `ref-lib/set` 事件类型**既不声明也不读取**：含它的旧日志在
+ * ≥0.1.3-alpha.2 宿主上读取阶段就被整体拒读（见 `docs/upgrade-dsh-0.1.7-rc.2.md`
+ * §3.2 B3），折叠迁移无从触达，相关内容已删除。本文件只声明运行时数据模型，无全局配置。
  * @module @hpyperry/dsh-ref-lib/src/spec
  */
-
-import type {} from '@deepseek-ai/dsh-session/types'
 
 /** 目录在文件系统上的可用性（最近一次检测快照）。 */
 export type RefLibAvailability = 'available' | 'missing' | 'not-directory'
@@ -30,15 +31,4 @@ export interface RefLibEntry {
   readonly status?: RefLibAvailability
   /** 最近一次检测的 epoch ms；缺省视为"从未检测"（立即探测）。 */
   readonly checkedAt?: number
-}
-
-declare module '@deepseek-ai/dsh-session/types' {
-  interface SessionEventMap {
-    /**
-     * 参考库完整列表快照（log-only，per-session）：**v1/v2 遗留事件，v3 起不再
-     * 写入**——该类型不在 harness 白名单内且无法标记 ignorable，写入会拒读整个
-     * 会话日志。仅供迁移折叠（`foldRefLibs`）。
-     */
-    'ref-lib/set': { libs: readonly RefLibEntry[] }
-  }
 }

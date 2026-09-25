@@ -1,7 +1,7 @@
 import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
-import type { Session, SessionEvent, SessionHeader } from '@deepseek-ai/dsh-session'
+import type { Session, SessionHeader } from '@deepseek-ai/dsh-session'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import {
   extractReadmeTitle,
@@ -17,17 +17,16 @@ import type { RefLibEntry } from '../src/spec.ts'
 
 let counter = 0
 
-/** fake session：内存事件流 + id/header（rc.1 起 Session 经 snapshotEvents() 读事件）。 */
-function fakeSession(options: { parentSession?: string; events?: readonly SessionEvent[] } = {}): Session {
+/** fake session：只提供 id/header（服务读 sidecar 与 header.parentSession，不读会话事件）。 */
+function fakeSession(options: { parentSession?: string } = {}): Session {
   const id = `session-test-${++counter}`
-  const events: SessionEvent[] = options.events === undefined ? [] : [...options.events]
   const header = {
     version: 0,
     id,
     createdAt: Date.now(),
     ...(options.parentSession === undefined ? {} : { parentSession: options.parentSession }),
   } as SessionHeader
-  return { id, header, snapshotEvents: () => events } as unknown as Session
+  return { id, header } as unknown as Session
 }
 
 /** sidecar 文件路径（与服务端同方案：id 编码为路径段 + .json）。 */
@@ -149,19 +148,6 @@ describe('RefLibService v3（per-session sidecar）', () => {
     // 新实例：内存缓存为空，应从文件恢复
     const restarted = new RefLibService(new Context(), { root: tmp })
     expect(restarted.list(session).map((entry) => entry.path)).toEqual([dir])
-  })
-
-  it('迁移：旧日志中的 ref-lib/set 事件折叠一次并落盘 sidecar', async () => {
-    const legacy: SessionEvent[] = [
-      { type: 'ref-lib/set', seq: 0, time: 1, data: { libs: [{ id: 'old-1', path: '/old/lib' }] } } as SessionEvent,
-    ]
-    const session = fakeSession({ events: legacy })
-    const service = new RefLibService(new Context(), { root: tmp })
-    expect(service.list(session).map((entry) => entry.path)).toEqual(['/old/lib'])
-    // 迁移结果已落盘：迁移条目无 status，首访探测（路径不存在 → missing）并升版写回 v3。
-    const stored = await readSidecar(tmp, session.id)
-    expect(stored).toEqual([{ id: 'old-1', path: '/old/lib', status: 'missing', checkedAt: expect.any(Number) }])
-    expect(JSON.parse(await readFile(sidecarPath(tmp, session.id), 'utf8'))).toMatchObject({ version: 3 })
   })
 
   it('惰性兜底：legacy 子会话首次读取时复制父列表并落盘（重新铸造 id）', async () => {

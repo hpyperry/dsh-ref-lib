@@ -102,17 +102,16 @@
 附加约定：
 
 1. **不要往会话日志写白名单外事件**（自定义事件类型无法标记 `ignorable`，会让日志被
-   整体拒读）。插件 per-session 状态存 dsh home 下 sidecar（`dshHomePath()`），旧
-   日志事件仅做一次性迁移折叠。
-2. v1/v2 事故日志的收尾（**含两处事实订正，务必按此理解**）：
-   - 当时给旧日志补 `ignorable: true` 的修补/验证脚本已删除（2026-09-05，确认无残留）。
+   整体拒读）。插件 per-session 状态存 dsh home 下 sidecar（`dshHomePath()`）。
+2. v1/v2 事故日志的收尾（**两处事实订正**）：
+   - 当时给旧日志补 `ignorable: true` 的修补/验证脚本已删除（2026-09-05，确认无残留）；
+     **v1/v2 的 `ref-lib/set` 折叠迁移路径也已删除**——在受支持的宿主上它根本无从触达（见下条）。
    - **订正 1**：`SESSION_FORMAT_VERSION` 在 ≤0.1.2-rc.1 为 0、0.1.3-alpha.2 起为 2、
      0.1.5 起为 3、0.1.7 起为 4；而 **v0→v1 历史迁移边拒绝未知事件类型——即使事件带
      `ignorable: true`**（`packages/session/session-format-v0-to-v1/src/validation.ts`，
      有测试钉死）。所以"补过 ignorable 的旧日志仍可读"只对 **≤0.1.2-rc.1 的宿主**成立：
-     在 ≥0.1.3-alpha.2 宿主上，含 `ref-lib/set` 的 v0 日志**读取阶段就被整体拒读**，
-     `foldRefLibs` 拿不到事件。该路径保留仅为兼容旧宿主，**不是可靠的迁移手段**
-     （`src/service.ts` 已注明）。
+     在 ≥0.1.3-alpha.2 宿主上，含 `ref-lib/set` 的 v0 日志**读取阶段就被整体拒读**——
+     这类旧会话的参考库列表无法迁移，只能重新添加。
    - **订正 2（扫描脚本的假阴性）**：`docs/upgrade-dsh-0.1.7-rc.2.md` §6.3 第一版脚本用
      node `zlib.zstdDecompressSync` 整文件解压，**只解第一帧**，而会话日志是**多帧 zstd
      （每行一帧，实测单文件最多 18,132 帧）** ⇒ 恒报"零命中"。必须用 `zstd -d -c` 重扫：
@@ -127,13 +126,13 @@
 
 ```bash
 ./scripts/dev-isolate.sh              # 跟 dsh npm latest，home=~/.dsh-dev-main，端口 3090
-TRACK=next ./scripts/dev-isolate.sh   # 预留（跟 dsh npm next）；当前无 next 分支，见 §1
+TRACK=next ./scripts/dev-isolate.sh   # 任意 npm dist-tag（默认 main = latest）；端口 3091
 ```
 
 **`scripts/dev-isolate.sh` 每次运行固定做六件事**（全部实现在脚本里，无需手工步骤）：
 
-1. **解析版本**：`TRACK=main|next` → npm `dist-tags.latest|next`（可用 `DSH_VERSION=<版本>` 钉死；
-   也可 `DSH_CACHE_DIR=<目录>` 复用已下载版本，省去每次下载）。
+1. **解析版本**：`TRACK=<npm dist-tag>`（默认 `main` = `latest`）→ 该 tag 当前版本
+   （可用 `DSH_VERSION=<版本>` 钉死；也可 `DSH_CACHE_DIR=<目录>` 复用已下载版本，省去每次下载）。
 2. **校验版本一致**：插件 `package.json` 的 `version` 必须等于该通道的 dsh 版本
    （见 §1 版本号约定）；不等只警告，`STRICT_VERSION=1` 直接报错退出——专治"拿错版本测错通道"。
 3. **构建插件**（`BUILD=1` 默认）：先 `pnpm build`，避免吃到过期 `lib/`（改完源码忘了构建是最常见的假故障）。
@@ -164,8 +163,8 @@ profile 清单里记的是 tarball 路径，所以**建议保留这个 tarball**
 还依赖它（`pack` 模式下会）。
 
 **"两条轨同时跑"的做法已废弃**（`git worktree add ../ref-lib-next next` + `PLUGIN=… TRACK=next`）：
-单轨不需要 worktree。要试别的 dsh 版本，钉一个版本即可（`TRACK=next DSH_VERSION=0.1.7-rc.2 ./scripts/dev-isolate.sh`，
-插件版本不一致只会警告，`STRICT_VERSION=1` 才报错）。
+单轨不需要 worktree。要试别的 dsh 版本，用 `TRACK=<dist-tag>`（或 `DSH_VERSION=<版本>` 钉死）即可；
+插件版本不一致只会警告，`STRICT_VERSION=1` 才报错。
 
 > **只看不启**：`./scripts/dev-isolate.sh --check`（任意轨道）只解析版本、做一致性校验并打印
 > "会装什么/装到哪/哪个端口"，不下载 CLI、不装插件、不启动 web——改脚本或换轨道后先干跑一遍最省事。
@@ -296,13 +295,10 @@ profile 清单里记的是 tarball 路径，所以**建议保留这个 tarball**
   `ctx.apiProxy.sessions.list()`（`dsh-host-apiproxy` 删除）→
   `ctx.sessionController.list({}, signal)` 直接 `{ items }`
   （`@deepseek-ai/dsh-api-session-controller`，`hiddenSessionIds` 降级分支保留）；
-  v1/v2 旧日志折叠改 `session.snapshotEvents()`（rc.1 起 `Session` 无 `.events`；
-  ~~rc.1 读取路径 `ignorable` 豁免与 rc.2 一致，含 ignorable 标记的旧日志仍可读~~
-  **【v18 订正】该结论自 dsh 0.1.3-alpha.2 起不成立**：`SESSION_FORMAT_VERSION` 在该版
-  升到 2，v0 日志须经 v0→v1 历史迁移边，而该边**拒绝未知事件类型——即使带
-  `ignorable: true`**，含 `ref-lib/set` 的旧日志被整体拒读。详见 §5 附加约定 2 与
-  `docs/upgrade-dsh-0.1.7-rc.2.md` §3.2 B3。
-  原修补/验证脚本已删除，见 §5 附加约定 2）。
+  v1/v2 旧日志折叠曾改用 `session.snapshotEvents()`（rc.1 起 `Session` 无 `.events`）；
+  该折叠路径后来**删除**——按 v18 订正，≥0.1.3-alpha.2 宿主上含 `ref-lib/set` 的 v0
+  日志读取阶段即被整体拒读，折叠无从触达。详见 §5 附加约定 2 与
+  `docs/upgrade-dsh-0.1.7-rc.2.md` §3.2 B3。原修补/验证脚本也已删除，见 §5 附加约定 2）。
   client half：`dsh-client-runtime` 删除（6 个类型迁出）——`ClientContext`→cordis
   `Context`、`SessionId`→`dsh-session/types`、`CommandNode/ConversationNode`→
   `dsh-client-ui-conversation/client`、`DirectoryEntry/DirectoryListing`→
@@ -337,8 +333,8 @@ profile 清单里记的是 tarball 路径，所以**建议保留这个 tarball**
   **事实修正（重要）**：`SESSION_FORMAT_VERSION` 在 ≤0.1.2-rc.1 为 0、0.1.3-alpha.2 起为 2、
   0.1.5 起为 3、0.1.7 起为 4；而 v0→v1 **历史迁移边拒绝未知事件类型——即使带
   `ignorable: true`**，故"补过 ignorable 的旧日志仍可读"自 0.1.3-alpha.2 起不再成立
-  （v17 沿革相应表述与 §5 附加约定 2 已订正）；legacy `foldRefLibs` 仅对 ≤0.1.2-rc.1
-  宿主可能生效，保留但已在 `src/service.ts` 注明"不是可靠迁移手段"。
+  （v17 沿革相应表述与 §5 附加约定 2 已订正）；legacy `foldRefLibs` 折叠路径当时即判定不可靠，
+  **现已删除**（在 ≥0.1.3-alpha.2 宿主上无从触达）。
   version 0.17.0 → **`0.1.5-rc.3`**（自 v18 起版本号跟 dsh 走，见 §1 版本号约定）；
   本轨跟 dsh npm `latest`，适用 0.1.5/0.1.6 宿主。**v19（next 轨，版本 `0.1.7-rc.2`，
   适配 dsh 0.1.7+ 的图标改名等）已于 2026-09-25 归档为 tag `archive/next-0.1.7-rc.2`**

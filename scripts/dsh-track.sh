@@ -3,25 +3,24 @@
 #
 # 被 scripts/dsh-local.sh 与 scripts/dev-isolate.sh `source`（不直接执行）。
 #
-# 三条约定（2026-09-25 修订；当前 ref-lib 只跟 dsh npm `latest` 单轨，`next` 通道保留为预留）：
+# 三条约定（2026-09-25 修订；ref-lib 当前只跟 dsh npm `latest`）：
 #   1) **永不全局安装**：一律 `npm install --prefix <目录>`；目录默认是 mktemp 出来的
 #      临时目录（用完即删），也可用 DSH_CACHE_DIR 按版本缓存到用户目录复用。
 #      **任何情况下都不执行 `npm i -g`、不改 PATH、不碰 `which dsh` 那份全局 CLI。**
-#   2) **版本按通道解析**：main → npm `dist-tags.latest`（dsh 主线）；next → `dist-tags.next`。
-#      也可用 DSH_VERSION 显式钉版本。只读 registry 的元数据。
+#   2) **版本按 dist-tag 解析**：`main`（默认）= npm `dist-tags.latest`；也可传任意
+#      dist-tag（如 `next`）。也可用 DSH_VERSION 显式钉版本。只读 registry 的元数据。
 #   3) 本库只管 CLI；隔离 home（含 sk/会话）由调用方管理，本库不读不写。
 
 # registry 元数据地址（可用 DSH_REGISTRY_URL 覆盖，例如内网镜像）。
 DSH_REGISTRY_URL="${DSH_REGISTRY_URL:-https://registry.npmjs.org/@deepseek-ai%2Fdsh}"
 
-# 解析通道名 → 该通道当前的 dsh 版本号（stdout 单行）。
-# 用法：dsh_track_version main|next
+# 解析 npm dist-tag → 该 tag 当前的 dsh 版本号（stdout 单行）。
+# 用法：dsh_track_version main|latest|next|…
 dsh_track_version() {
   local track="$1" tag
   case "${track}" in
-    main) tag=latest ;;
-    next) tag=next ;;
-    *) echo "dsh-track: 未知通道 '${track}'（只支持 main / next）" >&2; return 2 ;;
+    ""|main) tag=latest ;;
+    *) tag="${track}" ;;
   esac
   command -v curl >/dev/null 2>&1 || { echo "dsh-track: 需要 curl" >&2; return 1; }
   command -v node >/dev/null 2>&1 || { echo "dsh-track: 需要 node" >&2; return 1; }
@@ -41,7 +40,7 @@ process.stdin.on("end", () => {
 }
 
 # 解析最终使用的 dsh 版本号（stdout 单行）。
-# 优先 DSH_VERSION（显式钉版本），否则按 DSH_TRACK（默认 main）查 registry。
+# 优先 DSH_VERSION（显式钉版本），否则按 DSH_TRACK（默认 main ⇒ latest）查 registry。
 # 用法：dsh_resolve_version
 dsh_resolve_version() {
   if [ -n "${DSH_VERSION:-}" ]; then
