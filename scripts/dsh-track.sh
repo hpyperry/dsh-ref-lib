@@ -3,7 +3,7 @@
 #
 # 被 scripts/dsh-local.sh 与 scripts/dev-isolate.sh `source`（不直接执行）。
 #
-# 三条约定（2026-09-25 修订，配合 ref-lib 的双轨发布）：
+# 三条约定（2026-09-25 修订；当前 ref-lib 只跟 dsh npm `latest` 单轨，`next` 通道保留为预留）：
 #   1) **永不全局安装**：一律 `npm install --prefix <目录>`；目录默认是 mktemp 出来的
 #      临时目录（用完即删），也可用 DSH_CACHE_DIR 按版本缓存到用户目录复用。
 #      **任何情况下都不执行 `npm i -g`、不改 PATH、不碰 `which dsh` 那份全局 CLI。**
