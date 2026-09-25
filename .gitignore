@@ -7,6 +7,11 @@ lib/
 # 测试临时目录（vitest mkdtemp 于 tests/ 下）
 tests/.tmp-*/
 
+# 隔离联调 home（scripts/dev-isolate.sh 默认 DEV_HOME=<repo>/.dsh-dev/<track>）。
+# 里面有从真实 home 复制来的 sk（.credentials.yaml）与会话副本 —— 必须始终忽略；
+# 脚本启动时会用 `git check-ignore` 实测本规则生效，删掉这行脚本会直接报错退出。
+.dsh-dev/
+
 # pack 模式（scripts/dev-isolate.sh INSTALL_MODE=pack）直接在仓库根打出的 tarball
 *.tgz
 

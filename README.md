@@ -113,14 +113,14 @@ pnpm build       # 构建 node half（tsc）+ client bundle（tsdown）→ lib/
 - **一条命令起联调环境**：`scripts/dev-isolate.sh` 会自动做四件事——按通道拉一份**临时** dsh（不装全局）、把 sk 从真实 home 复制进隔离 home、**重装插件**（吃到当前源码最新构建）、启动 web。真实 `~/.dsh` 全程零写入。
 
   ```bash
-  ./scripts/dev-isolate.sh              # 跟本插件所跟踪的通道（dsh npm next），home=~/.dsh-dev-next，端口 3090
+  ./scripts/dev-isolate.sh              # 跟本插件所跟踪的通道（dsh npm next），home=.dsh-dev/next，端口 3090
   TRACK=main ./scripts/dev-isolate.sh   # 测别的 dist-tag（main = latest，0.1.5/0.1.6 线），端口 3091
   ```
 
-  - 隔离 home 固定在**用户目录**（`~/.dsh-dev-<track>`），脚本会拒绝任何落在代码库内的 home 路径——home 里有 sk 与真实会话，绝不能进仓库。
+  - 隔离 home 放在**仓库内**（`.dsh-dev/<track>`，**已 gitignore**）——这样 agent/CI 也能直接起环境，不依赖 `$HOME` 写权限。home 里有从真实 home 复制来的 sk 与会话副本，脚本启动时用 `git check-ignore` **实测**它确实被忽略，没被忽略就直接报错退出（删掉 `.gitignore` 里那行会立刻失败）。
   - **每次运行只重装插件**；home 里的 `sessions/`、`storages/`、`.credentials.yaml`、`settings.yaml` **一律保留**（想清插件自身数据才用 `RESET_PLUGIN_DATA=1`）。
   - 脚本会校验插件 `version` 是否等于该通道的 dsh 版本（跟版本号约定对齐），不一致会警告；`STRICT_VERSION=1` 直接报错。
-  - 其余开关（`BUILD` / `SEED_CREDENTIALS` / `KEEP_TOOLS` / `DSH_CACHE_DIR` / `PORT` / `DSH_VERSION`）见脚本头注释。想彻底重置：`rm -rf ~/.dsh-dev-next`（**会连会话与 sk 一起删**）。`TRACK` 可传任意 npm dist-tag（默认 `next` = 本插件所跟踪的通道，端口 3090；`main` = `latest`，端口 3091）。
+  - 其余开关（`BUILD` / `SEED_CREDENTIALS` / `KEEP_TOOLS` / `DSH_CACHE_DIR` / `PORT` / `DSH_VERSION`）见脚本头注释。想彻底重置：`rm -rf .dsh-dev/next`（**会连会话与 sk 一起删**）。`TRACK` 可传任意 npm dist-tag（默认 `next` = 本插件所跟踪的通道，端口 3090；`main` = `latest`，端口 3091）。
   - **默认是 link 安装**：profile 指向仓库目录，改代码能热更新。要一份不受仓库影响的冻结副本：`INSTALL_MODE=pack`（先 `pnpm pack` 再装，自带构建产物；tarball 打在仓库根，已 gitignore）。
 - **只想拿一个指定版本的 dsh**：`scripts/dsh-local.sh`（stdout 只打印 bin 路径，非全局安装）。
 

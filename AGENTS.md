@@ -34,6 +34,8 @@
   GUI。要用上 0.1.7-rc.2 需先升全局宿主（`npm i -g @deepseek-ai/dsh@0.1.7-rc.2`）再打新 tarball
   重装，且**用户需在自己终端执行**（agent 沙箱无仓库外写权限）。历史落地过程（L4 备份、按升级
   文档 §6.3 扫描并处置 2 个含 `ref-lib/set` 的旧日志等）见 `docs/upgrade-dsh-0.1.7-rc.2.md` §9。
+  **联调环境不受此限**：隔离 home 现在就在仓库内（`.dsh-dev/<track>`，已 gitignore），
+  agent/CI 可以直接跑 `scripts/dev-isolate.sh`，不需要 `$HOME` 写权限（见 §6）。
 
 ## 2. 开发规范（必须遵守）
 
@@ -102,7 +104,7 @@
 | L0 纯函数单测 | logic/render/parse 等无副作用逻辑，快而密 | `tests/logic.spec.ts` 等 |
 | L1 装配/装载测试 | 真实 `cordis-plugin-loader` 装载插件组合，验证服务/命令注册不炸 | `tests/loader.spec.ts` |
 | L2 **harness 边界回归（事故防线）** | 真实 `SessionStore` + `JsonlSessionPersistence` + 临时根，跑「写会话 → flush → 全新实例冷加载」回路；**任何写入会话日志/持久化的插件必须包含此测试**，断言日志可加载、无白名单外事件；同时用「陷阱守卫」用例固化事故行为（写白名单外事件 → 必须抛 `SessionFormatUnsupportedError`） | `tests/harness-roundtrip.spec.ts` |
-| L3 开发环境隔离 | **开发/联调一律用隔离 `DSH_HOME`**（`~/.dsh-dev-<track>`，在 `$HOME` 下、绝不在代码库内）+ 独立 profile，真实 `~/.dsh` 零接触 | `scripts/dev-isolate.sh`（用法与全部开关见 §6） |
+| L3 开发环境隔离 | **开发/联调一律用隔离 `DSH_HOME`**（`<repo>/.dsh-dev/<track>`，**在仓库内但已 gitignore**，脚本用 `git check-ignore` 实测防 sk 入库）+ 独立 profile，真实 `~/.dsh` 零接触 | `scripts/dev-isolate.sh`（用法与全部开关见 §6） |
 | 通道 | client↔node 数据通道**首选 `ctx.webServer` 自注册 HTTP 路由**（`@deepseek-ai/dsh-host-webserver`，`/api/<plugin>/*`，loopback 护栏，参照 dsh-ssh / dsh-persona-memory 先例）；命令/投影仅在无 webServer 的组合兜底 | `src/routes.ts` + `tests/routes.spec.ts` |
 | L4 实验前备份 | 任何要动真实 `~/.dsh/sessions` 的操作前先**整目录备份**（`cp -R ~/.dsh ~/.dsh.bak-<时间戳>`），操作后确认无误再清理备份 | — |
 
@@ -132,7 +134,7 @@
 ## 6. 开发环境速查（2026-09-25：临时版本 + 插件重装但保留 sk/会话）
 
 ```bash
-./scripts/dev-isolate.sh              # 跟插件所跟踪的通道（dsh npm next），home=~/.dsh-dev-next，端口 3090
+./scripts/dev-isolate.sh              # 跟插件所跟踪的通道（dsh npm next），home=<repo>/.dsh-dev/next，端口 3090
 TRACK=main ./scripts/dev-isolate.sh   # 测别的 dist-tag（main = latest，0.1.5/0.1.6 线）；端口 3091
 ```
 
@@ -143,7 +145,7 @@ TRACK=main ./scripts/dev-isolate.sh   # 测别的 dist-tag（main = latest，0.1
 2. **校验版本一致**：插件 `package.json` 的 `version` 必须等于该通道的 dsh 版本
    （见 §1 版本号约定）；不等只警告，`STRICT_VERSION=1` 直接报错退出——专治"拿错版本测错通道"。
 3. **构建插件**（`BUILD=1` 默认）：先 `pnpm build`，避免吃到过期 `lib/`（改完源码忘了构建是最常见的假故障）。
-4. **准备隔离 home**：`$HOME/.dsh-dev-<track>`；**sk 自动就位**（隔离 home 缺
+4. **准备隔离 home**：`<repo>/.dsh-dev/<track>`（**在仓库内，已 gitignore**）；**sk 自动就位**（隔离 home 缺
    `.credentials.yaml` 时从真实 home 只读复制，权限 600；`SEED_CREDENTIALS=0|force` 可调），
    顺带补一份非密钥 `settings.yaml`。**home 里的 sessions/storages/settings/凭证一律不删。**
 5. **重装插件**（每次运行都 `plugin remove` + `plugin add`）：确保 profile 指向当前源码的最新构建；
@@ -176,16 +178,19 @@ profile 清单里记的是 tarball 路径，所以**建议保留这个 tarball**
 > **只看不启**：`./scripts/dev-isolate.sh --check`（任意轨道）只解析版本、做一致性校验并打印
 > "会装什么/装到哪/哪个端口"，不下载 CLI、不装插件、不启动 web——改脚本或换轨道后先干跑一遍最省事。
 
-**安全护栏（硬性）**：`DEV_HOME` 必须是绝对路径、必须在 `$HOME` 下、**绝不允许落在代码库内**
-（脚本直接报错退出）——隔离 home 里有 sk 与真实会话；脚本内 `export DSH_HOME` 一次，
-避免"某条命令漏带 DSH_HOME → 静默打到真实 `~/.dsh`"这类事故（初版就踩过：启动 server 那条漏了）。
+**安全护栏（硬性）**：`DEV_HOME` 必须是绝对路径、不能等于真实 home 或仓库根本身；默认放
+`<repo>/.dsh-dev/<track>`（**在仓库内，但 `.gitignore` 已排除**）。脚本不靠口头约定防泄漏：
+只要 DEV_HOME 落在仓库内，就 `git check-ignore` **实测**它确实被忽略，没被忽略直接报错退出
+（home 里有 sk 与真实会话副本）；确需放仓库外（如临时目录）设 `DEV_HOME_ANYWHERE=1` 跳过校验。
+脚本内 `export DSH_HOME` 一次，避免"某条命令漏带 DSH_HOME → 静默打到真实 `~/.dsh`"这类事故
+（初版就踩过：启动 server 那条漏了）。
 
 **只想拿一个指定版本的 dsh**：`scripts/dsh-local.sh`（stdout 只打印 bin 路径；默认装到
 `mktemp` 临时目录 = 用完即弃，`DSH_CACHE_DIR` 改成按版本缓存；**永不 `npm i -g`**）。
 版本解析与安装逻辑在共用库 `scripts/dsh-track.sh`（**刻意与 `dsh-local.sh` 平级**：
   `.gitignore` 的 `lib/` 会匹配任意层级的 `lib/` 目录，放 `scripts/lib/` 会被静默忽略而漏提交）。
 
-- 彻底重置隔离环境：`rm -rf ~/.dsh-dev-next`（**会话与 sk 会一起删**，所以脚本平时不自动删）。
+- 彻底重置隔离环境：`rm -rf .dsh-dev/next`（**会话与 sk 会一起删**，所以脚本平时不自动删）。
 - 热更新：`src/client/*` 改动 `pnpm build:client` 后浏览器 ≤0.5s 自动更新；node half
   改动 `pnpm build:node` 后必须重启 `dsh web`。
 - shell 注意：macOS 自带 bash 3.2 把多字节字符当变量名字符，变量后紧跟中文标点必须写
@@ -383,4 +388,6 @@ profile 清单里记的是 tarball 路径，所以**建议保留这个 tarball**
     Release，**预发布版本号自动建为 pre-release**；内置「发布到 npm」步骤（按版本号
     选 `next`/`latest` dist-tag），配置 `NPM_TOKEN` secret 后自动生效。
   - `scripts/dev-isolate.sh`：默认 `TRACK` 由 `main`(=latest) 改为 **`next`**（= 插件
-    所跟踪通道），home 随之变为 `~/.dsh-dev-next`、端口 3090；测老线用 `TRACK=main`（3091）。
+    所跟踪通道）；隔离 home 从 `~/.dsh-dev-<track>` 改为仓库内 **`.dsh-dev/<track>`**（已
+    gitignore，脚本用 `git check-ignore` 实测）——这样 agent/CI 也能直接起这个环境；
+    端口 3090；测老线用 `TRACK=main`（3091）。

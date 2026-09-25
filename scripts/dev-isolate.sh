@@ -9,17 +9,19 @@
 #   2) **CLI 用临时下载**：每次运行 `npm install --prefix <mktemp 临时目录>` 拉一份该版本的
 #      dsh，**不装全局、不动 PATH、不碰 `which dsh` 那份**；退出时自动删除该临时目录
 #      （KEEP_TOOLS=1 保留，DSH_CACHE_DIR=… 改成按版本缓存复用）。
-#   3) **home 隔离在用户目录**：默认 `$HOME/.dsh-dev-<TRACK>`（main ⇒ `~/.dsh-dev-main`）；
-#      **拒绝**落在代码库内的 home——home 里有 sk（`.credentials.yaml`）与真实会话，绝不能进仓库。
+#   3) **home 隔离在仓库内**：默认 `<repo>/.dsh-dev/<TRACK>`（**已 gitignore**）。
+#      放仓库内是为了 agent/CI 也能起这个环境（沙箱通常只有仓库写权限）；代价是
+#      home 里躺着 sk（`.credentials.yaml`）与真实会话，所以脚本用 `git check-ignore`
+#      **实测**它确实被忽略，没被忽略就直接报错退出——不靠口头约定防泄漏。
 #   4) **每次重装插件、其余一律保留**：每次运行都 `plugin remove` + `plugin add`（吃到当前
 #      源码最新构建），但**从不删除** home 里的 sessions / storages / settings.yaml /
 #      `.credentials.yaml` / `.anonymous-user-id`；插件自身数据默认也保留，只有显式
 #      RESET_PLUGIN_DATA=1 才清。
 #   5) **sk 自动就位**：隔离 home 缺凭证时，从真实 home 只读复制 `.credentials.yaml`
-#      （权限 600）过去，让隔离环境也能真的对话；文件始终留在用户目录，不进代码库。
+#      （权限 600）过去，让隔离环境也能真的对话；文件始终留在已忽略的 `.dsh-dev/` 下，不进 git。
 #
 # 用法：
-#   ./scripts/dev-isolate.sh                          # 默认：跟插件所跟踪的 dsh 通道 next，home=~/.dsh-dev-next，端口 3090
+#   ./scripts/dev-isolate.sh                          # 默认：跟插件所跟踪的 dsh 通道 next，home=<repo>/.dsh-dev/next，端口 3090
 #   TRACK=main ./scripts/dev-isolate.sh               # 任意 npm dist-tag（如 main = latest，0.1.5/0.1.6 线）→ 端口 3091
 #   PORT=4000 ./scripts/dev-isolate.sh --no-open      # 自定义端口 + 透传 dsh 参数
 #   RESET_PLUGIN_DATA=1 ./scripts/dev-isolate.sh      # 顺带清插件自身数据（会话/sk 不动）
@@ -27,7 +29,8 @@
 # 环境变量：
 #   TRACK=<npm dist-tag>    跟哪个 dsh dist-tag（默认 next = 插件所跟踪的通道；main = latest）
 #   DSH_VERSION=<版本>      显式钉 dsh 版本（覆盖 TRACK 解析）
-#   DEV_HOME=<目录>         隔离 home（默认 ~/.dsh-dev-<TRACK>；必须在 $HOME 下）
+#   DEV_HOME=<目录>         隔离 home（默认 <repo>/.dsh-dev/<TRACK>；在仓库内必须已被 git 忽略）
+#   DEV_HOME_ANYWHERE=1     允许 DEV_HOME 落在仓库外（跳过 git 忽略校验；默认 0）
 #   PROFILE=web             profile 名
 #   PORT=<端口>             web 端口（默认 next=3090、其他 dist-tag=3091）
 #   PLUGIN=<目录>           被测插件目录（默认本仓库根；相对路径会转成绝对路径）
@@ -48,7 +51,7 @@
 #   REAL_HOME=<目录>        真实 dsh home（默认 ~/.dsh，只读用于取 sk）
 #   STRICT_VERSION=1        插件版本 ≠ dsh 版本时直接报错（默认只警告）
 #
-# 清理：彻底重置 = `rm -rf ~/.dsh-dev-main`（**会话与 sk 会一起没**，所以本脚本平时不自动删）。
+# 清理：彻底重置 = `rm -rf <repo>/.dsh-dev/next`（**会话与 sk 会一起没**，所以本脚本平时不自动删）。
 #       真实 `~/.dsh` 全程零写入。
 set -euo pipefail
 
@@ -91,25 +94,31 @@ esac
 # 版本解析库读的是 DSH_TRACK：这里同步一次并 export，两个名字永远一致。
 DSH_TRACK="${TRACK}"
 export DSH_TRACK
-DEV_HOME="${DEV_HOME:-${HOME}/.dsh-dev-${TRACK}}"
+DEV_HOME="${DEV_HOME:-${PLUGIN}/.dsh-dev/${TRACK}}"
 
-# ── 0) home 安全护栏：绝对路径 + 在 $HOME 下 + 绝不在代码库里（sk/会话防泄漏）──
+# ── 0) home 安全护栏：绝对路径 + 不等于真实 home/仓库根 + 在仓库内必须已被 git 忽略 ──
+# home 里有 sk（.credentials.yaml）与真实会话；放进仓库就必须真的被 .gitignore 排除，
+# 否则一句 `git add -A` 就把 sk 提交了。这里用 `git check-ignore` 实测，不靠口头约定。
 case "${DEV_HOME}" in
   /*) ;;
   *) die "DEV_HOME 必须是绝对路径（收到 '${DEV_HOME}'）" ;;
 esac
-case "${DEV_HOME}" in
-  "${PLUGIN}"|"${PLUGIN}"/*)
-    die "DEV_HOME 落在被测插件目录内（${DEV_HOME}）——隔离 home 含 sk 与真实会话，绝不能进代码库" ;;
-esac
-if [ "${DEV_HOME_ANYWHERE:-0}" != "1" ]; then
-  case "${DEV_HOME}" in
-    "${HOME}"/*) ;;
-    *) die "DEV_HOME 必须在 ${HOME} 下（收到 ${DEV_HOME}）；确需放别处设 DEV_HOME_ANYWHERE=1" ;;
-  esac
-fi
 if [ "${DEV_HOME}" = "${REAL_HOME}" ]; then
   die "DEV_HOME 不能等于真实 home（${REAL_HOME}）"
+fi
+if [ "${DEV_HOME}" = "${PLUGIN}" ]; then
+  die "DEV_HOME 不能等于被测插件目录（${PLUGIN}）"
+fi
+if [ "${DEV_HOME_ANYWHERE:-0}" = "1" ]; then
+  note "⚠️  DEV_HOME_ANYWHERE=1：跳过 git 忽略校验（${DEV_HOME}）"
+else
+  case "${DEV_HOME}" in
+    "${PLUGIN}"/*) ;;
+    *) die "DEV_HOME 必须在仓库内（默认 <repo>/.dsh-dev/<track>，收到 ${DEV_HOME}）；确需放别处设 DEV_HOME_ANYWHERE=1" ;;
+  esac
+  command -v git >/dev/null 2>&1 || die "需要 git 校验 DEV_HOME 已被忽略（或设 DEV_HOME_ANYWHERE=1 跳过）"
+  git -C "${PLUGIN}" check-ignore -q "${DEV_HOME}" \
+    || die "DEV_HOME 在仓库内但**没有被 git 忽略**（${DEV_HOME}）——home 含 sk 与真实会话，先把它加进 .gitignore"
 fi
 
 # 关键：在脚本层面 export，而不是逐条命令加前缀——任何一条漏加都会静默打到真实 home
@@ -169,7 +178,7 @@ elif [ -f "${DEV_HOME}/.credentials.yaml" ] && [ "${SEED_CREDENTIALS}" != "force
   note "sk 凭证已存在，保留不动（要覆盖用 SEED_CREDENTIALS=force）"
 elif [ -f "${REAL_HOME}/.credentials.yaml" ]; then
   install -m 600 "${REAL_HOME}/.credentials.yaml" "${DEV_HOME}/.credentials.yaml"
-  note "sk 凭证已就位（从 ${REAL_HOME} 只读复制，权限 600；留在用户目录，不进代码库）"
+  note "sk 凭证已就位（从 ${REAL_HOME} 只读复制，权限 600；落在已 gitignore 的 ${DEV_HOME}，不进 git）"
 else
   note "⚠️  ${REAL_HOME} 没有 .credentials.yaml，隔离环境可能无法对话（可手工放一份到 ${DEV_HOME}）"
 fi
