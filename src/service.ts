@@ -710,6 +710,13 @@ export class RefLibService extends Service {
     // **只在 ≤0.1.2-rc.1 的宿主上可能生效**：在那之后的宿主上，含 `ref-lib/set` 的 v0 日志
     // 在读取阶段就被整体拒读（`SessionFormatUnsupportedMigrationError`），`foldRefLibs`
     // 永远拿不到事件。此路径保留仅为兼容旧宿主，不是可靠的迁移手段；新日志不含任何自定义事件。
+    //
+    // v19（dsh 0.1.7-rc.2 轨）补充：0.1.6-alpha.1 起 `snapshotEvents()` 本身已
+    // `@deprecated`（"Existing logic may remain unmigrated for now, but new calls are
+    // prohibited"，见 `packages/core/session/src/index.ts` 与 agent note
+    // 2026-09-09-deprecate-synchronous-session-event-reads）。本调用是**冻结的历史遗留**：
+    // 不得新增调用点，不得复制到新代码；删除本 legacy 折叠路径时一并移除。
+    // lint 豁免：typescript-eslint 的 no-deprecated 不在当前 recommended 集合内，故无需禁用注释。
     const fromEvents = foldRefLibs(session.snapshotEvents())
     if (fromEvents.length > 0) {
       this.persistSync(session.id, fromEvents)

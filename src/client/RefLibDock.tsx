@@ -22,7 +22,9 @@ import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots
 import type { DirectoryListing } from '@deepseek-ai/dsh-host-directory-picker/types'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { ChatSnapshot } from '@deepseek-ai/dsh-client-ui-chat/client'
-import { IconFolderOpen16 } from '@deepseek-ai/dsh-client-ui-primitives'
+// v19（dsh 0.1.7+）：ui-primitives 图标改名 <Glyph><Size> → <Glyph><Weight>；
+// 本文件用的是 Regular（1px 描边 = 旧 *16/*14 的等价视觉，Medium 是 1.3px 强调）。
+import { IconFolderOpenRegular } from '@deepseek-ai/dsh-client-ui-primitives'
 import { Button, Modal } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ImportPlan } from '../logic.ts'
 import type { RefLibEntry } from '../spec.ts'
@@ -344,7 +346,7 @@ export function RefLibDock(props: RefLibDockProps): ReactElement {
           }}
         >
           <span className="reflib-chipIcon">
-            <IconFolderOpen16 size={14} />
+            <IconFolderOpenRegular size={14} />
           </span>
           <span className="reflib-chipLabel">{t('dock.label')}</span>
           {availableCount > 0 && <span className="reflib-chipBadge">{availableCount}</span>}

@@ -159,7 +159,38 @@
    （v17 沿革相应表述与 §5 附加约定 2 已订正）；legacy `foldRefLibs` 仅对 ≤0.1.2-rc.1
    宿主可能生效，保留但已在 `src/service.ts` 注明"不是可靠迁移手段"。
    version 0.17.0 → 0.18.0（**`latest` 轨**：0.1.5/0.1.6 宿主）；0.1.7+ 宿主走新增的
-   `next` 分支（v19））。
+   `next` 分支（v19））→
+   v19（**`next` 轨：dsh 0.1.7-rc.2 兼容**，本分支自 v18 分出，v18 的全部改动一并在内）：
+   目标宿主 = npm `next` 通道 / checkout HEAD（`dsh-v0.1.7-rc.2`，2026-09-25）。
+   - **图标改名（本轨唯一的 client 破坏）**：ui-primitives 自 **0.1.7-alpha.1** 起把共享图标
+     由 `Icon<Glyph><Size>` 改为 `Icon<Glyph><Weight>`（提交 `4937343a5e`，决策见
+     `.agents/notes/implemented/architecture/2026-09-16-size-neutral-product-icon-weights.md`）。
+     逐 tag 实测：0.1.6-alpha.2 及以前 `Icon*16` 有、`*Regular` 无；0.1.7-alpha.1 起反过来
+     ——**不存在两者并存的版本**。已把 **13 个图标 / 52 处 / 5 个 client 文件**全部改为
+     `*Regular`（1px 描边 = 旧 `*16`/`*14` 的等价视觉；`Medium` 是 1.3px 强调，**不要用**）。
+     图标是 value import 且 ui-primitives 是宿主 seed 词 → 旧名在 0.1.7 上是 `undefined`，
+     属白屏级错误，必须改。三处映射易错点：`IconFolderOpen16 → IconFolderOpenRegular`
+     （**无 `Outline` 中缀**）、`IconChevronRightOutline14 → …OutlineRegular`（默认尺寸仍在
+     artwork 里，`size` prop 全部不用动）、`IconFolderClose16 → IconFolderCloseRegular`。
+   - **peer**：14 条 dsh-* 由 `>=0.1.5-rc.2 <0.1.7-alpha.1` 改为 **`^0.1.7-rc.2`**
+     （0.1.7 宿主上通过；0.1.5/0.1.6 宿主上 **0.1.7 之前的宿主没有 peer 闸门**，
+     装错会因图标缺失而白屏 → README 已写明"0.19.x 只装 0.1.7+ 宿主"）。
+     devDeps 7 包精确 pin `0.1.7-rc.2`；cordis peer `^4.0.1`（0.1.7 vendored 4.0.4 覆盖）。
+   - **`SESSION_FORMAT_VERSION` = 4**（0.1.7 起）→ 旧日志处理同 v18 订正（v0→v1 迁移边拒绝
+     未知事件即使带 ignorable），且 §5 附加约定 2 的解压扫描同样适用（`session.v*.jsonl.zstd`）。
+   - **`session.snapshotEvents()` 自 0.1.6-alpha.1 起 `@deprecated`**（"new calls are
+     prohibited"）→ `src/service.ts` 的 legacy 折叠调用点已加"冻结注释"：不得新增调用点、
+     不得复制，删除 legacy 路径时一并移除。
+   - **`SessionSummary` 新增必填 `agentAvailable: boolean`**（0.1.5 → 0.1.7 之间）：生产只读
+     `origin`/`blank` 不受影响；`tests/service.spec.ts` 的 stub 目前以 `as never` 兜住，
+     去掉断言时须补该字段。
+   - **本次未采用的平台新能力**（评估见 `docs/upgrade-dsh-0.1.7-rc.2.md` §3.4/§7.3，另行排期）：
+     `ctx.sidebarRightTabs`（右栏 tab，0.1.5-alpha.1 起在位，可把 Modal 面板升级为常驻面板）、
+     `workspaceRegistry.pinnedSessionIds`（导入来源排序与侧边栏同口径）、
+     `ctx.uiWorkspace.createDirectory`（目录浏览器"新建文件夹"）、
+     `ctx.inputTriggers`（`/ref-lib` 参数补全）。`ui-dockkit` 虽进 seed 表但自述
+     "not as a stable API"，**不要依赖**。
+   - version 0.18.0 → **0.19.0**（`next` 轨）。
 
 ## 2. 开发规范（必须遵守）
 

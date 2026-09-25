@@ -20,11 +20,13 @@
 
 import { useEffect, useState } from 'react'
 import type { ReactElement } from 'react'
+// v19（dsh 0.1.7+）：ui-primitives 图标改名 <Glyph><Size> → <Glyph><Weight>；
+// 本文件用的是 Regular（1px 描边 = 旧 *16/*14 的等价视觉，Medium 是 1.3px 强调）。
 import {
   Button,
-  IconFolderOpen16,
-  IconLoadingOutline16,
-  IconWarningOutline16,
+  IconFolderOpenRegular,
+  IconLoadingOutlineRegular,
+  IconWarningOutlineRegular,
   Modal,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
@@ -337,7 +339,7 @@ export function RefLibImport(props: RefLibImportProps): ReactElement {
       <div className="reflib-import">
         {flowError !== null && (
           <div className="reflib-error" role="alert">
-            <IconWarningOutline16 size={14} className="reflib-errorIcon" />
+            <IconWarningOutlineRegular size={14} className="reflib-errorIcon" />
             <span>{flowError}</span>
           </div>
         )}
@@ -346,12 +348,12 @@ export function RefLibImport(props: RefLibImportProps): ReactElement {
           <>
             {groups === null ? (
               <div className="reflib-status" role="status">
-                <IconLoadingOutline16 size={20} className="reflib-spin reflib-statusIcon" />
+                <IconLoadingOutlineRegular size={20} className="reflib-spin reflib-statusIcon" />
                 <span className="reflib-statusText">{t('import.sessions.loading')}</span>
               </div>
             ) : groups.length === 0 ? (
               <div className="reflib-status">
-                <IconFolderOpen16 size={22} className="reflib-statusIcon" />
+                <IconFolderOpenRegular size={22} className="reflib-statusIcon" />
                 <span className="reflib-statusText">{t('import.empty')}</span>
               </div>
             ) : (
@@ -383,12 +385,12 @@ export function RefLibImport(props: RefLibImportProps): ReactElement {
                         <div className="reflib-importGroupBody">
                           {loading ? (
                             <div className="reflib-status" role="status">
-                              <IconLoadingOutline16 size={16} className="reflib-spin reflib-statusIcon" />
+                              <IconLoadingOutlineRegular size={16} className="reflib-spin reflib-statusIcon" />
                               <span className="reflib-statusText">{t('import.sessions.loading')}</span>
                             </div>
                           ) : rows !== undefined && rows.length === 0 ? (
                             <div className="reflib-status">
-                              <IconFolderOpen16 size={18} className="reflib-statusIcon" />
+                              <IconFolderOpenRegular size={18} className="reflib-statusIcon" />
                               <span className="reflib-statusText">{t('import.empty')}</span>
                             </div>
                           ) : (
@@ -562,7 +564,7 @@ export function RefLibImport(props: RefLibImportProps): ReactElement {
                 return (
                   <div key={path} className="reflib-importConflict">
                     <div className="reflib-importConflictHead">
-                      <IconWarningOutline16 size={13} className="reflib-importConflictWarn" />
+                      <IconWarningOutlineRegular size={13} className="reflib-importConflictWarn" />
                       <span>{reason}</span>
                       <span className="reflib-importConflictPath">{path}</span>
                     </div>
