@@ -303,6 +303,26 @@ TRACK=next ./scripts/dev-isolate.sh   # next 轨（跟 dsh npm next），  home=
 6. **启动 web**：`--port` 按轨道默认（main 3090 / next 3091），退出时删除本次临时下载的 dsh
    （`KEEP_TOOLS=1` 保留）。
 
+**插件怎么装（`INSTALL_MODE`，默认 `link`）**——这决定"切分支会不会影响正在跑的环境"：
+
+| 模式 | 装的是什么 | 切分支/改代码 | 热更新 |
+| --- | --- | --- | --- |
+| `link`（默认） | profile 里 link 到仓库目录 | **会影响正在跑的环境**（切分支=换实现） | 有（`pnpm build:client` 后刷新即生效） |
+| `pack` | 先 `pnpm pack` 打成 tarball 再装，profile 里是**独立副本**（自带 `lib/`） | 不影响，删仓库都不影响 | 无 |
+
+```bash
+INSTALL_MODE=pack TRACK=next ./scripts/dev-isolate.sh   # 冻结副本，适合"边跑边改别的分支"
+```
+tarball 落在 `~/.dsh-pkgs/<版本>/`（`PKG_ROOT` 可改）；profile 清单里记的是 tarball 路径，
+所以**建议保留这些 tarball**（删了当前安装仍能用，但之后该 profile 再跑 `pnpm install` 会缺源）。
+
+**两条轨同时跑（都保留热更新）**：给另一轨开 worktree，各用各的目录与 `lib/`：
+
+```bash
+git worktree add ../ref-lib-next next
+PLUGIN=../ref-lib-next TRACK=next ./scripts/dev-isolate.sh    # main 轨仍在主 checkout 跑 3090
+```
+
 > **只看不启**：`./scripts/dev-isolate.sh --check`（任意轨道）只解析版本、做一致性校验并打印
 > "会装什么/装到哪/哪个端口"，不下载 CLI、不装插件、不启动 web——改脚本或换轨道后先干跑一遍最省事。
 

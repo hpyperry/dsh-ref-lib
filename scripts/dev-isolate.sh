@@ -30,10 +30,19 @@
 #   DEV_HOME=<目录>         隔离 home（默认 ~/.dsh-dev-<track>；必须在 $HOME 下）
 #   PROFILE=web             profile 名
 #   PORT=<端口>             web 端口（默认 main=3090 / next=3091）
-#   PLUGIN=<目录>           被测插件目录（默认本仓库根）
+#   PLUGIN=<目录>           被测插件目录（默认本仓库根；相对路径会转成绝对路径）
+#                           两轨同时跑的做法：给另一轨开 worktree 再指过来
+#                             git worktree add ../ref-lib-next next
+#                             PLUGIN=../ref-lib-next TRACK=next ./scripts/dev-isolate.sh
 #   BUILD=1|0               启动前构建插件（默认 1，避免吃到过期 lib/）
 #   SEED_CREDENTIALS=1|0|force  复制真实 home 的 sk 进隔离 home（默认 1=仅缺失时）
 #   SEED_SETTINGS=1|0       顺带复制非密钥 settings.yaml（默认 1=仅缺失时）
+#   INSTALL_MODE=link|pack  插件安装方式（默认 link）：
+#       link —— 把仓库目录 link 进 profile：改源码 + `pnpm build:client` 浏览器即时生效，
+#               但**该环境与当前工作区绑定**（切分支/改代码会影响它）。
+#       pack —— 先 `pnpm pack` 打成 tarball 再安装：profile 里是**冻结副本**，
+#               之后切分支、甚至删掉仓库都不影响这个环境（代价：没有热更新）。
+#   PKG_ROOT=<目录>         pack 模式的 tarball 存放根（默认 ~/.dsh-pkgs/<版本>/）
 #   RESET_PLUGIN_DATA=1     清空插件自身数据目录（默认 0）
 #   KEEP_TOOLS=1            保留本次临时下载的 dsh（默认 0=退出即删）
 #   DSH_CACHE_DIR=<目录>    改成按版本缓存复用（不再每次重新下载）
@@ -48,18 +57,25 @@ SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib/dsh-track.sh
 . "${SELF_DIR}/dsh-track.sh"
 
-PLUGIN="${PLUGIN:-$(cd "${SELF_DIR}/.." && pwd)}"
+PLUGIN_RAW="${PLUGIN:-$(cd "${SELF_DIR}/.." && pwd)}"
+PLUGIN="$(cd "${PLUGIN_RAW}" 2>/dev/null && pwd)" || { echo "dev-isolate: ✖ PLUGIN 目录不存在：${PLUGIN_RAW}" >&2; exit 1; }
 TRACK="${TRACK:-main}"
 PROFILE="${PROFILE:-web}"
 BUILD="${BUILD:-1}"
 SEED_CREDENTIALS="${SEED_CREDENTIALS:-1}"
 SEED_SETTINGS="${SEED_SETTINGS:-1}"
+INSTALL_MODE="${INSTALL_MODE:-link}"
+PKG_ROOT="${PKG_ROOT:-${HOME}/.dsh-pkgs}"
 RESET_PLUGIN_DATA="${RESET_PLUGIN_DATA:-0}"
 KEEP_TOOLS="${KEEP_TOOLS:-0}"
 REAL_HOME="${REAL_HOME:-${HOME}/.dsh}"
 STRICT_VERSION="${STRICT_VERSION:-0}"
 
 die() { echo "dev-isolate: ✖ $*" >&2; exit 1; }
+case "${INSTALL_MODE}" in
+  link|pack) ;;
+  *) echo "dev-isolate: ✖ 未知 INSTALL_MODE '${INSTALL_MODE}'（只支持 link / pack）" >&2; exit 2 ;;
+esac
 CHECK_ONLY=0
 for a in "$@"; do
   if [ "$a" = "--check" ]; then CHECK_ONLY=1; fi
@@ -129,7 +145,7 @@ if [ "${CHECK_ONLY}" = "1" ]; then
   note "干跑结束（--check）：不装 CLI、不装插件、不启动 web"
   note "  通道=${TRACK}  dsh 版本=${VERSION}  插件版本=${PLUGIN_VERSION}"
   note "  隔离 home=${DEV_HOME}  端口=${PORT}  profile=${PROFILE}"
-  note "  构建=${BUILD}  重装插件=每次  清插件数据=${RESET_PLUGIN_DATA}"
+  note "  构建=${BUILD}  安装方式=${INSTALL_MODE}  重装插件=每次  清插件数据=${RESET_PLUGIN_DATA}"
   exit 0
 fi
 
@@ -189,14 +205,33 @@ note "dsh CLI：${DSH_BIN}（版本 ${VERSION}；临时目录 ${TOOLS_DIR}）"
 run_dsh() { "${DSH_BIN}" "$@"; }   # DSH_HOME 已 export
 
 # ── 5) 每次重装插件；其余数据（会话/sk/设置）一律保留 ────────────────────────
-note "重装插件：${PLUGIN_NAME} ← ${PLUGIN}"
+INSTALL_SPEC="${PLUGIN}"
+if [ "${INSTALL_MODE}" = "pack" ]; then
+  # 冻结安装：先打包（`pnpm pack` 会跑 prepare=构建，tarball 内含 lib/），再装 tarball。
+  # 之后 profile 里是独立副本，切分支/改源码/删仓库都不影响这个环境。
+  PKG_DIR="${PKG_ROOT}/${VERSION}"
+  mkdir -p "${PKG_DIR}"
+  note "打包：pnpm pack → ${PKG_DIR}"
+  if ! INSTALL_SPEC="$(cd "${PLUGIN}" && pnpm pack --pack-destination "${PKG_DIR}" 2>/dev/null | tail -1)"; then
+    die "打包失败（先跑 pnpm build 确认能构建）"
+  fi
+  [ -f "${INSTALL_SPEC}" ] || die "打包产物不存在：${INSTALL_SPEC}"
+  note "tarball：${INSTALL_SPEC}（$(du -h "${INSTALL_SPEC}" | cut -f1)）"
+fi
+
+note "重装插件：${PLUGIN_NAME} ← ${INSTALL_SPEC}（模式 ${INSTALL_MODE}）"
 if ! run_dsh plugin --profile "${PROFILE}" remove "${PLUGIN_NAME}" >/dev/null 2>&1; then
   note "（此前未安装或移除失败，继续安装）"
 fi
-if ! run_dsh plugin --profile "${PROFILE}" add "${PLUGIN}" >/dev/null 2>&1; then
-  die "插件安装失败——手工复现：DSH_HOME=${DEV_HOME} ${DSH_BIN} plugin --profile ${PROFILE} add ${PLUGIN}"
+if ! run_dsh plugin --profile "${PROFILE}" add "${INSTALL_SPEC}" >/dev/null 2>&1; then
+  die "插件安装失败——手工复现：DSH_HOME=${DEV_HOME} ${DSH_BIN} plugin --profile ${PROFILE} add ${INSTALL_SPEC}"
 fi
-note "插件已安装（每次运行都重装，确保吃到当前分支最新构建）"
+if [ "${INSTALL_MODE}" = "pack" ]; then
+  installed_path="$(cd "${DEV_HOME}/profiles/${PROFILE}/node_modules/${PLUGIN_NAME}" 2>/dev/null && pwd -P || echo '')"
+  note "插件已安装（冻结副本）：${installed_path}"
+else
+  note "插件已安装（link 到仓库，切分支会影响它；要冻结请用 INSTALL_MODE=pack）"
+fi
 
 PLUGIN_DATA_DIR="${DEV_HOME}/plugin-data/$(basename "${PLUGIN}")"
 if [ "${RESET_PLUGIN_DATA}" = "1" ]; then
