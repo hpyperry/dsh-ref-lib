@@ -115,7 +115,11 @@
    `ctx.sessionController.list({}, signal)` 直接 `{ items }`
    （`@deepseek-ai/dsh-api-session-controller`，`hiddenSessionIds` 降级分支保留）；
    v1/v2 旧日志折叠改 `session.snapshotEvents()`（rc.1 起 `Session` 无 `.events`；
-   rc.1 读取路径 `ignorable` 豁免与 rc.2 一致，含 ignorable 标记的旧日志仍可读——
+   ~~rc.1 读取路径 `ignorable` 豁免与 rc.2 一致，含 ignorable 标记的旧日志仍可读~~
+   **【v18 订正】该结论自 dsh 0.1.3-alpha.2 起不成立**：`SESSION_FORMAT_VERSION` 在该版
+   升到 2，v0 日志须经 v0→v1 历史迁移边，而该边**拒绝未知事件类型——即使带
+   `ignorable: true`**，含 `ref-lib/set` 的旧日志被整体拒读。详见 §5 附加约定 2 与
+   `docs/upgrade-dsh-0.1.7-rc.2.md` §3.2 B3。
    原修补/验证脚本已删除，见 §5 附加约定 2）。
    client half：`dsh-client-runtime` 删除（6 个类型迁出）——`ClientContext`→cordis
    `Context`、`SessionId`→`dsh-session/types`、`CommandNode/ConversationNode`→
@@ -130,7 +134,32 @@
    session-controller/ui-chat/ui-workspace；api-remotes 因 npm 缺 client 类型不加）、
    dev 新增 ui-renderer/host-directory-picker；version 0.15.0 → 0.17.0（v17 发布号
    定版；落地代码先经 0.16.0）；多版本兼容
-   双轨矩阵与正式环境切换流程见升级文档 §5/§6）。
+   双轨矩阵与正式环境切换流程见升级文档 §5/§6）→
+   v18（**依赖基线升级 dsh 0.1.2-rc.1 → 0.1.5-rc.2（npm `latest`）+ 双分支轨道建立**：
+   评估与迁移方案见 `docs/upgrade-dsh-0.1.7-rc.2.md`（该文档本次评估同时覆盖 0.1.7-rc.2 线）。
+   实测结论：0.1.2-rc.1 → 0.1.7-rc.2 共 3432 提交，但落到本插件消费面的破坏**只有两处**
+   ——① ui-primitives 图标改名（`Icon*<Size>` → `Icon*<Weight>`，**0.1.7-alpha.1 起**；
+   0.1.5/0.1.6 尚无此改动，故本轨不受影响）；② `dsh-session-persistence-jsonl`
+   自 **0.1.3-alpha.2** 起**只提供默认导出**（0.1.2-rc.1 及以前两者都有）——本轨据此改
+   `tests/harness-roundtrip.spec.ts` 的导入为 `default ?? namespace` 双形态兼容写法
+   （2026-09-25 探针实测：旧写法在 0.1.5-rc.2 依赖族上 `JsonlSessionPersistence is not a
+   constructor`，L2 两道防线整体失效）。
+   peer 由 `^0.1.2-rc.1` 改为 **`>=0.1.5-rc.2 <0.1.7-alpha.1`**（14 条 dsh-* peer 同值）：
+   上界排除 0.1.7+，使插件在 0.1.7+ 宿主上被 harness 的 peer 兼容闸门**干净跳过并在 stderr
+   打印原因**，而不是静默加载后因图标名缺失白屏——闸门见
+   `packages/boot/app-boot/src/plugin-compatibility.ts`（不满足的插件行置 `disabled`，
+   非致命，profile 仍可启动；可用 `dsh plugin allow-version` 精确豁免）。
+   devDeps 7 包精确 pin `0.1.5-rc.2`；peer 集合与 cordis `^4.0.1`（0.1.5-rc.2 vendored
+   4.0.2，npm latest 4.0.4，均在范围内）不变。新增 `dsh.client.external: []`
+   （显式声明"基线之外无额外 module-table 请求"）；tsdown `PLATFORM_EXTERNALS` 移除
+   从不在宿主 seed 表里的 `dsh-client-locale/client`（此前仅因 type-only 擦除而无害）。
+   **事实修正（重要）**：`SESSION_FORMAT_VERSION` 在 ≤0.1.2-rc.1 为 0、0.1.3-alpha.2 起为 2、
+   0.1.5 起为 3、0.1.7 起为 4；而 v0→v1 **历史迁移边拒绝未知事件类型——即使带
+   `ignorable: true`**，故"补过 ignorable 的旧日志仍可读"自 0.1.3-alpha.2 起不再成立
+   （v17 沿革相应表述与 §5 附加约定 2 已订正）；legacy `foldRefLibs` 仅对 ≤0.1.2-rc.1
+   宿主可能生效，保留但已在 `src/service.ts` 注明"不是可靠迁移手段"。
+   version 0.17.0 → 0.18.0（**`latest` 轨**：0.1.5/0.1.6 宿主）；0.1.7+ 宿主走新增的
+   `next` 分支（v19））。
 
 ## 2. 开发规范（必须遵守）
 
@@ -202,9 +231,16 @@
    日志事件仅做一次性迁移折叠。
 2. v1/v2 事故日志的处理已随 v17 收口：当时用于补 `ignorable: true` 的修补/验证脚本
    （`patch-ref-lib-logs.mjs` / `verify-ref-lib-logs.mjs`）**已删除**（2026-09-05，确认
-   各环境无未修补残留）；旧日志如含 `ref-lib/set`，由 v3 起读取时一次性折叠迁移
-   （`foldRefLibs`），无需再手工修补。若未来仍遇到拒绝加载的含自定义事件旧日志，
-   先整目录备份（L4），再按 `KNOWN_SESSION_EVENT_TYPES` 与 `ignorable` 语义处理。
+   各环境无未修补残留）。**【v18 订正——重要】**"旧日志仍可读"只对 **≤0.1.2-rc.1 的宿主**
+   成立：`SESSION_FORMAT_VERSION` 在 0.1.3-alpha.2 起由 0 升到 2（0.1.5 起 3、0.1.7 起 4），
+   此后 v0 日志必须走 v0→v1 **历史迁移边**，而该边**拒绝未知事件类型——即使事件带
+   `ignorable: true`**（`packages/session/session-format-v0-to-v1/src/validation.ts`，
+   有专门测试钉死）。结论：**含 `ref-lib/set` 的旧日志在 ≥0.1.3-alpha.2 宿主上被整体拒读，
+   读取阶段即失败**，`foldRefLibs` 拿不到事件、无法折叠——该路径保留只为兼容旧宿主，
+   不再视为可靠迁移手段（`src/service.ts` 已注明）。**升级宿主到 0.1.3+ 之前**，先按
+   `docs/upgrade-dsh-0.1.7-rc.2.md` §6.3 的脚本（会话日志是 `session.jsonl.zstd`，**必须
+   解压后再扫，直接 grep 会假阴性**）确认各 dsh home 无命中；命中则先整目录备份（L4）
+   并在旧宿主上处置。本机 2026-09-25 实测 81 个日志文件零命中。
 3. 每个插件交付时，`pnpm test` 必须包含 L0–L2 全部层（L3/L4 是开发流程约定，写入
    插件 README）。
 

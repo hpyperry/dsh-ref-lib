@@ -11,15 +11,25 @@
 import type { UserConfig } from 'tsdown'
 
 /** 平台模块（loader 模块表条目）：运行时提供，禁止内联。v17：`dsh-client-runtime` 包
- * 在 0.1.2 删除、引用全为 type-only（擦除）——已移出该表，防误引入 value import。 */
+ * 在 0.1.2 删除、引用全为 type-only（擦除）——已移出该表，防误引入 value import。
+ * v18：移除 `@deepseek-ai/dsh-client-locale/client`——它从来不在宿主 seed 表
+ * （`packages/client/web/src/platform.ts` 的 `PLATFORM_MODULES`）里，只是因为该 import
+ * 是 `import type {}`（构建期擦除）才一直无害；一旦有人写成 value import，bundle 会发出
+ * `require('@deepseek-ai/dsh-client-locale/client')` 并在宿主模块表未命中处抛错。 */
 const PLATFORM_EXTERNALS = [
   'react',
   'react/jsx-runtime',
   '@deepseek-ai/cordis',
-  '@deepseek-ai/dsh-client-locale/client',
   '@deepseek-ai/dsh-client-ui-primitives',
   '@deepseek-ai/dsh-client-ui-slots',
 ]
+
+// 备忘（0.1.5-rc.2 / 0.1.7-rc.2 seed 表共 9 词）：react、react/jsx-runtime、react-dom、
+// react-dom/client、@deepseek-ai/cordis、@deepseek-ai/dsh-client-store、
+// @deepseek-ai/dsh-client-ui-slots、@deepseek-ai/dsh-client-ui-primitives、
+// @deepseek-ai/dsh-client-ui-dockkit。将来引入其中任一新词的 value import 时，
+// 必须同步加入本表；dockkit 自述 "not as a stable API"，勿依赖。
+// package.json 的 `dsh.client.external: []` 显式声明"基线之外无额外模块请求"。
 
 const PLUGIN_ID = '@hpyperry/dsh-ref-lib'
 

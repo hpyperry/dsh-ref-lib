@@ -10,14 +10,20 @@
  * - **陷阱守卫**：往会话写白名单外事件（旧版 `ref-lib/set`）→ 冷加载必须抛
  *   `SessionFormatUnsupportedError`——即本次事故的精确复现，防止插件回退到
  *   "把状态写进会话日志"的旧设计。
+ *
+ * **v18 依赖契约变更**：`dsh-session-persistence-jsonl` 自 **0.1.3-alpha.1** 起把后端
+ * 契约改为「**默认导出** + `open(id, access) → SessionHandle`（`read()` 取事件）」，
+ * 取代 0.1.2-rc.1 及以前的「具名导出 + `load(id) → SessionInspection`」。本轨
+ * （devDeps pin `0.1.5-rc.2`）按新契约书写；旧写法在 0.1.5 上会先报
+ * `JsonlSessionPersistence is not a constructor`、改对导出后报 `backend.load is not a function`。
  */
 
 import { mkdir, mkdtemp, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
-import { SessionId, SessionStore } from '@deepseek-ai/dsh-session'
-import { SessionFormatUnsupportedError } from '@deepseek-ai/dsh-session-persistence'
-import { JsonlSessionPersistence } from '@deepseek-ai/dsh-session-persistence-jsonl'
+import { SessionId, SessionStore, type SessionHeader } from '@deepseek-ai/dsh-session'
+import { SessionFormatUnsupportedError, type SessionHandle } from '@deepseek-ai/dsh-session-persistence'
+import JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
 import { afterEach, describe, expect, it } from 'vitest'
 import { RefLibService } from '../src/service.ts'
 
@@ -36,6 +42,25 @@ async function boot(root: string): Promise<{ ctx: Context; store: SessionStore; 
   return { ctx, store, backend }
 }
 
+/**
+ * v18 契约：**必须有活跃写句柄才会落盘**。
+ *
+ * 0.1.3-alpha.1 起持久化后端按「写所有权」工作——`SessionStore.flush()` 只派发
+ * `session/flush` 事件，真正写盘的是持有写句柄的那条路径（生产环境由 agent-loop
+ * 在 `create`/`resume` 时经 `persistence.create(header)` / `open(id,'write')` 取得）。
+ * 所以冷读回归必须先取写句柄，否则 `store.flush()` 虽然没有监听者参与（返回
+ * `false`）、磁盘上什么都没有，冷读只会报 `SessionPersistenceNotFoundError`。
+ * @param stack - boot() 返回的会话栈。
+ * @param session - 由该栈的 store 创建的会话。
+ * @returns 写句柄；调用方负责 `close()`（close 会排空并落盘）。
+ */
+async function claimWrite(
+  stack: { backend: JsonlSessionPersistence },
+  session: { header: SessionHeader },
+): Promise<SessionHandle> {
+  return await stack.backend.create(session.header)
+}
+
 describe('harness 边界回归（会话日志可加载性）', () => {
   it('v3：插件 add/remove 后会话日志可冷加载，且不含 ref-lib/set', async () => {
     tmp = await mkdtemp(join(process.cwd(), 'tests/.tmp-harness-'))
@@ -50,6 +75,7 @@ describe('harness 边界回归（会话日志可加载性）', () => {
     const first = await boot(logsRoot)
     const service = new RefLibService(first.ctx, { root: sidecarRoot })
     const session = first.store.create(sessionId)
+    const writer = await claimWrite(first, session)
     const entry = await service.add(session, libDir)
     expect(service.list(session)).toEqual([entry])
     await service.remove(session, entry.id)
@@ -57,14 +83,19 @@ describe('harness 边界回归（会话日志可加载性）', () => {
     // 模拟真实对话内容（平衡的一轮）
     session.append('turn/start', { turn: 1 })
     session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
-    await first.store.flush(session)
+    // flush 必须真有监听者参与（否则说明持久化链路没接上，冷读会误报 not found）
+    expect(await first.store.flush(session)).toBe(true)
+    await writer.close()
     await first.ctx.fiber.dispose()
 
-    // 冷加载阶段：模拟重启（全新 ctx/store/backend 读同一根）
+    // 冷加载阶段：模拟重启（全新 ctx/store/backend 读同一根）。
+    // v18：只读打开 → `read()` 取事件（0.1.3-alpha.1 起的 SessionHandle 契约）。
     const second = await boot(logsRoot)
-    const inspection = await second.backend.load(sessionId)
-    expect(inspection.events.map((event) => event.type)).toEqual(['turn/start', 'turn/end'])
-    expect(inspection.events.filter((event) => event.type === 'ref-lib/set')).toEqual([])
+    const handle = await second.backend.open(sessionId, 'read')
+    const { events } = await handle.read()
+    expect(events.map((event) => event.type)).toEqual(['turn/start', 'turn/end'])
+    expect(events.filter((event) => event.type === 'ref-lib/set')).toEqual([])
+    await handle.close()
     await second.ctx.fiber.dispose()
   })
 
@@ -76,15 +107,21 @@ describe('harness 边界回归（会话日志可加载性）', () => {
 
     const first = await boot(logsRoot)
     const session = first.store.create(sessionId)
+    const writer = await claimWrite(first, session)
     session.append('turn/start', { turn: 1 })
     // 旧版行为：往会话日志写自定义事件（v1/v2 的 ref-lib/set，无 ignorable 标记）
     session.append('ref-lib/set', { libs: [] })
     session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
-    await first.store.flush(session)
+    expect(await first.store.flush(session)).toBe(true)
+    await writer.close()
     await first.ctx.fiber.dispose()
 
     const second = await boot(logsRoot)
-    await expect(second.backend.load(sessionId)).rejects.toBeInstanceOf(SessionFormatUnsupportedError)
+    // v18：拒读可能发生在 open（读取即校验）或 read（惰性解码），两处都夹住。
+    await expect((async () => {
+      const handle = await second.backend.open(sessionId, 'read')
+      await handle.read()
+    })()).rejects.toBeInstanceOf(SessionFormatUnsupportedError)
     await second.ctx.fiber.dispose()
   })
 })

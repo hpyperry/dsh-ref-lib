@@ -701,8 +701,15 @@ export class RefLibService extends Service {
     }
     // v1/v2 遗留：从会话日志的 `ref-lib/set` 事件折叠（取最后一个完整快照）。
     // 一次性落盘，保证迁移结果对父会话继承可见。v17：rc.1 起 Session 不再暴露
-    // `.events`，改经 `snapshotEvents()`（rc.1 读路径对 ignorable 标记语义与 rc.2
-    // 一致，补过 ignorable 的旧日志仍可读）。
+    // `.events`，改经 `snapshotEvents()`。
+    //
+    // ⚠️ v18 事实修正（见 `docs/upgrade-dsh-0.1.7-rc.2.md` §3.2 B3）：`SESSION_FORMAT_VERSION`
+    // 在 ≤0.1.2-rc.1 为 0、0.1.3-alpha.2 起为 2、0.1.5 起为 3、0.1.7 起为 4；而 v0→v1
+    // **历史迁移边拒绝未知事件类型——即使带 `ignorable: true`**
+    // （`packages/session/session-format-v0-to-v1/src/validation.ts`）。因此本折叠路径
+    // **只在 ≤0.1.2-rc.1 的宿主上可能生效**：在那之后的宿主上，含 `ref-lib/set` 的 v0 日志
+    // 在读取阶段就被整体拒读（`SessionFormatUnsupportedMigrationError`），`foldRefLibs`
+    // 永远拿不到事件。此路径保留仅为兼容旧宿主，不是可靠的迁移手段；新日志不含任何自定义事件。
     const fromEvents = foldRefLibs(session.snapshotEvents())
     if (fromEvents.length > 0) {
       this.persistSync(session.id, fromEvents)
