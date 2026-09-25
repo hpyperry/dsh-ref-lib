@@ -144,18 +144,27 @@ if [ "${SEED_SETTINGS}" = "1" ] && [ ! -f "${DEV_HOME}/settings.yaml" ] && [ -f 
 fi
 
 # ── 4) CLI：临时下载（非全局），退出即删 ─────────────────────────────────────
+TOOLS_TEMP=0
 if [ -n "${DSH_CACHE_DIR:-}" ]; then
   TOOLS_DIR="${DSH_CACHE_DIR}/${VERSION}"
   KEEP_TOOLS=1
 else
   TOOLS_DIR="$(mktemp -d "${TMPDIR:-/tmp}/dsh-${VERSION}-XXXXXX")"
+  TOOLS_TEMP=1   # 只删我们自己 mktemp 出来的目录，绝不碰缓存目录
 fi
 cleanup() {
-  if [ "${KEEP_TOOLS}" = "1" ]; then
-    note "保留本次 dsh 安装：${TOOLS_DIR}"
-  else
-    rm -rf "${TOOLS_DIR}"
+  # 只删 mktemp 建的目录；缓存模式（KEEP_TOOLS=1）与 DSH_CACHE_DIR 一律保留。
+  # 删不掉也只提示、不改退出码（SIGKILL 不会进 trap，属已知边界，下方给出路径提示）。
+  if [ "${KEEP_TOOLS}" = "1" ] || [ "${TOOLS_TEMP}" != "1" ]; then
+    note "保留本次 dsh 安装（缓存/显式保留）：${TOOLS_DIR}"
+    return 0
   fi
+  if rm -rf "${TOOLS_DIR}" 2>/dev/null; then
+    note "已删除本次临时 dsh：${TOOLS_DIR}"
+  else
+    note "⚠️  临时 dsh 目录未能删除，请手工清理：rm -rf ${TOOLS_DIR}"
+  fi
+  return 0
 }
 trap cleanup EXIT INT TERM
 
