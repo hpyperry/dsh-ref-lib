@@ -26,6 +26,11 @@
   同一 workflow 的「发布到 npm」一步**只在仓库配置了 `NPM_TOKEN` secret 时执行**（当前未配置：
   npm 账号仍锁定，`npm whoami` 返回 401），dist-tag 与 dsh 同构——预发布 → `next`、正式版 →
   `latest`（带 `-rc` 的版本 npm 不会自动设成 `latest`，必须显式 `--tag`）。
+  **npm 上现存的最新版是遗留的 `0.17.0`**（0.1.1-rc.2 时代的产物，`npm view` 实测只有
+  `0.11.0 / 0.14.0 / 0.15.0 / 0.17.0`，`latest = 0.17.0`）——它的 peer 区间 `^0.1.2-rc.1`
+  **能通过** 0.1.7 的兼容闸门，但 bundle 里是 0.1.7 已删除的旧图标名 ⇒ 谁裸装谁白屏。
+  所以：**别让用户 `dsh plugin add @hpyperry/dsh-ref-lib`（不带版本号）**；正式发布时先发一个
+  稳定号把 `latest` 顶掉（用户侧安装见 `README.md`「📦 安装」，当前以 Release tarball 为准）。
 - **安装与分发**：`dsh plugin add` 本质是转发 pnpm，所以本地路径、`pnpm pack` 打出的 tarball、
   git/npm 版本都能装。要"冻结副本"用 `INSTALL_MODE=pack`（§6），tarball 默认打在**仓库根**
   （`<repo>/hpyperry-dsh-ref-lib-<版本>.tgz`，`.gitignore` 已排除 `*.tgz`）。
@@ -63,9 +68,12 @@
   package.json，绝对路径 entry 不会被识别为 client 插件；插件集变更需重启 `dsh web`
   才生效（生产构建无 HMR）。UI 挂载优先使用现有 slot（本插件使用
   `conversation.input.dock` 等官方 slot）。
-- 门禁：`pnpm typecheck`（`tsc --noEmit`）/ `pnpm lint`（eslint + prettier，见
+- 门禁：`pnpm typecheck`（`tsc --noEmit`）/ `pnpm lint`（**只跑 eslint**，见
   `eslint.config.js`）/ `pnpm test`（必须含 L0–L2 全部层，见 §5）/ `pnpm build`
-  （`tsc` + `tsdown`）。CI 兜底同样四道：`.github/workflows/ci.yml`（push `main` / PR）；
+  （`tsc` + `tsdown`）。另有 `pnpm format`（`prettier --write .`）——**可选、不进 CI**：
+  prettier 只作编辑器格式化配置（`.prettierrc.json`），仓库现有代码**未全量 prettier 化**
+  （实测 30 个文件不合规），所以不要声称门禁含 prettier，也不要在改无关文件时顺手 `--write`。
+  CI 兜底同样四道：`.github/workflows/ci.yml`（push `main` / PR）；
   发版走 `.github/workflows/release.yml`（`v*` tag → 门禁 + `pnpm pack` + 挂 Release，
   **tag 名必须 = `v<package.json version>`**，不一致会失败；`workflow_dispatch` 则只出 artifact）。
 - 单轨维护（见 §1「单轨」）：不要在 `main` 之外开长期分支，也不要为"另一条轨"改
@@ -349,8 +357,9 @@ profile 清单里记的是 tarball 路径，所以**建议保留这个 tarball**
   **现已删除**（在 ≥0.1.3-alpha.2 宿主上无从触达）。
   version 0.17.0 → **`0.1.5-rc.3`**（自 v18 起版本号跟 dsh 走，见 §1 版本号约定）；
   本轨跟 dsh npm `latest`，适用 0.1.5/0.1.6 宿主。**v19（next 轨，版本 `0.1.7-rc.2`，
-  适配 dsh 0.1.7+ 的图标改名等）已于 2026-09-25 归档为 tag `archive/next-0.1.7-rc.2`**
-  ——支持面收敛到 latest 单轨，见 §1「单轨」条。依赖族先按 `0.1.5-rc.2` 落地并通过四道门禁 + L3，
+  适配 dsh 0.1.7+ 的图标改名等）当时归档为 tag `archive/next-0.1.7-rc.2`**
+  ——**同日稍后又被取回并入 `main`（见下条 v19），所以"收敛到 latest 单轨"只描述了中间状态**。
+  依赖族先按 `0.1.5-rc.2` 落地并通过四道门禁 + L3，
   随后在 `latest` 的 `0.1.5-rc.3` 上复跑同样全绿（devDeps 与 CLI 均已对齐 rc.3）。
 - **v19**（**依赖基线升级 dsh 0.1.5 → 0.1.7-rc.2（npm `next`）+ 单轨改跟 `next`**：
   原为 `next` 轨（归档 tag `archive/next-0.1.7-rc.2`），2026-09-25 取回并入 `main`，

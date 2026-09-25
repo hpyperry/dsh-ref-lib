@@ -25,8 +25,10 @@
 #                              直接跑 dev-isolate.sh 时由它自动删）
 #
 # 典型配合（dev-isolate.sh 已内置同样的流程，一般直接用那个即可）：
-#   DSH_BIN="$(DSH_TRACK=main ./scripts/dsh-local.sh)" \
-#     DEV_HOME="$HOME/.dsh-dev-main" ./scripts/dev-isolate.sh
+#   DSH_BIN="$(DSH_TRACK=next ./scripts/dsh-local.sh)" \
+#     DEV_HOME="<repo>/.dsh-dev/next" ./scripts/dev-isolate.sh
+#   注：DEV_HOME 默认就在仓库内（<repo>/.dsh-dev/<track>），一般不用显式给；
+#       若坚持放在仓库外（如 $HOME 下），需要额外设 DEV_HOME_ANYWHERE=1。
 set -euo pipefail
 
 SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

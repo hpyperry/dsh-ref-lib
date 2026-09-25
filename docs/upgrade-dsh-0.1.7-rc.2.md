@@ -1,12 +1,23 @@
 # dsh 最新代码评估与升级方案（0.1.2-rc.1 → 0.1.7-rc.2）
 ## —— ref-lib 存在意义复核 + 实测破坏面 + 双轨落地记录
 
-> **【2026-09-25 后续变更：`next` 轨已归档】** 支持面收敛到 dsh npm `latest` 单轨，
-> `next` 分支已删除，其内容（插件 `0.1.7-rc.2`、图标改名等 0.1.7+ 适配）保留在 tag
-> **`archive/next-0.1.7-rc.2`**（取回：`git branch next archive/next-0.1.7-rc.2`）。
-> 因此本文中"双轨/`next` 分支/npm `--tag next`"等描述属**当时的历史记录**，当前只有
-> `main`（`0.1.5-rc.3`，跟 `latest`）。文中 §3.2 B3 的事实修正、§6.3 的升级前扫描流程
-> 仍然有效并被 `src/service.ts` / `AGENTS.md` §5 引用。
+> **【2026-09-25 后续变更：`next` 轨已取回并入 `main`】** 本文写就时项目一度决定"按宿主代
+> 分两条分支"（`main` 跟 `latest`、`next` 跟 `next`），`next` 分支随后又被**取回并入 `main`**：
+> 现在 **`main` 单轨跟 dsh npm `next`，插件版本 = `0.1.7-rc.2`**；`0.1.5-rc.3`（跟 `latest`）
+> 作为已发布版本留在 tag `v0.1.5-rc.3`，不再迭代。归档 tag `archive/next-0.1.7-rc.2` 仅作历史，
+> **不需要**再 `git branch next` 取回。现行约定见 `AGENTS.md` §1 与 §7「v19」。
+>
+> ⚠️ **本文正文里的命令/路径/分支都是当时的**，照抄会踩坑，请注意：
+> - 隔离 home 已从 `~/.dsh-dev-<track>` 改为**仓库内 `<repo>/.dsh-dev/<track>`**（已 gitignore）——
+>   §6.2 的 `~/.dsh-dev-main`、`rm -rf ~/.dsh-dev-main` 均已过时，见 `AGENTS.md` §6；
+> - `origin/next` 分支后来已删除（§9.1 的"两分支均已推送"是当时状态）；
+> - "npm `--tag next`"当时未发生（账号未解锁），**至今仍未发布**——npm 上只有遗留的 `0.17.0`，
+>   且裸装它会白屏，见 `README.md`「📦 安装」。
+>
+> 仍然有效、被 `AGENTS.md` §5 引用的两节：**§3.2 B3**（`SESSION_FORMAT_VERSION` / 旧日志可读性
+> 的事实修正）与 **§6.3**（升级宿主前的旧日志扫描流程）。注意 §3.2 曾称这些结论"被
+> `src/service.ts` 引用"——legacy `foldRefLibs` 折叠路径已在 `47297ec` **删除**，`service.ts`
+> 现在不含任何相关引用。
 >
 > 状态：**评估定稿 + 已落地**（2026-09-25 评估；同日按 §4 与 §5 的最终决策落地并推送）。
 > 对照 deepseek-harness `HEAD` = tag `dsh-v0.1.7-rc.2` 逐项查证 + **在多份真实依赖族上实测**。
@@ -745,6 +756,8 @@ cd .probe-017 && pnpm install --ignore-scripts        # 约 4–5 分钟
 ```bash
 pnpm typecheck && pnpm lint && pnpm test && pnpm build    # L0–L2 全绿（含 L2 持久化新契约）
 
+# ⚠️ 下面这段的命令与 home 路径是当时的（双轨 + ~/.dsh-dev-*）；现行用法见 AGENTS.md §6：
+#    默认 TRACK=next、home=<repo>/.dsh-dev/<track>、端口 3090。
 # L3：一条命令起隔离环境（脚本内部自己按通道拉一份**临时** dsh，退出即删；不装全局）
 ./scripts/dev-isolate.sh              # main 轨：dsh latest，home=~/.dsh-dev-main，端口 3090
 TRACK=next ./scripts/dev-isolate.sh   # next 轨：dsh next，  home=~/.dsh-dev-next，端口 3091
@@ -759,8 +772,8 @@ TRACK=next INSTALL_MODE=pack ./scripts/dev-isolate.sh
 脚本每次运行都会：解析通道版本 → 校验插件 `version` 与该通道 dsh 版本一致 →
 构建插件 → 准备隔离 home（缺 sk 时从真实 home 只读复制，600 权限）→ **重装插件** →
 起 web。**home 里的 sessions / storages / settings / 凭证一律不删**（要清插件 sidecar 才用
-`RESET_PLUGIN_DATA=1`）；`DEV_HOME` 若落在代码库内会被直接拒绝（sk 防泄漏）。
-彻底重置某条轨：`rm -rf ~/.dsh-dev-main`。详见 `AGENTS.md` §6。
+`RESET_PLUGIN_DATA=1`）。home 的落点与防泄漏护栏**已变更**：现在是仓库内 `.dsh-dev/<track>`
+（gitignore + `git check-ignore` 实测），详见 `AGENTS.md` §6。
 
 ### 6.3 数据平面检查：legacy 日志扫描（**升级宿主前执行**）
 
@@ -940,7 +953,8 @@ SessionFormatUnsupportedError: format v0 contains unknown historical event type 
 | `main` | `0.1.5-rc.3` | npm `latest`（0.1.5 / 0.1.6 系列） | `>=0.1.5-rc.2 <0.1.7-alpha.1` | 持久化契约迁移（§4.3）、事实修正、打包 hygiene、脚本双轨化 |
 | `next` | `0.1.7-rc.2` | npm `next`（0.1.7+） | `^0.1.7-rc.2` | 上述全部 **+ 图标改名 13 个 / 52 处 / 5 文件** |
 
-两分支均已推送：`origin/main`、`origin/next`；`scripts/`、`docs/`、`.gitignore` 内容逐字一致。
+两分支当时均已推送：`origin/main`、`origin/next`（**`origin/next` 后来已删除**，见开头说明）；
+`scripts/`、`docs/`、`.gitignore` 内容逐字一致。
 **版本号约定**：插件 `version` = 所跟踪的 dsh 版本号（dsh 发版 → 对应分支同步改号并复跑门禁）。
 
 ### 9.2 门禁与 L3 证据

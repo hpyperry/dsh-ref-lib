@@ -3,7 +3,8 @@
 给 DeepSeek Harness 的每个会话挂一个「只读参考库」：把本地目录（比如你的项目源码、内部文档）登记为参考库后，agent 回答前会**先去这些目录里查证**，查不到才允许走外部途径——而不是凭空猜或者直接上网搜。
 
 ```
-dsh plugin --profile web add @hpyperry/dsh-ref-lib@0.1.7-rc.2
+gh release download v0.1.7-rc.2 --repo hpyperry/dsh-ref-lib --pattern '*.tgz'
+dsh plugin --profile web add ./hpyperry-dsh-ref-lib-0.1.7-rc.2.tgz
 ```
 
 ## 它解决什么问题
@@ -14,9 +15,14 @@ dsh plugin --profile web add @hpyperry/dsh-ref-lib@0.1.7-rc.2
 
 ## 安装
 
+**当前用 GitHub Release 的 tarball 安装**（npm 上还没有新版，原因见下）：
+
 ```bash
-# 安装
-dsh plugin --profile web add @hpyperry/dsh-ref-lib@0.1.7-rc.2
+# 1) 取对应版本的 tarball（也可以直接在浏览器打开 releases 页面下载）
+gh release download v0.1.7-rc.2 --repo hpyperry/dsh-ref-lib --pattern '*.tgz'
+
+# 2) 装进 profile
+dsh plugin --profile web add ./hpyperry-dsh-ref-lib-0.1.7-rc.2.tgz
 
 # 卸载
 dsh plugin --profile web remove @hpyperry/dsh-ref-lib
@@ -29,9 +35,14 @@ dsh plugin --profile web remove @hpyperry/dsh-ref-lib
 | `0.1.7-rc.2`（及 0.1.7+ 系列） | **`0.1.7-rc.2`** | npm `next`（预发布通道） |
 | `0.1.5-rc.3`（及 0.1.5 / 0.1.6 系列） | **`0.1.5-rc.3`** | npm `latest`（稳定通道） |
 
-安装命令写 `@hpyperry/dsh-ref-lib@<你的 dsh 版本>` 即可（不带版本号默认装 npm 上的最新版）。
-两条线**各自只声明自己真实支持的宿主**：装错版本会被 peer 兼容闸门直接拒绝——`plugin add`
-报不兼容、不安装，运行时该插件行被置 `disabled` 并写 stderr，**不会白屏**。
+**两条线各自只声明自己真实支持的宿主**：装错版本会被 peer 兼容闸门拒绝——`plugin add` 报不兼容、不安装，
+运行时该插件行被置 `disabled` 并写 stderr，不会加载半个坏插件。
+
+> ⚠️ **别用不带版本号的 `dsh plugin add @hpyperry/dsh-ref-lib`**。npm 上这个包目前只发布到
+> **`0.17.0`**（目标宿主是 dsh 0.1.1-rc.2 那一代），而它的 peer 区间 `^0.1.2-rc.1` **能通过**
+> 0.1.7 的兼容闸门：装得上、闸门放行，但 bundle 里是 0.1.7 起已被删除的旧图标名（`Icon*16` /
+> `Icon*14`），结果是**白屏**。npm 上目前**没有** `0.1.5-rc.3` / `0.1.7-rc.2`
+> （账号未解锁，见「发布」节），所以带版本号的 npm 安装命令现在同样取不到包——请用上面的 tarball 方式。
 
 安装完成后重启 `dsh web` 生效。本地开发期想改动即时生效，也可以直接指向仓库本地路径：`dsh plugin --profile web add /path/to/ref-lib`。
 
@@ -104,7 +115,8 @@ UI 面板和命令操作的是同一份数据，按习惯用哪个都行。
 
 ```bash
 pnpm typecheck   # 类型检查（tsc --noEmit）
-pnpm lint        # eslint + prettier
+pnpm lint        # eslint（门禁之一）
+pnpm format      # prettier --write（可选，不进 CI；仓库现有代码未全量 prettier 化）
 pnpm test        # vitest：L0 纯函数 / L1 装载 / L2 harness 边界回归
 pnpm build       # 构建 node half（tsc）+ client bundle（tsdown）→ lib/
 ```
@@ -148,7 +160,9 @@ git tag -a v0.1.7-rc.2 -m "0.1.7-rc.2" && git push origin v0.1.7-rc.2
 **tag 名必须等于 `v<package.json 的 version>`**，不一致工作流直接失败（防止发错版）。
 只想拿一个 tar 而不发版：在 Actions 页手动触发同一个工作流，tar 作为 artifact 下载。
 
-**npm —— dist-tag 与 dsh 同构**：预发布进 `next`，正式版进 `latest`（账号解锁后）：
+**npm —— dist-tag 与 dsh 同构**：预发布进 `next`，正式版进 `latest`。**目前尚未发布**
+（npm 账号锁定，`npm whoami` 返回 401；registry 上这个包只有历史的 `0.11.0 / 0.14.0 / 0.15.0 / 0.17.0`，
+`latest = 0.17.0`，那版是 0.1.1-rc.2 时代的产物，见「安装」节的警告）。解锁后：
 
 ```bash
 npm publish --tag next      # 例：0.1.7-rc.2（带 -rc 的预发布）
@@ -157,8 +171,8 @@ npm publish --tag latest    # 例：0.1.5-rc.3（正式版）
 
 同一个 workflow 里已有「发布到 npm」一步，**只在仓库配置了 `NPM_TOKEN` secret 时才执行**；
 配好后打 tag 即自动按版本号选 `next` / `latest`，不需要本地 npm 登录。
-（不带版本号安装的用户拿到的就是 `latest`；`next` 线要用 `@hpyperry/dsh-ref-lib@0.1.7-rc.2` 显式指定，
-因为带 `-rc` 的版本 npm **不会**自动设成 `latest`。）
+在此之前，**`latest` 指向的是上游遗留的 `0.17.0`，不带版本号安装会拿到它**（白屏，见「安装」节）——
+所以正式发布前先发一版稳定号把 `latest` 顶掉，别让用户裸装。
 - 发布包只含 `lib/` 与 `cordis.patch.yml`（`pnpm build` 先清空 `lib/` 再构建，不会带历史残留）；
   用户也可直接装打出的 tarball：`dsh plugin --profile web add ./hpyperry-dsh-ref-lib-<版本>.tgz`。
 - CI（[`.github/workflows/ci.yml`](.github/workflows/ci.yml)）在 push `main` 与所有 PR 上跑同样的四道门禁。

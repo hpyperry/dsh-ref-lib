@@ -37,6 +37,7 @@
     "build:node": "tsc",
     "build:client": "tsdown",
     "lint": "eslint .",
+    "format": "prettier --write .",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
     "prepare": "pnpm run build"
