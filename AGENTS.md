@@ -7,6 +7,10 @@
 ## 1. 项目定位
 
 - **`@hpyperry/dsh-ref-lib`**：只读参考库插件（node half + client UI，per-session 隔离）。
+- **版本号约定（v18 起）**：**插件 `version` = 它所跟踪的 dsh 版本号**，一条主线一条
+  next 线：`main` 分支跟 dsh npm **`latest`**（当前 `0.1.5-rc.3`，适用 dsh 0.1.5 / 0.1.6 宿主），
+  `next` 分支跟 dsh npm **`next`**（当前 `0.1.7-rc.2`，适用 dsh 0.1.7+ 宿主）。dsh 发新版 →
+  对应分支同步改 version（并复跑门禁）；README「📦 安装」有给用户看的对应表。
 - **自包含工程**：`package.json` / `tsconfig.json` / `src/` / `tests/` / `scripts/` /
   构建配置与 `README.md` 齐全，可独立安装/构建/验证（安装见 `README.md`「📦 安装」、
   构建/验证见「🧑‍💻 开发」）。
@@ -149,7 +153,7 @@
    打印原因**，而不是静默加载后因图标名缺失白屏——闸门见
    `packages/boot/app-boot/src/plugin-compatibility.ts`（不满足的插件行置 `disabled`，
    非致命，profile 仍可启动；可用 `dsh plugin allow-version` 精确豁免）。
-   devDeps 7 包精确 pin `0.1.5-rc.2`；peer 集合与 cordis `^4.0.1`（0.1.5-rc.2 vendored
+   devDeps 7 包精确 pin `0.1.5-rc.3`；peer 集合与 cordis `^4.0.1`（0.1.5 线 vendored
    4.0.2，npm latest 4.0.4，均在范围内）不变。新增 `dsh.client.external: []`
    （显式声明"基线之外无额外 module-table 请求"）；tsdown `PLATFORM_EXTERNALS` 移除
    从不在宿主 seed 表里的 `dsh-client-locale/client`（此前仅因 type-only 擦除而无害）。
@@ -158,8 +162,10 @@
    `ignorable: true`**，故"补过 ignorable 的旧日志仍可读"自 0.1.3-alpha.2 起不再成立
    （v17 沿革相应表述与 §5 附加约定 2 已订正）；legacy `foldRefLibs` 仅对 ≤0.1.2-rc.1
    宿主可能生效，保留但已在 `src/service.ts` 注明"不是可靠迁移手段"。
-   version 0.17.0 → 0.18.0（**`latest` 轨**：0.1.5/0.1.6 宿主）；0.1.7+ 宿主走新增的
-   `next` 分支（v19））。
+   version 0.17.0 → **`0.1.5-rc.3`**（自 v18 起版本号跟 dsh 走，见 §1 版本号约定）；
+   本轨跟 dsh npm `latest`，适用 0.1.5/0.1.6 宿主；0.1.7+ 宿主走新增的 `next` 分支
+   （v19，版本 `0.1.7-rc.2`）。依赖族先按 `0.1.5-rc.2` 落地并通过四道门禁 + L3，
+   随后在 `latest` 的 `0.1.5-rc.3` 上复跑同样全绿（devDeps 与 CLI 均已对齐 rc.3）。
 
 ## 2. 开发规范（必须遵守）
 
