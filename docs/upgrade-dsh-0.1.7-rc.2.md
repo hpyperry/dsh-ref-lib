@@ -605,6 +605,23 @@ export const IconCopyOutline = glyph('IconCopyOutline')
 > 白屏）——这正好替代了本节"图标兜底"要解决的问题，代价是用户需要按宿主选版本。
 > 相比之下本节 §5.2 的兜底方案仍然成立，可作为将来"想合并回单包"时的现成做法保留。
 >
+> **上界是"安装期安全网"——已实测（2026-09-25）**：在一个 0.1.7-rc.2 宿主上安装一个
+> peer 声明为 `>=0.1.5-rc.2 <0.1.7-alpha.1` 的插件，`dsh plugin add` **直接拒绝**并打印：
+>
+> ```
+> dsh: installation rejected: Plugin <pkg>@<ver> is incompatible with dsh 0.1.7-rc.2:
+> peerDependencies {"@deepseek-ai/dsh-session":">=0.1.5-rc.2 <0.1.7-alpha.1"}. Running it may
+> cause crashes or data loss. Update the plugin or install a plugin version compatible with
+> this dsh runtime. To accept this risk explicitly, grant the exact-version exemption …
+> with `dsh plugin allow-version` …
+> dsh: nothing was installed.
+> ```
+>
+> 也就是说 0.18.x（`main`，0.1.5/0.1.6 轨）在 0.1.7+ 宿主上**装不上也起不来**——用户不会
+> 静默拿到一个缺图标的半坏插件，而是拿到一条明确的"去装兼容版本"的提示（并留有
+> `allow-version` 应急豁免）。运行时同样生效：boot 阶段的
+> `prepareProfileEntries` 把不兼容行置 `disabled` 并写 stderr，profile 本身仍能启动。
+>
 > 下文 §5.1–§5.5 保留为**评估结论与备选方案**，其中 §5.3 的三列矩阵、§5.4 的 peer 区间
 > 与闸门相互作用分析对两条轨道同样有效。
 
