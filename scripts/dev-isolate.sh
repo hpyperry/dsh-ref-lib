@@ -1,44 +1,198 @@
 #!/usr/bin/env bash
-# 启动**隔离**的 dsh web 开发环境：数据（会话日志/设置/profile）全部落在
-# $DEV_HOME（默认 ~/.dsh-dev），绝不触碰真实 $HOME/.dsh。
+# dev-isolate.sh —— 启动**隔离**的 dsh web 联调环境（main / next 双轨）。
 #
-# 为什么需要它（2026-08-17 事故教训）：开发期插件若直接装进真实 web profile
-# 并在真实会话上联调，任何"写会话日志/改配置"的实验都可能污染真实数据——
-# ref-lib v1/v2 就是这样把真实会话日志写坏的（自定义事件触发加载器整体拒读）。
-# 隔离环境让实验的破坏半径收敛到一个可随时 rm -rf 的目录。
+# 设计目标（2026-09-25 修订，配合双轨发布与"插件版本号跟 dsh 一致"的约定）：
+#
+#   1) **跟 dsh 通道走**：TRACK=main → npm `latest`（dsh 主线）；TRACK=next → npm `next`。
+#      版本由 registry 实时解析（也可 DSH_VERSION 显式钉），并校验被测插件的
+#      package.json version 是否与之一致（不一致只警告；STRICT_VERSION=1 则报错退出）。
+#   2) **CLI 用临时下载**：每次运行 `npm install --prefix <mktemp 临时目录>` 拉一份该版本的
+#      dsh，**不装全局、不动 PATH、不碰 `which dsh` 那份**；退出时自动删除该临时目录
+#      （KEEP_TOOLS=1 保留，DSH_CACHE_DIR=… 改成按版本缓存复用）。
+#   3) **home 隔离在用户目录**：默认 `$HOME/.dsh-dev-<track>`；**拒绝**落在代码库内的 home
+#      ——home 里有 sk（`.credentials.yaml`）与真实会话，绝不能进仓库。
+#   4) **每次重装插件、其余一律保留**：每次运行都 `plugin remove` + `plugin add`（吃到当前
+#      分支最新构建），但**从不删除** home 里的 sessions / storages / settings.yaml /
+#      `.credentials.yaml` / `.anonymous-user-id`；插件自身数据默认也保留，只有显式
+#      RESET_PLUGIN_DATA=1 才清。
+#   5) **sk 自动就位**：隔离 home 缺凭证时，从真实 home 只读复制 `.credentials.yaml`
+#      （权限 600）过去，让隔离环境也能真的对话；文件始终留在用户目录，不进代码库。
 #
 # 用法：
-#   ./scripts/dev-isolate.sh                 # 启动隔离 web（默认 ~/.dsh-dev）
-#   DEV_HOME=/tmp/dsh-dev ./scripts/dev-isolate.sh   # 自定义隔离 home
-#   PLUGIN=/path/to/other-plugin ./scripts/dev-isolate.sh  # 隔离其他插件（默认本插件）
-#   DEV_HOME=/tmp/dsh-dev ./scripts/dev-isolate.sh --dump-config  # 透传 dsh 参数
+#   ./scripts/dev-isolate.sh                          # main 轨，home=~/.dsh-dev-main，端口 3090
+#   TRACK=next ./scripts/dev-isolate.sh               # next 轨，home=~/.dsh-dev-next，端口 3091
+#   PORT=4000 ./scripts/dev-isolate.sh --no-open      # 自定义端口 + 透传 dsh 参数
+#   RESET_PLUGIN_DATA=1 ./scripts/dev-isolate.sh      # 顺带清插件自身数据（会话/sk 不动）
 #
-# 用哪个版本的 dsh：
-#   DSH_BIN=<绝对路径> ./scripts/dev-isolate.sh   # 指定 dsh 可执行文件（推荐：
-#                                                 #   版本化本地安装见 scripts/dsh-local.sh，
-#                                                 #   不依赖/不修改 npm 全局安装）
-#   默认不设 DSH_BIN 时用 PATH 上的 dsh（向后兼容）。
+# 环境变量：
+#   TRACK=main|next         跟哪条 dsh 通道（默认 main）
+#   DSH_VERSION=<版本>      显式钉 dsh 版本（覆盖 TRACK 解析）
+#   DEV_HOME=<目录>         隔离 home（默认 ~/.dsh-dev-<track>；必须在 $HOME 下）
+#   PROFILE=web             profile 名
+#   PORT=<端口>             web 端口（默认 main=3090 / next=3091）
+#   PLUGIN=<目录>           被测插件目录（默认本仓库根）
+#   BUILD=1|0               启动前构建插件（默认 1，避免吃到过期 lib/）
+#   SEED_CREDENTIALS=1|0|force  复制真实 home 的 sk 进隔离 home（默认 1=仅缺失时）
+#   SEED_SETTINGS=1|0       顺带复制非密钥 settings.yaml（默认 1=仅缺失时）
+#   RESET_PLUGIN_DATA=1     清空插件自身数据目录（默认 0）
+#   KEEP_TOOLS=1            保留本次临时下载的 dsh（默认 0=退出即删）
+#   DSH_CACHE_DIR=<目录>    改成按版本缓存复用（不再每次重新下载）
+#   REAL_HOME=<目录>        真实 dsh home（默认 ~/.dsh，只读用于取 sk）
+#   STRICT_VERSION=1        插件版本 ≠ dsh 版本时直接报错（默认只警告）
 #
-# 清理：rm -rf "$DEV_HOME" 即完全重置开发环境。
+# 清理：彻底重置 = `rm -rf ~/.dsh-dev-main`（**会话与 sk 会一起没**，所以本脚本平时不自动删）。
+#       真实 `~/.dsh` 全程零写入。
 set -euo pipefail
 
-PLUGIN="${PLUGIN:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
-DEV_HOME="${DEV_HOME:-$HOME/.dsh-dev}"
+SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=lib/dsh-track.sh
+. "${SELF_DIR}/lib/dsh-track.sh"
+
+PLUGIN="${PLUGIN:-$(cd "${SELF_DIR}/.." && pwd)}"
+TRACK="${TRACK:-main}"
 PROFILE="${PROFILE:-web}"
-# dsh 可执行文件：默认 PATH 上的 dsh；测试非全局版本时用 DSH_BIN 显式指定。
-DSH_BIN="${DSH_BIN:-dsh}"
+BUILD="${BUILD:-1}"
+SEED_CREDENTIALS="${SEED_CREDENTIALS:-1}"
+SEED_SETTINGS="${SEED_SETTINGS:-1}"
+RESET_PLUGIN_DATA="${RESET_PLUGIN_DATA:-0}"
+KEEP_TOOLS="${KEEP_TOOLS:-0}"
+REAL_HOME="${REAL_HOME:-${HOME}/.dsh}"
+STRICT_VERSION="${STRICT_VERSION:-0}"
 
-# 包名以插件 package.json 的 name 为准（目录名可能 ≠ 包名，如 @scope/pkg）
-PLUGIN_NAME="$(node -e 'const fs=require("node:fs");const j=JSON.parse(fs.readFileSync(process.argv[1]+"/package.json","utf8"));process.stdout.write(j.name||"")' "$PLUGIN" 2>/dev/null || true)"
-PLUGIN_NAME="${PLUGIN_NAME:-$(basename "$PLUGIN")}"
+die() { echo "dev-isolate: ✖ $*" >&2; exit 1; }
+note() { echo "dev-isolate: $*"; }
 
-mkdir -p "$DEV_HOME"
+case "${TRACK}" in
+  main) PORT="${PORT:-3090}" ;;
+  next) PORT="${PORT:-3091}" ;;
+  *) die "未知 TRACK '${TRACK}'（只支持 main / next）" ;;
+esac
+DEV_HOME="${DEV_HOME:-${HOME}/.dsh-dev-${TRACK}}"
 
-# 首次运行：把插件装进隔离 home 的 profile（与真实环境完全独立）
-if [ ! -e "$DEV_HOME/profiles/$PROFILE/node_modules/$PLUGIN_NAME" ]; then
-  echo "首次运行：安装插件 '$PLUGIN'（${PLUGIN_NAME}）到隔离环境 DSH_HOME=$DEV_HOME (profile=$PROFILE) ..."
-  DSH_HOME="$DEV_HOME" "$DSH_BIN" plugin --profile "$PROFILE" add "$PLUGIN"
+# ── 0) home 安全护栏：绝对路径 + 在 $HOME 下 + 绝不在代码库里（sk/会话防泄漏）──
+case "${DEV_HOME}" in
+  /*) ;;
+  *) die "DEV_HOME 必须是绝对路径（收到 '${DEV_HOME}'）" ;;
+esac
+case "${DEV_HOME}" in
+  "${PLUGIN}"|"${PLUGIN}"/*)
+    die "DEV_HOME 落在被测插件目录内（${DEV_HOME}）——隔离 home 含 sk 与真实会话，绝不能进代码库" ;;
+esac
+if [ "${DEV_HOME_ANYWHERE:-0}" != "1" ]; then
+  case "${DEV_HOME}" in
+    "${HOME}"/*) ;;
+    *) die "DEV_HOME 必须在 ${HOME} 下（收到 ${DEV_HOME}）；确需放别处设 DEV_HOME_ANYWHERE=1" ;;
+  esac
+fi
+if [ "${DEV_HOME}" = "${REAL_HOME}" ]; then
+  die "DEV_HOME 不能等于真实 home（${REAL_HOME}）"
 fi
 
-echo "启动隔离开发环境：DSH_HOME=${DEV_HOME}（真实 ${HOME}/.dsh 不受影响；Ctrl-C 退出，rm -rf $DEV_HOME 重置）"
-exec env DSH_HOME="$DEV_HOME" "$DSH_BIN" --profile "$PROFILE" "$@"
+# 关键：在脚本层面 export，而不是逐条命令加前缀——任何一条漏加都会静默打到真实 home
+# （本脚本 2026-09-25 的初版就踩过：plugin remove/add 带了 DSH_HOME，最后启动 server 那条漏了）。
+export DSH_HOME="${DEV_HOME}"
+
+# ── 1) 解析 dsh 版本 + 校验插件版本（"版本号跟 dsh 一致"约定）────────────────
+if ! VERSION="$(dsh_resolve_version)"; then
+  die "解析 dsh 版本失败（registry 不通？可设 DSH_VERSION=<版本> 显式指定，或用 DSH_CACHE_DIR=<已有目录> 复用已下载的版本）"
+fi
+PLUGIN_NAME="$(node -p 'require(process.argv[1]).name' "${PLUGIN}/package.json" 2>/dev/null || true)"
+[ -n "${PLUGIN_NAME}" ] || die "读不出插件包名：${PLUGIN}/package.json"
+PLUGIN_VERSION="$(node -p 'require(process.argv[1]).version' "${PLUGIN}/package.json" 2>/dev/null || true)"
+if [ "${PLUGIN_VERSION}" != "${VERSION}" ]; then
+  msg="插件版本 ${PLUGIN_VERSION} ≠ dsh ${TRACK} 通道版本 ${VERSION}（约定：两者一致；多半是当前分支与被测通道不匹配）"
+  if [ "${STRICT_VERSION}" = "1" ]; then die "${msg}"; fi
+  note "⚠️  ${msg}"
+fi
+
+# ── 2) 构建插件（避免吃到过期 lib/）──────────────────────────────────────────
+if [ "${BUILD}" = "1" ]; then
+  command -v pnpm >/dev/null 2>&1 || die "需要 pnpm 构建插件（或设 BUILD=0 跳过）"
+  build_log="$(mktemp "${TMPDIR:-/tmp}/reflib-build-XXXXXX.log")"
+  if ! (cd "${PLUGIN}" && pnpm build) >"${build_log}" 2>&1; then
+    echo "dev-isolate: 插件构建失败，日志尾部：" >&2
+    tail -20 "${build_log}" >&2
+    rm -f "${build_log}"
+    die "构建失败（修好后重试，或 BUILD=0 复用现有 lib/）"
+  fi
+  rm -f "${build_log}"
+  note "插件已构建（${PLUGIN_VERSION}）"
+fi
+[ -f "${PLUGIN}/lib/index.js" ] || die "缺少 ${PLUGIN}/lib/index.js（先构建，或 BUILD=1）"
+[ -f "${PLUGIN}/lib/client.js" ] || die "缺少 ${PLUGIN}/lib/client.js（先构建，或 BUILD=1）"
+
+# ── 3) 隔离 home：只创建、只补全，绝不删除既有数据 ───────────────────────────
+mkdir -p "${DEV_HOME}"
+note "隔离 home：${DEV_HOME}（真实 ${REAL_HOME} 全程零写入）"
+
+# sk 凭证：默认仅在缺失时从真实 home 复制（600 权限）；force 则覆盖。
+if [ "${SEED_CREDENTIALS}" = "0" ]; then
+  note "跳过 sk 凭证（SEED_CREDENTIALS=0）"
+elif [ -f "${DEV_HOME}/.credentials.yaml" ] && [ "${SEED_CREDENTIALS}" != "force" ]; then
+  note "sk 凭证已存在，保留不动（要覆盖用 SEED_CREDENTIALS=force）"
+elif [ -f "${REAL_HOME}/.credentials.yaml" ]; then
+  install -m 600 "${REAL_HOME}/.credentials.yaml" "${DEV_HOME}/.credentials.yaml"
+  note "sk 凭证已就位（从 ${REAL_HOME} 只读复制，权限 600；留在用户目录，不进代码库）"
+else
+  note "⚠️  ${REAL_HOME} 没有 .credentials.yaml，隔离环境可能无法对话（可手工放一份到 ${DEV_HOME}）"
+fi
+
+# settings.yaml：非密钥，仅缺失时复制，省去每次重配 UI 偏好。
+if [ "${SEED_SETTINGS}" = "1" ] && [ ! -f "${DEV_HOME}/settings.yaml" ] && [ -f "${REAL_HOME}/settings.yaml" ]; then
+  install -m 600 "${REAL_HOME}/settings.yaml" "${DEV_HOME}/settings.yaml"
+  note "settings.yaml 已就位（仅缺失时复制）"
+fi
+
+# ── 4) CLI：临时下载（非全局），退出即删 ─────────────────────────────────────
+if [ -n "${DSH_CACHE_DIR:-}" ]; then
+  TOOLS_DIR="${DSH_CACHE_DIR}/${VERSION}"
+  KEEP_TOOLS=1
+else
+  TOOLS_DIR="$(mktemp -d "${TMPDIR:-/tmp}/dsh-${VERSION}-XXXXXX")"
+fi
+cleanup() {
+  if [ "${KEEP_TOOLS}" = "1" ]; then
+    note "保留本次 dsh 安装：${TOOLS_DIR}"
+  else
+    rm -rf "${TOOLS_DIR}"
+  fi
+}
+trap cleanup EXIT INT TERM
+
+DSH_BIN="$(dsh_install_cli "${VERSION}" "${TOOLS_DIR}")"
+note "dsh CLI：${DSH_BIN}（版本 ${VERSION}；临时目录 ${TOOLS_DIR}）"
+
+run_dsh() { "${DSH_BIN}" "$@"; }   # DSH_HOME 已 export
+
+# ── 5) 每次重装插件；其余数据（会话/sk/设置）一律保留 ────────────────────────
+note "重装插件：${PLUGIN_NAME} ← ${PLUGIN}"
+if ! run_dsh plugin --profile "${PROFILE}" remove "${PLUGIN_NAME}" >/dev/null 2>&1; then
+  note "（此前未安装或移除失败，继续安装）"
+fi
+if ! run_dsh plugin --profile "${PROFILE}" add "${PLUGIN}" >/dev/null 2>&1; then
+  die "插件安装失败——手工复现：DSH_HOME=${DEV_HOME} ${DSH_BIN} plugin --profile ${PROFILE} add ${PLUGIN}"
+fi
+note "插件已安装（每次运行都重装，确保吃到当前分支最新构建）"
+
+PLUGIN_DATA_DIR="${DEV_HOME}/plugin-data/$(basename "${PLUGIN}")"
+if [ "${RESET_PLUGIN_DATA}" = "1" ]; then
+  if [ -e "${PLUGIN_DATA_DIR}" ]; then
+    rm -rf "${PLUGIN_DATA_DIR}"
+    note "已清空插件数据：${PLUGIN_DATA_DIR}"
+  fi
+else
+  note "插件数据保留（要清用 RESET_PLUGIN_DATA=1）：${PLUGIN_DATA_DIR}"
+fi
+note "home 顶层未删除任何内容：$(ls -1 "${DEV_HOME}" 2>/dev/null | tr '\n' ' ')"
+
+# ── 6) 启动（用户显式给了 --port 就不覆盖）───────────────────────────────────
+has_port=0
+for a in "$@"; do
+  if [ "${a}" = "--port" ]; then has_port=1; fi
+done
+extra=()
+if [ "${has_port}" = "0" ]; then extra=(--port "${PORT}"); fi
+
+note "启动：DSH_HOME=${DSH_HOME} profile=${PROFILE} 端口=${PORT}（Ctrl-C 退出）"
+note "自检：本进程能看到 DSH_HOME=${DSH_HOME}；隔离 home 已装插件 = $(ls -1 "${DEV_HOME}/profiles/${PROFILE}/node_modules/@hpyperry" 2>/dev/null | tr '\n' ' ')"
+"${DSH_BIN}" --profile "${PROFILE}" "${extra[@]+"${extra[@]}"}" "$@"
