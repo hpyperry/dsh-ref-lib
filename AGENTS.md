@@ -9,30 +9,31 @@
 - **`@hpyperry/dsh-ref-lib`**：只读参考库插件（node half + client UI，per-session 隔离）。
   自包含工程：`package.json` / `tsconfig.json` / `src/` / `tests/` / `scripts/` / 构建配置与
   `README.md` 齐全，可独立安装、构建、验证（安装见 `README.md`「📦 安装」，开发见「🧑‍💻 开发」）。
-- **版本号约定**：**插件 `version` = 它所跟踪的 dsh 版本号**。当前只跟 dsh npm `latest`
-  一条通道（**`0.1.5-rc.3`**，适用 dsh 0.1.5 / 0.1.6 宿主）；dsh `latest` 发新版 → 同步改
-  `version` 并复跑门禁。给用户看的版本对应表见 `README.md`「📦 安装」。
-- **单轨（2026-09-25 起）**：不再维护并行分支。此前的 `next` 轨（插件 `0.1.7-rc.2`，适配
-  dsh 0.1.7+，含图标改名 `Icon*<Size>` → `Icon*<Weight>` 等 v19 工作）已**归档为 tag
-  `archive/next-0.1.7-rc.2`**；将来 dsh 0.1.7 成为 `latest` 时
-  `git branch next archive/next-0.1.7-rc.2` 取回，或直接 cherry-pick 该 tag 上的适配提交。
-  理由：两条轨会让 `package.json`（version / `dsh-*` peer 与 devDeps）、`pnpm-lock.yaml`、
-  `README.md` 安装表、`AGENTS.md` 轨道措辞在同一批文件里分叉 ⇒ 每次互相同步都要手工解冲突
-  （实测：裸 `git merge` 必在这 4 个文件冲突；`git merge -X ours` 会把两边字段混在一起，
-  并把对侧 75 行共享内容静默丢掉）。**不要重新引入第二条分支**——要试别的 dsh 版本，用
-  `DSH_VERSION=<版本>` 在隔离环境里钉住即可（§6）。
-- **发布状态（2026-09-25）**：`main` 已推送 `origin`（另有归档 tag）；**npm 尚未发布**
-  （账号锁定）。解锁后 `npm publish --tag latest`——带 `-rc` 的版本不会被 npm 自动设成
-  `latest`，必须显式 `--tag`。
+- **版本号约定**：**插件 `version` = 它所跟踪的 dsh 版本号**。当前跟踪 dsh npm **`next`**
+  通道（**`0.1.7-rc.2`**，适用 dsh 0.1.7+ 宿主）；该通道发新版 → 同步改 `version` 并复跑门禁。
+  历史上跟 `latest` 的 **`0.1.5-rc.3`**（适用 0.1.5 / 0.1.6 宿主）作为**已发布版本**保留在
+  tag `v0.1.5-rc.3`（`archive/next-0.1.7-rc.2` 亦留作历史），那份实现继续可用、不再迭代。
+  给用户看的版本对应表见 `README.md`「📦 安装」。
+- **单轨（2026-09-25 起）**：不再维护并行分支，`main` 只跟一条通道（现为 `next`）。v19 的适配
+  工作（图标改名 `Icon*<Size>` → `Icon*<Weight>` 等）原在归档 tag `archive/next-0.1.7-rc.2` 上，
+  已**取回并入 `main`**（tag 仅作历史）。理由：两条轨会让 `package.json`（version / `dsh-*`
+  peer 与 devDeps）、`pnpm-lock.yaml`、`README.md` 安装表、`AGENTS.md` 轨道措辞在同一批文件里
+  分叉 ⇒ 每次互相同步都要手工解冲突（实测：裸 `git merge` 必在这 4 个文件冲突；`git merge
+  -X ours` 会把两边字段混在一起，并把对侧 75 行共享内容静默丢掉）。**不要重新引入第二条分支**
+  ——要试别的 dsh 版本，用 `TRACK=<dist-tag>`（或 `DSH_VERSION=<版本>`）在隔离环境里钉住即可（§6）。
+- **发布**：打 `v<版本>` tag 即触发 `.github/workflows/release.yml` → 四道门禁 + `pnpm pack`
+  → 挂同名 GitHub Release；版本号带 `-rc` / `-alpha` / `-beta` 时**自动建为 pre-release**。
+  同一 workflow 的「发布到 npm」一步**只在仓库配置了 `NPM_TOKEN` secret 时执行**（当前未配置：
+  npm 账号仍锁定，`npm whoami` 返回 401），dist-tag 与 dsh 同构——预发布 → `next`、正式版 →
+  `latest`（带 `-rc` 的版本 npm 不会自动设成 `latest`，必须显式 `--tag`）。
 - **安装与分发**：`dsh plugin add` 本质是转发 pnpm，所以本地路径、`pnpm pack` 打出的 tarball、
   git/npm 版本都能装。要"冻结副本"用 `INSTALL_MODE=pack`（§6），tarball 默认打在**仓库根**
   （`<repo>/hpyperry-dsh-ref-lib-<版本>.tgz`，`.gitignore` 已排除 `*.tgz`）。
-- **真实环境现状**：全局 `dsh` = `0.1.5-rc.3`（与插件版本一致）；`~/.dsh` 已被清理成干净
-  初始态（`~/.dsh/profiles/web` 的 `dependencies` 为空，**插件未安装**）。装回来需用户在自己
-  终端执行（agent 沙箱无仓库外写权限）：
-  `pnpm pack && dsh plugin --profile web add hpyperry-dsh-ref-lib-0.1.5-rc.3.tgz`，
-  之后**重启 `dsh web`** 才生效。历史落地过程（L4 备份、按升级文档 §6.3 扫描并处置 2 个含
-  `ref-lib/set` 的旧日志等）见 `docs/upgrade-dsh-0.1.7-rc.2.md` §9。
+- **真实环境现状**：全局 `dsh` = `0.1.5-rc.3`；profile `web` 里装的是 **0.1.5-rc.3 的冻结
+  tarball 副本**（`file:` 规格，不指向仓库）——因此本仓库改到 0.1.7-rc.2 **不影响**正在跑的那台
+  GUI。要用上 0.1.7-rc.2 需先升全局宿主（`npm i -g @deepseek-ai/dsh@0.1.7-rc.2`）再打新 tarball
+  重装，且**用户需在自己终端执行**（agent 沙箱无仓库外写权限）。历史落地过程（L4 备份、按升级
+  文档 §6.3 扫描并处置 2 个含 `ref-lib/set` 的旧日志等）见 `docs/upgrade-dsh-0.1.7-rc.2.md` §9。
 
 ## 2. 开发规范（必须遵守）
 
@@ -131,13 +132,13 @@
 ## 6. 开发环境速查（2026-09-25：临时版本 + 插件重装但保留 sk/会话）
 
 ```bash
-./scripts/dev-isolate.sh              # 跟 dsh npm latest，home=~/.dsh-dev-main，端口 3090
-TRACK=next ./scripts/dev-isolate.sh   # 任意 npm dist-tag（默认 main = latest）；端口 3091
+./scripts/dev-isolate.sh              # 跟插件所跟踪的通道（dsh npm next），home=~/.dsh-dev-next，端口 3090
+TRACK=main ./scripts/dev-isolate.sh   # 测别的 dist-tag（main = latest，0.1.5/0.1.6 线）；端口 3091
 ```
 
 **`scripts/dev-isolate.sh` 每次运行固定做六件事**（全部实现在脚本里，无需手工步骤）：
 
-1. **解析版本**：`TRACK=<npm dist-tag>`（默认 `main` = `latest`）→ 该 tag 当前版本
+1. **解析版本**：`TRACK=<npm dist-tag>`（默认 `next` = 插件所跟踪的通道；`main` = `latest`）→ 该 tag 当前版本
    （可用 `DSH_VERSION=<版本>` 钉死；也可 `DSH_CACHE_DIR=<目录>` 复用已下载版本，省去每次下载）。
 2. **校验版本一致**：插件 `package.json` 的 `version` 必须等于该通道的 dsh 版本
    （见 §1 版本号约定）；不等只警告，`STRICT_VERSION=1` 直接报错退出——专治"拿错版本测错通道"。
@@ -147,8 +148,8 @@ TRACK=next ./scripts/dev-isolate.sh   # 任意 npm dist-tag（默认 main = late
    顺带补一份非密钥 `settings.yaml`。**home 里的 sessions/storages/settings/凭证一律不删。**
 5. **重装插件**（每次运行都 `plugin remove` + `plugin add`）：确保 profile 指向当前源码的最新构建；
    插件自身数据（sidecar）默认保留，`RESET_PLUGIN_DATA=1` 才清。
-6. **启动 web**：`--port` 按轨道默认（main=3090；`TRACK=next` 时为 3091），退出时删除本次
-   临时下载的 dsh（`KEEP_TOOLS=1` 保留）。
+6. **启动 web**：`--port` 按轨道默认（next=3090，即插件所跟踪的通道；`TRACK=main` 时为 3091），
+   退出时删除本次临时下载的 dsh（`KEEP_TOOLS=1` 保留）。
 
 **插件怎么装（`INSTALL_MODE`，默认 `link`）**——这决定"切分支会不会影响正在跑的环境"：
 
@@ -184,7 +185,7 @@ profile 清单里记的是 tarball 路径，所以**建议保留这个 tarball**
 版本解析与安装逻辑在共用库 `scripts/dsh-track.sh`（**刻意与 `dsh-local.sh` 平级**：
   `.gitignore` 的 `lib/` 会匹配任意层级的 `lib/` 目录，放 `scripts/lib/` 会被静默忽略而漏提交）。
 
-- 彻底重置隔离环境：`rm -rf ~/.dsh-dev-main`（**会话与 sk 会一起删**，所以脚本平时不自动删）。
+- 彻底重置隔离环境：`rm -rf ~/.dsh-dev-next`（**会话与 sk 会一起删**，所以脚本平时不自动删）。
 - 热更新：`src/client/*` 改动 `pnpm build:client` 后浏览器 ≤0.5s 自动更新；node half
   改动 `pnpm build:node` 后必须重启 `dsh web`。
 - shell 注意：macOS 自带 bash 3.2 把多字节字符当变量名字符，变量后紧跟中文标点必须写
@@ -192,7 +193,7 @@ profile 清单里记的是 tarball 路径，所以**建议保留这个 tarball**
 
 ## 7. 版本沿革（v3 → v19）
 
-> 每版做了什么、当时什么约束。v19 已归档（见 §1「单轨」）。
+> 每版做了什么、当时什么约束。v19 已并入 `main`（见 §1「单轨」）。
 
 - **v3**（sidecar 存储，2026-08-17 事故修复）
 - **v4**（`ctx.webServer` 路由通道）
@@ -346,3 +347,40 @@ profile 清单里记的是 tarball 路径，所以**建议保留这个 tarball**
   适配 dsh 0.1.7+ 的图标改名等）已于 2026-09-25 归档为 tag `archive/next-0.1.7-rc.2`**
   ——支持面收敛到 latest 单轨，见 §1「单轨」条。依赖族先按 `0.1.5-rc.2` 落地并通过四道门禁 + L3，
   随后在 `latest` 的 `0.1.5-rc.3` 上复跑同样全绿（devDeps 与 CLI 均已对齐 rc.3）。
+- **v19**（**依赖基线升级 dsh 0.1.5 → 0.1.7-rc.2（npm `next`）+ 单轨改跟 `next`**：
+  原为 `next` 轨（归档 tag `archive/next-0.1.7-rc.2`），2026-09-25 取回并入 `main`，
+  支持面从 `latest` 切到 `next`（见 §1）。评估全文见 `docs/upgrade-dsh-0.1.7-rc.2.md`。
+  本插件在 0.1.2-rc.1 → 0.1.7-rc.2 的 3432 个提交里只被**两处**破坏，且都已落地：
+  - **① 图标改名（client 唯一破坏，白屏级）**：ui-primitives 自 **0.1.7-alpha.1** 起把共享
+    图标由 `Icon<Glyph><Size>` 改为 `Icon<Glyph><Weight>`，**两代名字不共存**
+    （0.1.6-alpha.2 及以前只有旧名，0.1.7-alpha.1 起只有新名）。13 个图标 / 52 处 /
+    5 个 client 文件全部改为 `*Regular`（1px 描边 = 旧 `*16`/`*14` 的等价视觉；
+    `Medium` 是 1.3px 强调，不要用），`size={…}` 调用点不动。精确映射：
+    `IconFolderOpen16→IconFolderOpenRegular`（**无** `Outline` 中缀）、
+    `IconFolderClose16→IconFolderCloseRegular`、`IconChevronRightOutline14→
+    IconChevronRightOutlineRegular`、`Icon{Edit,Loading,Warning,Ellipsis,Plus,Refresh,
+    Search,Trash,Check,Copy}Outline16→+Regular`。图标是 **value import** 且
+    ui-primitives 是宿主 seed 词 ⇒ 旧名在 0.1.7 上解析为 `undefined`，React 渲染即崩。
+  - **② `dsh-session-persistence-jsonl` 自 0.1.3-alpha.1 起整条持久化契约重写**
+    （仅默认导出 + `open(id, access)→SessionHandle.read()` + **必须持写句柄才落盘**，
+    产物为多帧 zstd 的 `session.v<格式版本>.jsonl.zstd`）。影响面只在
+    `tests/harness-roundtrip.spec.ts`（v18 已改为 `default ?? namespace` 双形态导入），
+    **生产代码零改动**——插件不直接读写会话日志，这正是 v3 事故修复的设计目的。
+  - `package.json`：version → **`0.1.7-rc.2`**、14 条 dsh-* peer → **`^0.1.7-rc.2`**、
+    devDeps 7 包 pin `0.1.7-rc.2`；`dsh.client.external: []` 维持。peer 上界语义随之
+    从"排除 0.1.7+"翻转为"0.1.7+ 专属"：`^0.1.7-rc.2` **不**满足 0.1.5/0.1.6 宿主，
+    所以老宿主上装这个版本会被 peer 闸门干净拒绝（`plugin add` 直接报不兼容、
+    不安装；运行时该行置 `disabled` 并写 stderr），不会白屏。
+    `pnpm-workspace.yaml` 由 pnpm 自动补 `minimumReleaseAgeExclude`（0.1.7-rc.2 全族，
+    新发布版本需豁免才能解析），保留以保持安装可复现。
+  - **未采用**的备选：`src/client/icons.ts` 运行时图标兜底（`…Regular ?? …16 ?? …14`，
+    见升级文档 §4.2/§5.2）——单包可同时跑 0.1.5/0.1.6/0.1.7，但需放宽 peer 区间、
+    放弃安装期上界安全网；本次按"跟 dsh 版本走"的既定约定选择直接改名。
+  - 门禁：typecheck / lint / test（**226**，含 L2 在新持久化契约下） / build 四绿；
+    `lib/client.js` 内 13 个新图标名齐备、`require` 仅 3 个且全在宿主 seed 表内
+    （`react` / `react/jsx-runtime` / `dsh-client-ui-primitives`）。
+  - `.github/workflows/release.yml`：tag 推 `v<version>` → 门禁 + `pnpm pack` + 挂
+    Release，**预发布版本号自动建为 pre-release**；内置「发布到 npm」步骤（按版本号
+    选 `next`/`latest` dist-tag），配置 `NPM_TOKEN` secret 后自动生效。
+  - `scripts/dev-isolate.sh`：默认 `TRACK` 由 `main`(=latest) 改为 **`next`**（= 插件
+    所跟踪通道），home 随之变为 `~/.dsh-dev-next`、端口 3090；测老线用 `TRACK=main`（3091）。

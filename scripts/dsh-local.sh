@@ -4,14 +4,14 @@
 # stdout **只打印 dsh bin 的绝对路径**（便于 `DSH_BIN="$(...)"` 捕获）；进度/提示走 stderr。
 #
 # 用法：
-#   ./scripts/dsh-local.sh                                # 默认跟 npm latest（= dsh 主线）
-#   DSH_TRACK=next ./scripts/dsh-local.sh                 # 任意 dist-tag（如 next）
+#   ./scripts/dsh-local.sh                                # 默认跟本插件所跟踪的通道（npm next）
+#   DSH_TRACK=main ./scripts/dsh-local.sh                 # 任意 dist-tag（main = latest）
 #   DSH_VERSION=0.1.5-rc.3 ./scripts/dsh-local.sh         # 显式钉版本
 #   DSH_CACHE_DIR=~/.dsh-tools ./scripts/dsh-local.sh     # 缓存复用，不重复下载
 #   ./scripts/dsh-local.sh --print-version                # 只解析并打印版本号（不安装）
 #
 # 环境变量：
-#   DSH_TRACK=<dist-tag>  跟哪个 dsh dist-tag（默认 main = latest）；DSH_VERSION 优先
+#   DSH_TRACK=<dist-tag>  跟哪个 dsh dist-tag（默认 next = 插件所跟踪的通道；main = latest）；DSH_VERSION 优先
 #   DSH_VERSION=<版本>    显式版本
 #   DSH_PREFIX=<目录>     指定安装目录（最优先）
 #   DSH_CACHE_DIR=<目录>  缓存根：装到 <目录>/<版本>，下次同版本直接复用

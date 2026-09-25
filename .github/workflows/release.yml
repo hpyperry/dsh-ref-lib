@@ -2,6 +2,9 @@ name: release
 
 # 打 `v*` tag 并推送 → 自动跑门禁、构建、打包，并把 tar 挂到同名 GitHub Release
 # （release 不存在则创建，已存在则覆盖同名 asset）。
+#   · 版本号带 `-rc` / `-alpha` / `-beta` 等预发布段时，Release **自动创建为 pre-release**；
+#   · 若仓库配置了 `NPM_TOKEN` secret，同一个 tag 还会把包发到 npm，
+#     dist-tag 与 dsh 同构：预发布 → `next`，正式版 → `latest`（没配就整步跳过，不影响 Release）。
 # 也可在 Actions 页手动触发（workflow_dispatch）：只构建打包，tar 作为 workflow artifact 下载。
 on:
   push:
@@ -14,6 +17,10 @@ permissions:
 jobs:
   pack:
     runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.meta.outputs.version }}
+      prerelease: ${{ steps.meta.outputs.prerelease }}
+      dist_tag: ${{ steps.meta.outputs.dist_tag }}
     steps:
       - uses: actions/checkout@v7
 
@@ -50,7 +57,7 @@ jobs:
           VER="$(tar -xzOf "${TGZ}" package/package.json | node -p 'JSON.parse(require("node:fs").readFileSync(0, "utf8")).version')"
           echo "tarball=${TGZ}  version=${VER}"
           if [ "${GITHUB_REF_TYPE}" = "tag" ] && [ "${GITHUB_REF_NAME#v}" != "${VER}" ]; then
-            echo "✖ tag ${GITHUB_REF_NAME} 与 package.json 的 version ${VER} 不一致（约定：插件 version = dsh 版本号，tag 用 v<version>）"
+            echo "✖ tag ${GITHUB_REF_NAME} 与 package.json 的 version ${VER} 不一致（约定：插件 version = 所跟踪的 dsh 版本号，tag 用 v<version>）"
             exit 1
           fi
           if tar -tzf "${TGZ}" | grep -qE 'package/(src|tests|scripts)/'; then
@@ -64,19 +71,43 @@ jobs:
           tar -tzf "${TGZ}" | grep -E 'package/(lib/index.js|lib/client.js|cordis.patch.yml)$'
           shasum -a 256 "${TGZ}"
 
+      # 预发布判定 + npm dist-tag：`-rc` / `-alpha` / `-beta`… → pre-release & `next`，否则 → `latest`
+      - name: 解析发布元数据（pre-release / dist-tag）
+        id: meta
+        run: |
+          set -euo pipefail
+          VER="$(node -p 'require("./package.json").version')"
+          case "${VER}" in
+            *-*) PRE=true;  DIST=next ;;
+            *)   PRE=false; DIST=latest ;;
+          esac
+          echo "version=${VER}"   >> "${GITHUB_OUTPUT}"
+          echo "prerelease=${PRE}" >> "${GITHUB_OUTPUT}"
+          echo "dist_tag=${DIST}"  >> "${GITHUB_OUTPUT}"
+          echo "version=${VER}  prerelease=${PRE}  npm dist-tag=${DIST}"
+
       - name: 挂到 GitHub Release
         if: github.ref_type == 'tag'
         env:
           GH_TOKEN: ${{ github.token }}
+          PRERELEASE: ${{ steps.meta.outputs.prerelease }}
         run: |
           set -euo pipefail
           TAG="${GITHUB_REF_NAME}"
           if ! gh release view "${TAG}" >/dev/null 2>&1; then
-            gh release create "${TAG}" --title "${TAG}" --generate-notes
+            if [ "${PRERELEASE}" = "true" ]; then
+              echo "创建 pre-release：${TAG}"
+              gh release create "${TAG}" --title "${TAG}" --generate-notes --prerelease
+            else
+              echo "创建正式 release：${TAG}"
+              gh release create "${TAG}" --title "${TAG}" --generate-notes
+            fi
+          else
+            echo "Release ${TAG} 已存在，只覆盖 asset"
           fi
           gh release upload "${TAG}" ./*.tgz --clobber
-          gh release view "${TAG}" --json tagName,assets \
-            --jq '{tag: .tagName, assets: [.assets[] | {name, size, digest}]}'
+          gh release view "${TAG}" --json tagName,isPrerelease,assets \
+            --jq '{tag: .tagName, prerelease: .isPrerelease, assets: [.assets[] | {name, size, digest}]}'
 
       - name: 上传为 workflow artifact（手动触发时）
         if: github.ref_type != 'tag'
@@ -85,3 +116,46 @@ jobs:
           name: ref-lib-tgz
           path: ./*.tgz
           if-no-files-found: error
+
+  # npm 发布：只在 tag 上跑，且只在仓库配了 NPM_TOKEN secret 时真正执行（否则整步跳过）。
+  # dist-tag 与 dsh 同构：预发布 → next，正式版 → latest（带 -rc 的版本 npm 不会自动设 latest）。
+  publish-npm:
+    needs: pack
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: 安装 pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 11.21.0
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+          registry-url: https://registry.npmjs.org
+
+      - name: 检查 NPM_TOKEN 是否已配置
+        id: token
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          if [ -n "${NPM_TOKEN}" ]; then
+            echo "present=1" >> "${GITHUB_OUTPUT}"
+          else
+            echo "present=0" >> "${GITHUB_OUTPUT}"
+            echo "::notice title=npm 发布已跳过::仓库未配置 NPM_TOKEN secret；GitHub Release 不受影响。"
+          fi
+
+      - name: "发布到 npm（dist-tag: ${{ needs.pack.outputs.dist_tag }}）"
+        if: steps.token.outputs.present == '1'
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          set -euo pipefail
+          pnpm install --frozen-lockfile
+          pnpm build
+          pnpm publish --no-git-checks --access public --tag "${{ needs.pack.outputs.dist_tag }}"
+          npm view "@hpyperry/dsh-ref-lib@${{ needs.pack.outputs.version }}" dist-tags version

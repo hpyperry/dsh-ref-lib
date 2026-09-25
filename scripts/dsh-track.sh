@@ -3,7 +3,7 @@
 #
 # 被 scripts/dsh-local.sh 与 scripts/dev-isolate.sh `source`（不直接执行）。
 #
-# 三条约定（2026-09-25 修订；ref-lib 当前只跟 dsh npm `latest`）：
+# 三条约定（2026-09-25 修订；ref-lib 当前跟 dsh npm `next` = 0.1.7-rc.2，见 AGENTS.md §1）：
 #   1) **永不全局安装**：一律 `npm install --prefix <目录>`；目录默认是 mktemp 出来的
 #      临时目录（用完即删），也可用 DSH_CACHE_DIR 按版本缓存到用户目录复用。
 #      **任何情况下都不执行 `npm i -g`、不改 PATH、不碰 `which dsh` 那份全局 CLI。**
@@ -40,7 +40,7 @@ process.stdin.on("end", () => {
 }
 
 # 解析最终使用的 dsh 版本号（stdout 单行）。
-# 优先 DSH_VERSION（显式钉版本），否则按 DSH_TRACK（默认 main ⇒ latest）查 registry。
+# 优先 DSH_VERSION（显式钉版本），否则按 DSH_TRACK（默认 next = 插件所跟踪的通道）查 registry。
 # 用法：dsh_resolve_version
 dsh_resolve_version() {
   if [ -n "${DSH_VERSION:-}" ]; then
@@ -48,7 +48,7 @@ dsh_resolve_version() {
     return 0
   fi
   # DSH_TRACK 为准；也接受 TRACK（dev-isolate.sh 用的就是 TRACK，别再踩一次）
-  dsh_track_version "${DSH_TRACK:-${TRACK:-main}}"
+  dsh_track_version "${DSH_TRACK:-${TRACK:-next}}"
 }
 
 # 只读探测某个安装目录里已装的 dsh 版本（未装则打印空串）。

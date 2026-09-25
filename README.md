@@ -3,7 +3,7 @@
 给 DeepSeek Harness 的每个会话挂一个「只读参考库」：把本地目录（比如你的项目源码、内部文档）登记为参考库后，agent 回答前会**先去这些目录里查证**，查不到才允许走外部途径——而不是凭空猜或者直接上网搜。
 
 ```
-dsh plugin --profile web add @hpyperry/dsh-ref-lib@0.1.5-rc.3
+dsh plugin --profile web add @hpyperry/dsh-ref-lib@0.1.7-rc.2
 ```
 
 ## 它解决什么问题
@@ -16,7 +16,7 @@ dsh plugin --profile web add @hpyperry/dsh-ref-lib@0.1.5-rc.3
 
 ```bash
 # 安装
-dsh plugin --profile web add @hpyperry/dsh-ref-lib@0.1.5-rc.3
+dsh plugin --profile web add @hpyperry/dsh-ref-lib@0.1.7-rc.2
 
 # 卸载
 dsh plugin --profile web remove @hpyperry/dsh-ref-lib
@@ -26,13 +26,12 @@ dsh plugin --profile web remove @hpyperry/dsh-ref-lib
 
 | 你的 dsh 版本 | 装哪个插件版本 | 跟的是 dsh 的哪个通道 |
 | --- | --- | --- |
-| `0.1.5-rc.3`（及 0.1.5 / 0.1.6 系列） | **`0.1.5-rc.3`** | npm `latest`（主线） |
+| `0.1.7-rc.2`（及 0.1.7+ 系列） | **`0.1.7-rc.2`** | npm `next`（预发布通道） |
+| `0.1.5-rc.3`（及 0.1.5 / 0.1.6 系列） | **`0.1.5-rc.3`** | npm `latest`（稳定通道） |
 
-安装命令写 `@hpyperry/dsh-ref-lib@<你的 dsh 版本>` 即可。当前**只支持 dsh `latest` 这一条轨**：
-在 0.1.7+ 宿主上装会被 peer 兼容闸门直接拒绝（`plugin add` 报不兼容、不安装，也不会白屏）。
-曾经并行的 `next` 轨（插件 `0.1.7-rc.2`，适配 dsh 0.1.7+）已**归档为 tag `archive/next-0.1.7-rc.2`**——
-将来 dsh 0.1.7 成为 `latest` 时，`git branch next archive/next-0.1.7-rc.2` 即可取回那份适配工作。
-不带版本号默认装 npm 上的最新版。
+安装命令写 `@hpyperry/dsh-ref-lib@<你的 dsh 版本>` 即可（不带版本号默认装 npm 上的最新版）。
+两条线**各自只声明自己真实支持的宿主**：装错版本会被 peer 兼容闸门直接拒绝——`plugin add`
+报不兼容、不安装，运行时该插件行被置 `disabled` 并写 stderr，**不会白屏**。
 
 安装完成后重启 `dsh web` 生效。本地开发期想改动即时生效，也可以直接指向仓库本地路径：`dsh plugin --profile web add /path/to/ref-lib`。
 
@@ -114,13 +113,14 @@ pnpm build       # 构建 node half（tsc）+ client bundle（tsdown）→ lib/
 - **一条命令起联调环境**：`scripts/dev-isolate.sh` 会自动做四件事——按通道拉一份**临时** dsh（不装全局）、把 sk 从真实 home 复制进隔离 home、**重装插件**（吃到当前源码最新构建）、启动 web。真实 `~/.dsh` 全程零写入。
 
   ```bash
-  ./scripts/dev-isolate.sh              # 跟 dsh npm latest，home=~/.dsh-dev-main，端口 3090
+  ./scripts/dev-isolate.sh              # 跟本插件所跟踪的通道（dsh npm next），home=~/.dsh-dev-next，端口 3090
+  TRACK=main ./scripts/dev-isolate.sh   # 测别的 dist-tag（main = latest，0.1.5/0.1.6 线），端口 3091
   ```
 
   - 隔离 home 固定在**用户目录**（`~/.dsh-dev-<track>`），脚本会拒绝任何落在代码库内的 home 路径——home 里有 sk 与真实会话，绝不能进仓库。
   - **每次运行只重装插件**；home 里的 `sessions/`、`storages/`、`.credentials.yaml`、`settings.yaml` **一律保留**（想清插件自身数据才用 `RESET_PLUGIN_DATA=1`）。
   - 脚本会校验插件 `version` 是否等于该通道的 dsh 版本（跟版本号约定对齐），不一致会警告；`STRICT_VERSION=1` 直接报错。
-  - 其余开关（`BUILD` / `SEED_CREDENTIALS` / `KEEP_TOOLS` / `DSH_CACHE_DIR` / `PORT` / `DSH_VERSION`）见脚本头注释。想彻底重置：`rm -rf ~/.dsh-dev-main`（**会连会话与 sk 一起删**）。`TRACK` 可传任意 npm dist-tag（默认 `main` = `latest`；例如 `TRACK=next`，端口改用 3091）。
+  - 其余开关（`BUILD` / `SEED_CREDENTIALS` / `KEEP_TOOLS` / `DSH_CACHE_DIR` / `PORT` / `DSH_VERSION`）见脚本头注释。想彻底重置：`rm -rf ~/.dsh-dev-next`（**会连会话与 sk 一起删**）。`TRACK` 可传任意 npm dist-tag（默认 `next` = 本插件所跟踪的通道，端口 3090；`main` = `latest`，端口 3091）。
   - **默认是 link 安装**：profile 指向仓库目录，改代码能热更新。要一份不受仓库影响的冻结副本：`INSTALL_MODE=pack`（先 `pnpm pack` 再装，自带构建产物；tarball 打在仓库根，已 gitignore）。
 - **只想拿一个指定版本的 dsh**：`scripts/dsh-local.sh`（stdout 只打印 bin 路径，非全局安装）。
 
@@ -133,26 +133,32 @@ pnpm build       # 构建 node half（tsc）+ client bundle（tsdown）→ lib/
 
 ### 发布（维护者）
 
-版本号跟 dsh 走、且只跟 `latest` 通道：插件 `version` = 当前 `npm view @deepseek-ai/dsh dist-tags.latest`。
+插件 `version` = 它所跟踪的 dsh 版本号（当前跟 dsh npm `next` = `0.1.7-rc.2`；`latest` 线为 `0.1.5-rc.3`）。
+两条线的发布动作完全一样，只有版本号与 tag 不同——**跟 dsh 的节奏走：dsh 发新版 → 同步改号 → 复跑门禁 → 打 tag**。
 
 **打 tag 即自动打包并挂 Release（推荐）**——把 `package.json` 的 `version` 改成目标版本并提交，然后：
 
 ```bash
-git tag -a v0.1.5-rc.3 -m "0.1.5-rc.3" && git push origin v0.1.5-rc.3
+git tag -a v0.1.7-rc.2 -m "0.1.7-rc.2" && git push origin v0.1.7-rc.2
 ```
 
 [`.github/workflows/release.yml`](.github/workflows/release.yml) 会跑门禁 → 构建 → `pnpm pack`，
 再把 tar 挂到同名 Release（不存在则用 `--generate-notes` 创建，已存在则覆盖同名 asset）。
+**版本号带 `-rc` / `-alpha` / `-beta` 时自动创建为 pre-release**（与 dsh 的命名节奏一致）。
 **tag 名必须等于 `v<package.json 的 version>`**，不一致工作流直接失败（防止发错版）。
 只想拿一个 tar 而不发版：在 Actions 页手动触发同一个工作流，tar 作为 artifact 下载。
 
-**npm（账号解锁后）**：
+**npm —— dist-tag 与 dsh 同构**：预发布进 `next`，正式版进 `latest`（账号解锁后）：
 
 ```bash
-npm publish --tag latest   # 例：0.1.5-rc.3
+npm publish --tag next      # 例：0.1.7-rc.2（带 -rc 的预发布）
+npm publish --tag latest    # 例：0.1.5-rc.3（正式版）
 ```
 
-- **带 `-rc` 的版本号不会被 npm 自动设为 `latest`**，必须显式指定 `--tag`。
+同一个 workflow 里已有「发布到 npm」一步，**只在仓库配置了 `NPM_TOKEN` secret 时才执行**；
+配好后打 tag 即自动按版本号选 `next` / `latest`，不需要本地 npm 登录。
+（不带版本号安装的用户拿到的就是 `latest`；`next` 线要用 `@hpyperry/dsh-ref-lib@0.1.7-rc.2` 显式指定，
+因为带 `-rc` 的版本 npm **不会**自动设成 `latest`。）
 - 发布包只含 `lib/` 与 `cordis.patch.yml`（`pnpm build` 先清空 `lib/` 再构建，不会带历史残留）；
   用户也可直接装打出的 tarball：`dsh plugin --profile web add ./hpyperry-dsh-ref-lib-<版本>.tgz`。
 - CI（[`.github/workflows/ci.yml`](.github/workflows/ci.yml)）在 push `main` 与所有 PR 上跑同样的四道门禁。

@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# dev-isolate.sh —— 启动**隔离**的 dsh web 联调环境（默认跟 dsh npm `latest`）。
+# dev-isolate.sh —— 启动**隔离**的 dsh web 联调环境（默认跟插件所跟踪的 dsh 通道 `next`）。
 #
-# 设计目标（2026-09-25 修订；插件当前只跟 dsh `latest` 一条线，见 AGENTS.md §1）：
+# 设计目标（2026-09-25 修订；插件当前跟 dsh `next` = 0.1.7-rc.2，见 AGENTS.md §1）：
 #
-#   1) **跟 dsh dist-tag 走**：`TRACK` 给 npm dist-tag（默认 `main` = `latest`，也可传
-#      `next` 等）。版本由 registry 实时解析（也可 DSH_VERSION 显式钉），并校验被测插件的
+#   1) **跟 dsh dist-tag 走**：`TRACK` 给 npm dist-tag（默认 `next` = 插件所跟踪的通道，
+#      也可传 `main`/`latest` 等）。版本由 registry 实时解析（也可 DSH_VERSION 显式钉），并校验被测插件的
 #      package.json version 是否与之一致（不一致只警告；STRICT_VERSION=1 则报错退出）。
 #   2) **CLI 用临时下载**：每次运行 `npm install --prefix <mktemp 临时目录>` 拉一份该版本的
 #      dsh，**不装全局、不动 PATH、不碰 `which dsh` 那份**；退出时自动删除该临时目录
@@ -19,17 +19,17 @@
 #      （权限 600）过去，让隔离环境也能真的对话；文件始终留在用户目录，不进代码库。
 #
 # 用法：
-#   ./scripts/dev-isolate.sh                          # 默认：跟 dsh latest，home=~/.dsh-dev-main，端口 3090
-#   TRACK=next ./scripts/dev-isolate.sh               # 任意 npm dist-tag（如 next）→ 端口 3091
+#   ./scripts/dev-isolate.sh                          # 默认：跟插件所跟踪的 dsh 通道 next，home=~/.dsh-dev-next，端口 3090
+#   TRACK=main ./scripts/dev-isolate.sh               # 任意 npm dist-tag（如 main = latest，0.1.5/0.1.6 线）→ 端口 3091
 #   PORT=4000 ./scripts/dev-isolate.sh --no-open      # 自定义端口 + 透传 dsh 参数
 #   RESET_PLUGIN_DATA=1 ./scripts/dev-isolate.sh      # 顺带清插件自身数据（会话/sk 不动）
 #
 # 环境变量：
-#   TRACK=<npm dist-tag>    跟哪个 dsh dist-tag（默认 main = latest）
+#   TRACK=<npm dist-tag>    跟哪个 dsh dist-tag（默认 next = 插件所跟踪的通道；main = latest）
 #   DSH_VERSION=<版本>      显式钉 dsh 版本（覆盖 TRACK 解析）
 #   DEV_HOME=<目录>         隔离 home（默认 ~/.dsh-dev-<TRACK>；必须在 $HOME 下）
 #   PROFILE=web             profile 名
-#   PORT=<端口>             web 端口（默认 main=3090、其他 dist-tag=3091）
+#   PORT=<端口>             web 端口（默认 next=3090、其他 dist-tag=3091）
 #   PLUGIN=<目录>           被测插件目录（默认本仓库根；相对路径会转成绝对路径）
 #                           单轨用不上；留给"在别处 checkout 测同一插件"的场景
 #   BUILD=1|0               启动前构建插件（默认 1，避免吃到过期 lib/）
@@ -58,7 +58,7 @@ SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 PLUGIN_RAW="${PLUGIN:-$(cd "${SELF_DIR}/.." && pwd)}"
 PLUGIN="$(cd "${PLUGIN_RAW}" 2>/dev/null && pwd)" || { echo "dev-isolate: ✖ PLUGIN 目录不存在：${PLUGIN_RAW}" >&2; exit 1; }
-TRACK="${TRACK:-main}"
+TRACK="${TRACK:-next}"
 PROFILE="${PROFILE:-web}"
 BUILD="${BUILD:-1}"
 SEED_CREDENTIALS="${SEED_CREDENTIALS:-1}"
@@ -83,9 +83,9 @@ for a in "$@"; do
 done
 note() { echo "dev-isolate: $*"; }
 
-# 端口：main 用 3090；测别的 dist-tag 用 3091，避免与默认实例撞端口。
+# 端口：默认通道（next，即插件所跟踪的线）用 3090；测别的 dist-tag 用 3091，避免与默认实例撞端口。
 case "${TRACK}" in
-  main) PORT="${PORT:-3090}" ;;
+  next) PORT="${PORT:-3090}" ;;
   *) PORT="${PORT:-3091}" ;;
 esac
 # 版本解析库读的是 DSH_TRACK：这里同步一次并 export，两个名字永远一致。
@@ -126,7 +126,7 @@ PLUGIN_VERSION="$(node -p 'require(process.argv[1]).version' "${PLUGIN}/package.
 # pnpm/npm 的 tarball 命名：去 scope 的 `@`，`/` 换成 `-`（@scope/name → scope-name-<版本>.tgz）
 PKG_BASENAME="$(printf '%s' "${PLUGIN_NAME}" | sed 's|^@||; s|/|-|g')-${PLUGIN_VERSION}.tgz"
 if [ "${PLUGIN_VERSION}" != "${VERSION}" ]; then
-  msg="插件版本 ${PLUGIN_VERSION} ≠ dsh ${TRACK} 解析出的 ${VERSION}（约定：插件 version = dsh latest 的版本号；故意测别的 dist-tag 时可忽略）"
+  msg="插件版本 ${PLUGIN_VERSION} ≠ dsh ${TRACK} 解析出的 ${VERSION}（约定：插件 version = 它所跟踪的 dsh 版本号；故意测别的 dist-tag 时可忽略）"
   if [ "${STRICT_VERSION}" = "1" ]; then die "${msg}"; fi
   note "⚠️  ${msg}"
 fi
