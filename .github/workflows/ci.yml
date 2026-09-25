@@ -1,0 +1,46 @@
+name: ci
+
+# 门禁：push 到 main、以及所有 PR。与本地四道门禁一致（AGENTS.md §2）。
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  gates:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 安装 pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.21.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      # `prepare` 会顺带跑一次 build（与本地 `pnpm install` 行为一致）
+      - name: 安装依赖
+        run: pnpm install --frozen-lockfile
+
+      - name: typecheck
+        run: pnpm typecheck
+
+      - name: lint
+        run: pnpm lint
+
+      - name: test（L0–L2，含 harness 边界回归）
+        run: pnpm test
+
+      - name: build
+        run: pnpm build

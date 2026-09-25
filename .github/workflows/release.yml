@@ -1,0 +1,87 @@
+name: release
+
+# 打 `v*` tag 并推送 → 自动跑门禁、构建、打包，并把 tar 挂到同名 GitHub Release
+# （release 不存在则创建，已存在则覆盖同名 asset）。
+# 也可在 Actions 页手动触发（workflow_dispatch）：只构建打包，tar 作为 workflow artifact 下载。
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  pack:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 安装 pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.21.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: 安装依赖
+        run: pnpm install --frozen-lockfile
+
+      - name: 门禁（typecheck / lint / test）
+        run: |
+          pnpm typecheck
+          pnpm lint
+          pnpm test
+
+      # `pnpm pack` 走 prepare=build（先清 lib/ 再构建），产物落在仓库根
+      - name: 构建 + 打包
+        run: |
+          pnpm build
+          pnpm pack
+          ls -l ./*.tgz
+
+      - name: 校验产物（版本号、不含源码/旧包）
+        run: |
+          set -euo pipefail
+          TGZ="$(ls -1 ./*.tgz | head -1)"
+          VER="$(tar -xzOf "${TGZ}" package/package.json | node -p 'JSON.parse(require("node:fs").readFileSync(0, "utf8")).version')"
+          echo "tarball=${TGZ}  version=${VER}"
+          if [ "${GITHUB_REF_TYPE}" = "tag" ] && [ "${GITHUB_REF_NAME#v}" != "${VER}" ]; then
+            echo "✖ tag ${GITHUB_REF_NAME} 与 package.json 的 version ${VER} 不一致（约定：插件 version = dsh 版本号，tag 用 v<version>）"
+            exit 1
+          fi
+          if tar -tzf "${TGZ}" | grep -qE 'package/(src|tests|scripts)/'; then
+            echo "✖ 产物混入了源码目录（package.json 的 files 应只含 lib/ 与 cordis.patch.yml）"
+            exit 1
+          fi
+          if tar -tzf "${TGZ}" | grep -qE '\.tgz$'; then
+            echo "✖ 产物里又打进了 .tgz（自包含污染）"
+            exit 1
+          fi
+          tar -tzf "${TGZ}" | grep -E 'package/(lib/index.js|lib/client.js|cordis.patch.yml)$'
+          shasum -a 256 "${TGZ}"
+
+      - name: 挂到 GitHub Release
+        if: github.ref_type == 'tag'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          TAG="${GITHUB_REF_NAME}"
+          if ! gh release view "${TAG}" >/dev/null 2>&1; then
+            gh release create "${TAG}" --title "${TAG}" --generate-notes
+          fi
+          gh release upload "${TAG}" ./*.tgz --clobber
+          gh release view "${TAG}" --json tagName,assets \
+            --jq '{tag: .tagName, assets: [.assets[] | {name, size, digest}]}'
+
+      - name: 上传为 workflow artifact（手动触发时）
+        if: github.ref_type != 'tag'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ref-lib-tgz
+          path: ./*.tgz
+          if-no-files-found: error

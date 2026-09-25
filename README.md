@@ -134,17 +134,28 @@ pnpm build       # 构建 node half（tsc）+ client bundle（tsdown）→ lib/
 ### 发布（维护者）
 
 版本号跟 dsh 走、且只跟 `latest` 通道：插件 `version` = 当前 `npm view @deepseek-ai/dsh dist-tags.latest`。
-发布前确认 `pnpm typecheck && pnpm lint && pnpm test && pnpm build` 全绿，且 `version` 等于该版本。
+
+**打 tag 即自动打包并挂 Release（推荐）**——把 `package.json` 的 `version` 改成目标版本并提交，然后：
+
+```bash
+git tag -a v0.1.5-rc.3 -m "0.1.5-rc.3" && git push origin v0.1.5-rc.3
+```
+
+[`.github/workflows/release.yml`](.github/workflows/release.yml) 会跑门禁 → 构建 → `pnpm pack`，
+再把 tar 挂到同名 Release（不存在则用 `--generate-notes` 创建，已存在则覆盖同名 asset）。
+**tag 名必须等于 `v<package.json 的 version>`**，不一致工作流直接失败（防止发错版）。
+只想拿一个 tar 而不发版：在 Actions 页手动触发同一个工作流，tar 作为 artifact 下载。
+
+**npm（账号解锁后）**：
 
 ```bash
 npm publish --tag latest   # 例：0.1.5-rc.3
 ```
 
 - **带 `-rc` 的版本号不会被 npm 自动设为 `latest`**，必须显式指定 `--tag`。
-- 暂时不发布（或只想自己用）时的替代装法：`pnpm pack` 打出 tarball →
-  `dsh plugin --profile web add ./hpyperry-dsh-ref-lib-<版本>.tgz`（冻结副本，不依赖 registry）。
-- 发布包只含 `lib/` 与 `cordis.patch.yml`；`pnpm build` 会先清空 `lib/` 再构建，
-  确保不会把历史版本的残留产物打进包里。
+- 发布包只含 `lib/` 与 `cordis.patch.yml`（`pnpm build` 先清空 `lib/` 再构建，不会带历史残留）；
+  用户也可直接装打出的 tarball：`dsh plugin --profile web add ./hpyperry-dsh-ref-lib-<版本>.tgz`。
+- CI（[`.github/workflows/ci.yml`](.github/workflows/ci.yml)）在 push `main` 与所有 PR 上跑同样的四道门禁。
 
 ## License
 

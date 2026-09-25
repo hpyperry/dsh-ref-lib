@@ -62,7 +62,9 @@
   `conversation.input.dock` 等官方 slot）。
 - 门禁：`pnpm typecheck`（`tsc --noEmit`）/ `pnpm lint`（eslint + prettier，见
   `eslint.config.js`）/ `pnpm test`（必须含 L0–L2 全部层，见 §5）/ `pnpm build`
-  （`tsc` + `tsdown`）。
+  （`tsc` + `tsdown`）。CI 兜底同样四道：`.github/workflows/ci.yml`（push `main` / PR）；
+  发版走 `.github/workflows/release.yml`（`v*` tag → 门禁 + `pnpm pack` + 挂 Release，
+  **tag 名必须 = `v<package.json version>`**，不一致会失败；`workflow_dispatch` 则只出 artifact）。
 - 单轨维护（见 §1「单轨」）：不要在 `main` 之外开长期分支，也不要为"另一条轨"改
   `package.json` 的 version / `dsh-*` 区间——试别的 dsh 版本用 `DSH_VERSION=<版本>` 钉住。
 
