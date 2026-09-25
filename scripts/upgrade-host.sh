@@ -60,6 +60,36 @@ ASSUME_YES=0
 die() { echo "upgrade-host: ✖ $*" >&2; exit 1; }
 note() { echo "upgrade-host: $*"; }
 
+# 构建 + 打包 + 校验产物，成功时 stdout 打印 tarball 绝对路径。
+#
+# **刻意不解析 `pnpm pack` 的 stdout**：`pack` 会触发 `prepare`（= build），构建输出会混进
+# stdout，`| tail -1` 抓到的可能是 `$ rm -rf lib` 这类噪音（2026-09-25 真实翻车：脚本因此
+# 判定"产物不存在"，而当时宿主**已经升上去了**，把人留在半升级状态）。这里改为按包名/版本
+# 自己算出文件名，跑完再校验两件事：① 文件确实存在；② 包内 version == 插件目录的 version。
+# 任何一步不过就返回非 0——调用点在动真实环境**之前**，所以失败不会留下烂摊子。
+pack_plugin() {
+  local name version basename out inner log
+  name="$(node -p 'require(process.argv[1]).name' "${PLUGIN}/package.json" 2>/dev/null || true)"
+  version="$(node -p 'require(process.argv[1]).version' "${PLUGIN}/package.json" 2>/dev/null || true)"
+  if [ -z "${name}" ] || [ -z "${version}" ]; then echo "upgrade-host: 读不出包名/版本" >&2; return 1; fi
+  basename="$(printf '%s' "${name}" | sed 's|^@||; s|/|-|g')-${version}.tgz"
+  out="${PKG_ROOT}/${basename}"
+  mkdir -p "${PKG_ROOT}"
+  rm -f "${out}"   # 清掉同名旧产物，避免拿上一次的包糊弄过去
+  log="$(mktemp "${TMPDIR:-/tmp}/reflib-pack-XXXXXX.log")"
+  if ! ( cd "${PLUGIN}" && pnpm pack --pack-destination "${PKG_ROOT}" ) >"${log}" 2>&1; then
+    echo "upgrade-host: pnpm pack 失败，日志尾部：" >&2
+    tail -15 "${log}" >&2
+    rm -f "${log}"
+    return 1
+  fi
+  rm -f "${log}"
+  if [ ! -f "${out}" ]; then echo "upgrade-host: 打包后找不到 ${out}" >&2; return 1; fi
+  inner="$(tar -xzOf "${out}" package/package.json 2>/dev/null | node -p 'JSON.parse(require("node:fs").readFileSync(0,"utf8")).version' 2>/dev/null || true)"
+  if [ "${inner}" != "${version}" ]; then echo "upgrade-host: 产物版本 '${inner}' ≠ package.json '${version}'" >&2; return 1; fi
+  printf '%s\n' "${out}"
+}
+
 for a in "$@"; do
   case "${a}" in
     --check) CHECK_ONLY=1 ;;
@@ -124,13 +154,29 @@ if [ "${SCAN_LEGACY}" = "1" ]; then
   fi
 fi
 
-# ── 5) 计划 + 确认 ─────────────────────────────────────────────────────────
+# ── 5) **先准备插件产物**（build + pack + 校验）──────────────────────────────
+# 刻意排在备份/升宿主**之前**：打包是最容易出岔子的一步，必须在动真实环境之前暴露——
+# 否则会出现"宿主升上去了、插件没换"的半升级状态（2026-09-25 真实翻车就是这样）。
+TGZ=""
+if [ "${SKIP_PLUGIN}" = "1" ]; then
+  note "跳过准备插件产物（SKIP_PLUGIN=1）"
+elif [ "${CHECK_ONLY}" = "1" ]; then
+  note "（--check：本次不打包；真跑时会**先**打包并校验产物，失败则什么都不动）"
+else
+  note "准备插件产物：pnpm build + pnpm pack → ${PKG_ROOT}"
+  if ! TGZ="$(pack_plugin)"; then
+    die "插件产物准备失败——**没有动任何真实环境**（宿主与插件都保持原样），修好后再跑"
+  fi
+  note "产物就绪：${TGZ}（$(du -h "${TGZ}" | cut -f1)）"
+fi
+
+# ── 6) 计划 + 确认 ─────────────────────────────────────────────────────────
 BK_DIR="${REAL_HOME}.bak-$(date +%Y%m%d-%H%M%S)"
 echo
 note "计划："
 [ "${BACKUP}" = "1" ] && note "  1. 备份真实 home → ${BK_DIR}"
 [ "${SKIP_HOST}" = "1" ] && note "  2. （SKIP_HOST=1，跳过升宿主）" || note "  2. npm i -g @deepseek-ai/dsh@${TARGET}"
-[ "${SKIP_PLUGIN}" = "1" ] && note "  3. （SKIP_PLUGIN=1，跳过换插件）" || note "  3. pnpm pack + dsh plugin --profile ${PROFILE} remove/add（插件 ${PLUGIN_VERSION}）"
+[ "${SKIP_PLUGIN}" = "1" ] && note "  3. （SKIP_PLUGIN=1，跳过换插件）" || note "  3. dsh plugin --profile ${PROFILE} remove → add ${TGZ}（装不上会自动把原插件装回去）"
 note "  4. 由你手动重启 dsh web（脚本不碰你正在跑的进程）"
 if [ "${CHECK_ONLY}" = "1" ]; then
   note "干跑结束（--check）：以上都没有执行。"
@@ -143,7 +189,7 @@ if [ "${ASSUME_YES}" != "1" ]; then
   [ "${reply}" = "yes" ] || die "已取消（要跳过确认用 --yes）"
 fi
 
-# ── 6) 备份（L4）────────────────────────────────────────────────────────────
+# ── 7) 备份（L4）────────────────────────────────────────────────────────────
 if [ "${BACKUP}" = "1" ]; then
   note "备份：${REAL_HOME} → ${BK_DIR}"
   cp -R "${REAL_HOME}" "${BK_DIR}" || die "备份失败——已中止（不做无备份的格式升级）"
@@ -152,7 +198,7 @@ else
   note "⚠️  BACKUP=0：跳过备份（会话格式 v3→v4 不可逆，出事没得回退）"
 fi
 
-# ── 7) 升宿主 ──────────────────────────────────────────────────────────────
+# ── 8) 升宿主 ──────────────────────────────────────────────────────────────
 if [ "${SKIP_HOST}" = "1" ]; then
   note "跳过升宿主（SKIP_HOST=1）"
 else
@@ -163,22 +209,33 @@ else
   [ "${after}" = "${TARGET}" ] || note "⚠️  版本仍是 ${after}，期望 ${TARGET}——检查是否有别的 dsh 抢了 PATH"
 fi
 
-# ── 8) 换插件（pack 冻结副本）───────────────────────────────────────────────
+# ── 9) 换插件：先移除旧的、再装刚校验过的产物；装不上就把原来的装回去 ──────────
 if [ "${SKIP_PLUGIN}" = "1" ]; then
   note "跳过换插件（SKIP_PLUGIN=1）"
 else
-  note "构建 + 打包：pnpm pack → ${PKG_ROOT}"
-  ( cd "${PLUGIN}" && pnpm build ) >/dev/null || die "pnpm build 失败"
-  TGZ="$(cd "${PLUGIN}" && pnpm pack --pack-destination "${PKG_ROOT}" 2>/dev/null | tail -1)" || die "pnpm pack 失败"
-  [ -f "${TGZ}" ] || die "打包产物不存在：${TGZ}"
-  note "tarball：${TGZ}（$(du -h "${TGZ}" | cut -f1)）"
-  dsh plugin --profile "${PROFILE}" remove @hpyperry/dsh-ref-lib >/dev/null 2>&1 || note "（此前未安装或移除失败，继续安装）"
-  dsh plugin --profile "${PROFILE}" add "${TGZ}" >/dev/null 2>&1 || die "插件安装失败——手工复现：dsh plugin --profile ${PROFILE} add ${TGZ}"
+  note "移除旧插件：@hpyperry/dsh-ref-lib（当前 ${CURRENT_SPEC}）"
+  dsh plugin --profile "${PROFILE}" remove @hpyperry/dsh-ref-lib >/dev/null 2>&1 || note "（此前未安装或移除失败，继续）"
+  note "安装：${TGZ}"
+  if ! dsh plugin --profile "${PROFILE}" add "${TGZ}" >/dev/null 2>&1; then
+    case "${CURRENT_SPEC}" in
+      "(未安装)"|"(无 profile)"|"")
+        note "⚠️  安装失败，且原先就没装，无可回滚" ;;
+      *)
+        note "⚠️  安装失败，尝试把原来的插件装回去：${CURRENT_SPEC}"
+        if dsh plugin --profile "${PROFILE}" add "${CURRENT_SPEC}" >/dev/null 2>&1; then
+          note "已回滚到原插件（宿主已是 ${TARGET}，插件仍是旧版）"
+        else
+          note "⚠️  回滚也失败，手工执行：dsh plugin --profile ${PROFILE} add ${CURRENT_SPEC}"
+        fi ;;
+    esac
+    die "插件安装失败——tarball 在 ${TGZ}，手工复现：dsh plugin --profile ${PROFILE} add ${TGZ}"
+  fi
   installed="$(node -p 'require(process.argv[1]).version' "${REAL_HOME}/profiles/${PROFILE}/node_modules/@hpyperry/dsh-ref-lib/package.json" 2>/dev/null || echo '?')"
+  [ "${installed}" = "${PLUGIN_VERSION}" ] || die "装上的版本是 '${installed}'，期望 '${PLUGIN_VERSION}'——检查 tarball：${TGZ}"
   note "插件已装：${installed}"
 fi
 
-# ── 9) 后续步骤（手动）───────────────────────────────────────────────────────
+# ── 10) 后续步骤（手动）──────────────────────────────────────────────────────
 cat <<EOF
 
 upgrade-host: 完成。**还差最后一步（手动）**：

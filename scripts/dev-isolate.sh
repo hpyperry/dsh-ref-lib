@@ -235,14 +235,15 @@ if [ "${INSTALL_MODE}" = "pack" ]; then
   PKG_DIR="${PKG_ROOT}"
   mkdir -p "${PKG_DIR}"
   note "打包：pnpm pack → ${PKG_DIR}"
-  if ! INSTALL_SPEC="$(cd "${PLUGIN}" && pnpm pack --pack-destination "${PKG_DIR}" 2>/dev/null | tail -1)"; then
+  # **不要解析 `pnpm pack` 的 stdout**：它会跑 prepare(=build)，构建输出混进 stdout 后
+  # `| tail -1` 抓到的可能是 `$ rm -rf lib` 之类噪音（upgrade-host.sh 2026-09-25 就这么翻过车）。
+  # 这里按前面算好的 PKG_BASENAME 定位产物并校验。
+  INSTALL_SPEC="${PKG_DIR}/${PKG_BASENAME}"
+  rm -f "${INSTALL_SPEC}"
+  if ! ( cd "${PLUGIN}" && pnpm pack --pack-destination "${PKG_DIR}" ) >/dev/null 2>&1; then
     die "打包失败（先跑 pnpm build 确认能构建）"
   fi
-  [ -f "${INSTALL_SPEC}" ] || die "打包产物不存在：${INSTALL_SPEC}"
-  actual_basename="$(basename "${INSTALL_SPEC}")"
-  if [ "${actual_basename}" != "${PKG_BASENAME}" ]; then
-    note "⚠️  tarball 名与预期不同（预期 ${PKG_BASENAME}，实际 ${actual_basename}）"
-  fi
+  [ -f "${INSTALL_SPEC}" ] || die "打包产物不存在：${INSTALL_SPEC}（预期文件名 ${PKG_BASENAME}）"
   note "tarball：${INSTALL_SPEC}（$(du -h "${INSTALL_SPEC}" | cut -f1)）"
 fi
 
