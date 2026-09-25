@@ -130,6 +130,14 @@ pnpm build       # 构建 node half（tsc）+ client bundle（tsdown）→ lib/
   - 脚本会校验**宿主范围**——dsh 版本是否落在插件 `package.json` 声明的 `dsh-*` peer 区间内，不在范围内会警告；`STRICT_VERSION=1` 直接报错。
   - 其余开关（`BUILD` / `SEED_CREDENTIALS` / `KEEP_TOOLS` / `DSH_CACHE_DIR` / `PORT` / `DSH_VERSION`）见脚本头注释。想彻底重置：`rm -rf .dsh-dev/next`（**会连会话与 sk 一起删**）。`TRACK` 可传任意 npm dist-tag（默认 `next` = 本插件所跟踪的通道，端口 3090；`main` = `latest`，端口 3091）。
   - **默认是 link 安装**：profile 指向仓库目录，改代码能热更新。要一份不受仓库影响的冻结副本：`INSTALL_MODE=pack`（先 `pnpm pack` 再装，自带构建产物；tarball 打在仓库根，已 gitignore）。
+- **把真实环境升到新通道**（不是联调）：`scripts/upgrade-host.sh` —— 升全局 dsh + 把插件重装成 tarball 冻结副本。它会动真实 `~/.dsh`，所以**默认先整目录备份、打印计划并要求输入 `yes`**，也不碰你正在跑的 `dsh web`（只打印重启命令）。先 `--check` 干跑：
+
+  ```bash
+  ./scripts/upgrade-host.sh --check      # 干跑：只看现状与计划
+  ./scripts/upgrade-host.sh              # 升到 npm next + 换插件（备份 → 确认 → 执行）
+  SKIP_HOST=1 ./scripts/upgrade-host.sh  # 只换插件，宿主不动
+  ```
+
 - **只想拿一个指定版本的 dsh**：`scripts/dsh-local.sh`（stdout 只打印 bin 路径，非全局安装）。
 
   ```bash

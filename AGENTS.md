@@ -205,6 +205,17 @@ profile 清单里记的是 tarball 路径，所以**建议保留这个 tarball**
 脚本内 `export DSH_HOME` 一次，避免"某条命令漏带 DSH_HOME → 静默打到真实 `~/.dsh`"这类事故
 （初版就踩过：启动 server 那条漏了）。
 
+**升级真实环境（与联调分离）**：`scripts/upgrade-host.sh` —— 把真实 `~/.dsh` 的宿主升到指定通道，
+并把本插件以 tarball 冻结副本重装进真实 profile。**它动的是真实 home**，所以设计上偏保守：
+默认先 `cp -R` 整目录备份（L4）、打印计划并要求输入 `yes`（`--yes` 跳过）、**不碰你正在跑的
+`dsh web`**（只打印重启命令）。改脚本/换通道后先 `--check` 干跑。
+开关：`TRACK`（默认 `next`）/`DSH_VERSION` 钉版本 / `SKIP_HOST=1`、`SKIP_PLUGIN=1` 分开做 /
+`BACKUP=0` / `FORCE=1`（跳过兼容拒绝）/ `SCAN_LEGACY=1`（§6.3 的旧日志扫描，**默认关**——
+那道坎早已过：命中的 2 个会话当时已删，之后插件只写 sidecar 不写事件，新日志不可能含
+`ref-lib/set`；真不放心就开一次）。
+升级前它会校验"**目标宿主 ∈ 插件声明的 peer 区间**"，不满足直接拒绝（`FORCE=1` 才继续）——
+避免升完宿主才发现插件装不上。
+
 **只想拿一个指定版本的 dsh**：`scripts/dsh-local.sh`（stdout 只打印 bin 路径；默认装到
 `mktemp` 临时目录 = 用完即弃，`DSH_CACHE_DIR` 改成按版本缓存；**永不 `npm i -g`**）。
 版本解析与安装逻辑在共用库 `scripts/dsh-track.sh`（**刻意与 `dsh-local.sh` 平级**：
