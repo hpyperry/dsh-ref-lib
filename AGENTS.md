@@ -4,189 +4,35 @@
 在动手前必须先读并遵守。`ref-lib/` 是**独立 git 仓库**；外层 `dsh-plugins/` 仅作容器目录，
 不是 git 仓库。
 
-## 1. 项目定位
+## 1. 项目定位与版本约定
 
 - **`@hpyperry/dsh-ref-lib`**：只读参考库插件（node half + client UI，per-session 隔离）。
-- **版本号约定（v18 起）**：**插件 `version` = 它所跟踪的 dsh 版本号**，只跟 dsh npm
-  **`latest`** 这一条通道（当前 `0.1.5-rc.3`，适用 dsh 0.1.5 / 0.1.6 宿主）。dsh `latest`
-  发新版 → 同步改 version（并复跑门禁）；README「📦 安装」有给用户看的对应表。
-  **单轨（2026-09-25 决定）**：双轨太乱已收敛——`next` 轨（插件 `0.1.7-rc.2`，适配 dsh
-  0.1.7+）**归档为 tag `archive/next-0.1.7-rc.2`**，其独有工作（图标改名 `Icon*<Size>` →
-  `Icon*<Weight>` 的 v19 适配等）都在那个 tag 里；将来 dsh 0.1.7 成为 `latest` 时
-  `git branch next archive/next-0.1.7-rc.2` 取回即可。**不要再引入 second branch**：
-  两轨会让版本号/peer/安装表/轨道措辞在同一批文件里分叉，合并必冲突。
-- **当前发布状态（2026-09-25）**：`main` 已推送 `origin`（另有归档 tag）；
-  **npm 未发布**（账号锁定），解锁后 `npm publish --tag latest`（带 `-rc` 的版本不会被
-  npm 自动设成 `latest`，必须显式 `--tag`）。另：`dsh plugin add` 本质是转发 pnpm，
-  所以本地路径、`pnpm pack` 打出的 tarball、git/npm 版本都能装；要"冻结副本"用
-  `INSTALL_MODE=pack`（§6）。落地全记录见 `docs/upgrade-dsh-0.1.7-rc.2.md` §9。
-  **真实环境（2026-09-25，含当日二次变更）**：当天曾把全局 `dsh` 升到 `0.1.5-rc.3`、把真实
-  profile `web` 的依赖切到 pack 冻结副本（`file:` 规格，非软链；升级前按 L4 整目录备份，
-  并依 §6.3 扫描处置了 2 个含 `ref-lib/set` 的旧日志（记录见升级文档 §9.7/§9.8）
-  ——**以上是历史落地过程，不是当前状态**。随后用户**清理了 dsh 历史环境**（多版本残留）：
-  旧备份与仓库外的 tarball 目录均已删除，`~/.dsh/profiles/web` 回到干净初始态
-  （`dependencies: {}`，插件未安装）；tarball 默认位置也改为**仓库根**
-  （`<repo>/hpyperry-dsh-ref-lib-<版本>.tgz`，§6，`.gitignore` 已排除 `*.tgz`）。
-  **当前**：全局 `dsh` = `0.1.5-rc.3`（与 main 轨插件版本一致），**插件尚未装回真实 profile**
-  ——agent 沙箱无仓库外写权限，需用户在自己终端执行：
-  `pnpm pack && dsh plugin --profile web add hpyperry-dsh-ref-lib-0.1.5-rc.3.tgz`。
-  **改 profile 或换插件集都要重启 `dsh web` 才生效。**
-- **自包含工程**：`package.json` / `tsconfig.json` / `src/` / `tests/` / `scripts/` /
-  构建配置与 `README.md` 齐全，可独立安装/构建/验证（安装见 `README.md`「📦 安装」、
-  构建/验证见「🧑‍💻 开发」）。
-- 版本沿革：v3（sidecar 存储，2026-08-17 事故修复）→ v4（`ctx.webServer` 路由通道）→
-  v5（UI 重构：dock 入口/设计令牌面板/zh-en 本地化）→ v6（目录选择能力自适应）→
-  v7（**dock 行内胶囊、零测量**：取消 hero 相位测量/绝对定位，纯 CSS 与输入卡左缘
-  对齐，根除与模式按钮的重叠竞态）→ v8（**用途说明 note + 定稿英文注入模板**：
-  add 支持 `--note`/UI 输入框/自动 README 首标题兜底；注入升级为 MUST/ALWAYS 强制
-  查证流程、note 作 routing metadata、权威性/冲突处理/外部来源自报条款）→
-   v9（**参考库可用性状态**：sidecar v3 条目带 `status`/`checkedAt`；每次读取（含每次
-   模型请求的注入回调）实时 `statSync` 探测、仅状态变化写盘；失效库（missing /
-   not-directory）不注入并红色提示（面板状态行 + dock 失效角标 + `/ref-lib list`
-   `[已失效]` 标记）；失效条目仅允许移除（UI 禁用详情 + node note 接口 400
-   `ref-lib/unavailable`）；胶囊徽标显可用数、红色角标显失效数；**`/ref-lib` 命令
-   结果专属卡片**（`conversation.chat.commandview` keyed 槽位：默认全展开完整结果 +
-   复制按钮，规避官方卡片折叠单行 ellipsis / 展开 260px 截断）；**UI 同步交互驱动**
-   （`/ref-lib` 命令完成 / 发消息 / 面板操作即时刷新——经 dock owner 响应式会话快照
-   钩子 `refLibCommandDone` / `userMessageCount`，无后台轮询；外部文件变化在下次
-   GUI 交互时同步，注入侧不受影响）；**竞态守卫 `RefreshGuard`**（`src/client/
-   refresh-guard.ts`：只接受最后发起的请求结果，`tests/refresh-guard.spec.ts` 钉死
-   并发/乱序/作废行为）；刷新触发派生提取为纯函数 `refresh-triggers.ts`（单次遍历
-   同时派生两个计数，`tests/refresh-triggers.spec.ts` 钉死信号契约，rc.7 前提查证
-   见设计文档 §16）→
-   v10（**fork 分支会话参考库继承物化**：dsh「分支会话」在宿主创建新会话（新 id +
-   `header.parentSession`）；`session/created` 钩子（`{ global: true }`，与
-   core/tools seed 钩子同款）在 fork 时把父会话有效列表复制到子会话自身 sidecar
-   ——**条目 id 重新铸造**（副本独立身份）、继承时机提前到 fork 时刻（确定性快照）、
-   修复纯惰性继承的链式断口（每级落盘）；UI 无新通道（dock 挂载现有 load() 一次
-   刷新即读到，不新增 webServer 接口）；legacy 子会话惰性兜底同语义（重新铸造
-   id + 落盘，重启后 id 稳定）；设计文档 §17）→
-   v11（**依赖基线升级 dsh 0.1.0-rc.7 → 0.1.1-rc.2**：v9 预留的"等新版本稳定后升级"
-   决策落地——peerDeps 11 包与 devDeps 4 包全部对齐 `^0.1.1-rc.2`（官方 npm 发布
-   惯例，peer 范围与宿主版本族同元组）；API 兼容性已逐项核对（ref-lib 所用接口
-   rc.7→rc.2 无破坏：唯一 breaking 是 `CommandRuntime.execute()` 新增必填 `images`
-   参数，ref-lib 不直接调用；`commands.register` / `systemPrompt.context` /
-   `webServer.register` / `session/created` / 两个槽位契约均未变）；客户端平台模块
-   （`dsh-client-ui-primitives` / `dsh-client-ui-slots` / `cordis` / `react`）在
-   rc.2 宿主由 **Vite shell seed 表**内联提供（非模块表 entry），ref-lib bundle
-   external 的 require 命中 seed，运行时吃 rc.2 实现；node half 依赖基线同步后
-   双版本消除（link 开发形态下此前解析到自身 rc.7 副本）；四道门禁全过（typecheck /
-   lint / 147 测试含 L2 harness-roundtrip / build），`scripts/dev-isolate.sh` 以
-   `~/.dsh-dev` + 3090 端口验证插件加载与 `/api/ref-lib/*` 路由）→
-   v12（**跨会话导入（手动挑选）**：与 v10 fork 自动继承互补——从其他会话挑选
-   参考库条目导入当前会话。三步状态机（选会话 → 勾条目 → 冲突项处理）：来源
-   会话经 `sessionQuery` 枚举（只列有参考库的，按最近活跃排序；标题取
-   `readTitleSnapshots`，缺失回退"工作区名 · 新会话"）；条目分类纯函数
-   `classifyImport`（规范化绝对路径判定重复）；冲突项并排 diff 对比（用途说明 /
-   可用状态差异按侧高亮：mine 红 / incoming 绿）逐条选择「保留现有 / 采用导入」。
-   **快照语义**：新增条目重新铸造 id、note 保持源值；「采用导入」以导入侧 note
-   替换现有条目（保留现有 id）——不回流，与 v10 一致。源会话读取只读探测
-   可用性、不写回；目标会话导入时重新校验。错误显示在流程弹窗内部（flowError，
-   避免被下层面板遮住）；取消/关闭分层回退（conflicts→picks→sessions→关闭）；
-   默认**反选**起步、全选三态、失效新增条目禁用；`/ref-lib import [会话] [路径...]`
-   命令同语义（id 精确 → 标题模糊匹配，多候选列清单；冲突在命令模式一律跳过）→
-   v13（**导入流程定稿 + 官方会话类型**：`@deepseek-ai/dsh-session-query` peer
-   （`^0.1.1-rc.2`）声明合并 `ctx.sessionQuery`，`attachSessionMeta` 改吃官方
-   `SessionTitleObservationResult`，`SessionId()` 官方工厂替换本地 `as` 断言——cwd
-   三源兜底逻辑不变（③ 观测 → ① live `sessions.get()?.header.cwd` → ②
-   `listSessions()` 记录，最终回退"新会话"），宿主结构变化从此走 typecheck 而非
-   被断言掩盖；冲突页视觉对齐原型（note 标签国际化"用途说明："、diff 高亮按侧
-   红/绿、主面板状态行/详情编辑打磨）；195 测试全过，`docs/prototype-session-
-   import.html` 为 v12 候选原型基准）→
-   v14（**跨会话导入排除已归档会话**：宿主 `ctx.workspaceRegistry.archivedSessionIds`
-   （`@deepseek-ai/dsh-workspace` 展示层归档集合——归档只隐藏工作区树、会话仍在
-   live/persistence，sidecar 枚举原本会包含它们）在 `listSessions` **单点过滤**，
-   UI 面板（`/api/ref-lib/sessions`）与 `/ref-lib import` 命令同享；宿主无
-   workspaceRegistry（非 web 组合）或缺省时原样保留不阻断；纯函数
-   `excludeArchivedSources`（L0 钉死缺省/空集合/部分/全归档行为）+ 服务层 stub
-   集成测试；peer/dev 新增 `@deepseek-ai/dsh-workspace ^0.1.1-rc.2`（与 v11 基线
-   同元组，声明合并经 typecheck 而非断言）；200 测试全过）→
-   v15（**跨会话导入按工作区分组 + 懒加载**：跨工作区平铺难选——`listSessions` 经
-   `workspaceRegistry.list()` 的 `sessionIds` **精确映射**（与宿主工作区树同口径）
-   给每个源会话补 `workspace`（注册工作区 display title，wire 可选字段向后兼容）；
-   纯函数 `groupSourcesByWorkspace`（分组键 = workspace，缺省归入「未分组」兜底组；
-   组顺序 = 首次出现顺序 ≈ 组内最近活跃降序，组内保持入参顺序；泛型只约束
-   sessionId/workspace，node 与 client 两半共用）；UI 会话选择步**分组渲染 + 组头
-   可折叠**（默认展开，组键哨兵防同名碰撞），未分组行附 cwd 基名辅助识别；命令
-   `/ref-lib import` 输出同步分组（`工作区 <title>：` / `未分组：` 分段）；**回退
-   标题去"工作区名 · "前缀**（分组后工作区名由组头承担，UI 与命令统一显示"新会话"）；
-   **v16 懒加载**（会话增多后全量 `readTitleSnapshots` 冷读会话日志变卡）——
-   `/api/ref-lib/sessions` 三级契约：`groups=1` 组概览（枚举+归档过滤+workspace
-   映射+计数，**不读标题**）→ 展开某组 `group=<key>` 按组拉取（标题补全只对该组
-   执行，`filterSourcesByGroupKey`）→ 无参数全量（命令/兼容）；node 侧拆
-   `enumerateSources`（公共枚举核心）+ `attachTitles`（标题补全，只对子集执行）+
-   `listSessionGroups` / `listSessionsByGroup`；UI **默认全折叠**，展开按组懒加载
-   并缓存（组内加载 spinner、失败进 flowError 可重试）；组键为服务端下发
-   `UNGROUPED_GROUP_KEY`（`__ungrouped__` 哨兵），client 不再自造；新增 locale
-   `import.group.ungrouped/count`；L0 钉死分组顺序/兜底组/概览聚合/按组过滤 +
-   wire 三级解析 + 路由三级分发 + 服务层两级映射 + render 分组文本；版本
-   0.12.0 → 0.13.0）→
-   v16.1（**导入来源与宿主侧边栏同口径**：跨会话导入排除子代理
-   （`origin === 'subagent'`）与**空白会话**（`blank`——从未开始对话，如测试残留的
-   空会话；此前"未分组"被它们占满且侧边栏看不到）——一次
-   `ctx.apiProxy.sessions.list()` 拿 `SessionSummary`（与侧边栏**同源同逻辑**：
-   live 事件折叠 + 冷会话 size-cap 探测 + 投影缓存），`hiddenSessionIds()` 收集
-   `origin === 'subagent' || blank` 的 id，三个入口（全量/组概览/按组）统一过滤；
-   子代理 sidecar（v10 继承产物，带父会话参考库上下文）与 blank sidecar **保留
-   不动**，仅不入导入来源；宿主无 apiProxy（非 web 组合）或调用失败降级不过滤；
-   peer/dev 新增 `@deepseek-ai/dsh-host-apiproxy ^0.1.1-rc.2`；纯函数
-   `excludeHiddenSources`（L0 钉死缺省/部分/全滤）+ 服务层 apiProxy stub 4 条
-   （子代理/blank/调用失败/无服务）；231 测试全过，dev 实测 blank 会话（Redis
-   残留）被正确剔除）→
-   v17（**依赖基线升级 dsh 0.1.1-rc.2 → 0.1.2-rc.1（2026-09-03 正式发布）+ v16.1
-   apiProxy 迁移**：破坏面与迁移方案见 `docs/upgrade-dsh-0.1.2-rc.1.md`。node half
-   仅 `service.ts`：`ctx.apiProxy.sessions.list()`（`dsh-host-apiproxy` 删除）→
-   `ctx.sessionController.list({}, signal)` 直接 `{ items }`
-   （`@deepseek-ai/dsh-api-session-controller`，`hiddenSessionIds` 降级分支保留）；
-   v1/v2 旧日志折叠改 `session.snapshotEvents()`（rc.1 起 `Session` 无 `.events`；
-   ~~rc.1 读取路径 `ignorable` 豁免与 rc.2 一致，含 ignorable 标记的旧日志仍可读~~
-   **【v18 订正】该结论自 dsh 0.1.3-alpha.2 起不成立**：`SESSION_FORMAT_VERSION` 在该版
-   升到 2，v0 日志须经 v0→v1 历史迁移边，而该边**拒绝未知事件类型——即使带
-   `ignorable: true`**，含 `ref-lib/set` 的旧日志被整体拒读。详见 §5 附加约定 2 与
-   `docs/upgrade-dsh-0.1.7-rc.2.md` §3.2 B3。
-   原修补/验证脚本已删除，见 §5 附加约定 2）。
-   client half：`dsh-client-runtime` 删除（6 个类型迁出）——`ClientContext`→cordis
-   `Context`、`SessionId`→`dsh-session/types`、`CommandNode/ConversationNode`→
-   `dsh-client-ui-conversation/client`、`DirectoryEntry/DirectoryListing`→
-   `dsh-host-directory-picker/types`（npm rc.1 的 `dsh-api-remotes` 无 ./client 类型
-   产物，故不走文档初拟的 remotes 收口，见升级文档 §2.1 注）；`ctx.workspaces`→
-   `ctx.uiWorkspace`（inject `'uiWorkspace'`）；dock 的 `session.nodes`→ui-chat 标准
-   hook `useChat(s => s.legacy.nodes)`、`sessionId` 取自 `InputZone.session.sessionId`；
-   `ctx.slots` 类型来源为 `@deepseek-ai/dsh-client-ui-renderer/client`（经 client 入口
-   import type {} 收口，非 ui-conversation 传递）；tsdown `PLATFORM_EXTERNALS` 移除
-   `dsh-client-runtime/client`。peer **16** 包（删 runtime/apiproxy + 增
-   session-controller/ui-chat/ui-workspace；api-remotes 因 npm 缺 client 类型不加）、
-   dev 新增 ui-renderer/host-directory-picker；version 0.15.0 → 0.17.0（v17 发布号
-   定版；落地代码先经 0.16.0）；多版本兼容
-   双轨矩阵与正式环境切换流程见升级文档 §5/§6）→
-   v18（**依赖基线升级 dsh 0.1.2-rc.1 → 0.1.5-rc.2（npm `latest`）+ 双分支轨道建立**：
-   评估与迁移方案见 `docs/upgrade-dsh-0.1.7-rc.2.md`（该文档本次评估同时覆盖 0.1.7-rc.2 线）。
-   实测结论：0.1.2-rc.1 → 0.1.7-rc.2 共 3432 提交，但落到本插件消费面的破坏**只有两处**
-   ——① ui-primitives 图标改名（`Icon*<Size>` → `Icon*<Weight>`，**0.1.7-alpha.1 起**；
-   0.1.5/0.1.6 尚无此改动，故本轨不受影响）；② `dsh-session-persistence-jsonl`
-   自 **0.1.3-alpha.2** 起**只提供默认导出**（0.1.2-rc.1 及以前两者都有）——本轨据此改
-   `tests/harness-roundtrip.spec.ts` 的导入为 `default ?? namespace` 双形态兼容写法
-   （2026-09-25 探针实测：旧写法在 0.1.5-rc.2 依赖族上 `JsonlSessionPersistence is not a
-   constructor`，L2 两道防线整体失效）。
-   peer 由 `^0.1.2-rc.1` 改为 **`>=0.1.5-rc.2 <0.1.7-alpha.1`**（14 条 dsh-* peer 同值）：
-   上界排除 0.1.7+，使插件在 0.1.7+ 宿主上被 harness 的 peer 兼容闸门**干净跳过并在 stderr
-   打印原因**，而不是静默加载后因图标名缺失白屏——闸门见
-   `packages/boot/app-boot/src/plugin-compatibility.ts`（不满足的插件行置 `disabled`，
-   非致命，profile 仍可启动；可用 `dsh plugin allow-version` 精确豁免）。
-   devDeps 7 包精确 pin `0.1.5-rc.3`；peer 集合与 cordis `^4.0.1`（0.1.5 线 vendored
-   4.0.2，npm latest 4.0.4，均在范围内）不变。新增 `dsh.client.external: []`
-   （显式声明"基线之外无额外 module-table 请求"）；tsdown `PLATFORM_EXTERNALS` 移除
-   从不在宿主 seed 表里的 `dsh-client-locale/client`（此前仅因 type-only 擦除而无害）。
-   **事实修正（重要）**：`SESSION_FORMAT_VERSION` 在 ≤0.1.2-rc.1 为 0、0.1.3-alpha.2 起为 2、
-   0.1.5 起为 3、0.1.7 起为 4；而 v0→v1 **历史迁移边拒绝未知事件类型——即使带
-   `ignorable: true`**，故"补过 ignorable 的旧日志仍可读"自 0.1.3-alpha.2 起不再成立
-   （v17 沿革相应表述与 §5 附加约定 2 已订正）；legacy `foldRefLibs` 仅对 ≤0.1.2-rc.1
-   宿主可能生效，保留但已在 `src/service.ts` 注明"不是可靠迁移手段"。
-   version 0.17.0 → **`0.1.5-rc.3`**（自 v18 起版本号跟 dsh 走，见 §1 版本号约定）；
-   本轨跟 dsh npm `latest`，适用 0.1.5/0.1.6 宿主。**v19（next 轨，版本 `0.1.7-rc.2`，
-   适配 dsh 0.1.7+ 的图标改名等）已于 2026-09-25 归档为 tag `archive/next-0.1.7-rc.2`**
-   ——支持面收敛到 latest 单轨，见 §1「单轨」条。依赖族先按 `0.1.5-rc.2` 落地并通过四道门禁 + L3，
-   随后在 `latest` 的 `0.1.5-rc.3` 上复跑同样全绿（devDeps 与 CLI 均已对齐 rc.3）。
+  自包含工程：`package.json` / `tsconfig.json` / `src/` / `tests/` / `scripts/` / 构建配置与
+  `README.md` 齐全，可独立安装、构建、验证（安装见 `README.md`「📦 安装」，开发见「🧑‍💻 开发」）。
+- **版本号约定**：**插件 `version` = 它所跟踪的 dsh 版本号**。当前只跟 dsh npm `latest`
+  一条通道（**`0.1.5-rc.3`**，适用 dsh 0.1.5 / 0.1.6 宿主）；dsh `latest` 发新版 → 同步改
+  `version` 并复跑门禁。给用户看的版本对应表见 `README.md`「📦 安装」。
+- **单轨（2026-09-25 起）**：不再维护并行分支。此前的 `next` 轨（插件 `0.1.7-rc.2`，适配
+  dsh 0.1.7+，含图标改名 `Icon*<Size>` → `Icon*<Weight>` 等 v19 工作）已**归档为 tag
+  `archive/next-0.1.7-rc.2`**；将来 dsh 0.1.7 成为 `latest` 时
+  `git branch next archive/next-0.1.7-rc.2` 取回，或直接 cherry-pick 该 tag 上的适配提交。
+  理由：两条轨会让 `package.json`（version / `dsh-*` peer 与 devDeps）、`pnpm-lock.yaml`、
+  `README.md` 安装表、`AGENTS.md` 轨道措辞在同一批文件里分叉 ⇒ 每次互相同步都要手工解冲突
+  （实测：裸 `git merge` 必在这 4 个文件冲突；`git merge -X ours` 会把两边字段混在一起，
+  并把对侧 75 行共享内容静默丢掉）。**不要重新引入第二条分支**——要试别的 dsh 版本，用
+  `DSH_VERSION=<版本>` 在隔离环境里钉住即可（§6）。
+- **发布状态（2026-09-25）**：`main` 已推送 `origin`（另有归档 tag）；**npm 尚未发布**
+  （账号锁定）。解锁后 `npm publish --tag latest`——带 `-rc` 的版本不会被 npm 自动设成
+  `latest`，必须显式 `--tag`。
+- **安装与分发**：`dsh plugin add` 本质是转发 pnpm，所以本地路径、`pnpm pack` 打出的 tarball、
+  git/npm 版本都能装。要"冻结副本"用 `INSTALL_MODE=pack`（§6），tarball 默认打在**仓库根**
+  （`<repo>/hpyperry-dsh-ref-lib-<版本>.tgz`，`.gitignore` 已排除 `*.tgz`）。
+- **真实环境现状**：全局 `dsh` = `0.1.5-rc.3`（与插件版本一致）；`~/.dsh` 已被清理成干净
+  初始态（`~/.dsh/profiles/web` 的 `dependencies` 为空，**插件未安装**）。装回来需用户在自己
+  终端执行（agent 沙箱无仓库外写权限）：
+  `pnpm pack && dsh plugin --profile web add hpyperry-dsh-ref-lib-0.1.5-rc.3.tgz`，
+  之后**重启 `dsh web`** 才生效。历史落地过程（L4 备份、按升级文档 §6.3 扫描并处置 2 个含
+  `ref-lib/set` 的旧日志等）见 `docs/upgrade-dsh-0.1.7-rc.2.md` §9。
 
 ## 2. 开发规范（必须遵守）
 
@@ -217,12 +63,8 @@
 - 门禁：`pnpm typecheck`（`tsc --noEmit`）/ `pnpm lint`（eslint + prettier，见
   `eslint.config.js`）/ `pnpm test`（必须含 L0–L2 全部层，见 §5）/ `pnpm build`
   （`tsc` + `tsdown`）。
-- **单轨（2026-09-25）**：只维护 `main`（跟 dsh npm `latest`）。历史上并行的 `next` 轨
-  （插件 `0.1.7-rc.2`，适配 dsh 0.1.7+）已归档为 tag `archive/next-0.1.7-rc.2`，理由：
-  两轨会让 `package.json`（version / `dsh-*` peer 与 devDeps）、`pnpm-lock.yaml`、
-  `README.md` 的安装表、`AGENTS.md` 的轨道措辞在同一批文件里分叉，**合并必冲突**
-  （实测：裸 merge 在这 4 个文件冲突；`-X ours` 又会把两边字段混在一起、并静默丢掉共享
-  改动，所以不采用）。将来的版本升级直接在 `main` 上做，用 `DSH_VERSION=<版本>` 做隔离验证。
+- 单轨维护（见 §1「单轨」）：不要在 `main` 之外开长期分支，也不要为"另一条轨"改
+  `package.json` 的 version / `dsh-*` 区间——试别的 dsh 版本用 `DSH_VERSION=<版本>` 钉住。
 
 ## 3. 参考速查
 
@@ -262,22 +104,22 @@
 1. **不要往会话日志写白名单外事件**（自定义事件类型无法标记 `ignorable`，会让日志被
    整体拒读）。插件 per-session 状态存 dsh home 下 sidecar（`dshHomePath()`），旧
    日志事件仅做一次性迁移折叠。
-2. v1/v2 事故日志的处理已随 v17 收口：当时用于补 `ignorable: true` 的修补/验证脚本
-   （`patch-ref-lib-logs.mjs` / `verify-ref-lib-logs.mjs`）**已删除**（2026-09-05，确认
-   各环境无未修补残留）。**【v18 订正——重要】**"旧日志仍可读"只对 **≤0.1.2-rc.1 的宿主**
-   成立：`SESSION_FORMAT_VERSION` 在 0.1.3-alpha.2 起由 0 升到 2（0.1.5 起 3、0.1.7 起 4），
-   此后 v0 日志必须走 v0→v1 **历史迁移边**，而该边**拒绝未知事件类型——即使事件带
-   `ignorable: true`**（`packages/session/session-format-v0-to-v1/src/validation.ts`，
-   有专门测试钉死）。结论：**含 `ref-lib/set` 的旧日志在 ≥0.1.3-alpha.2 宿主上被整体拒读，
-   读取阶段即失败**，`foldRefLibs` 拿不到事件、无法折叠——该路径保留只为兼容旧宿主，
-   不再视为可靠迁移手段（`src/service.ts` 已注明）。**升级宿主到 0.1.3+ 之前**，先按
-   `docs/upgrade-dsh-0.1.7-rc.2.md` §6.3 的脚本扫一遍。**【2026-09-25 二次订正——重要】**
-   第一版 §6.3 的脚本用 node `zlib.zstdDecompressSync` 整文件解压，**只解第一帧**，
-   而会话日志是**多帧 zstd（每行一帧，实测单文件最多 18,132 帧）** ⇒ 恒报"零命中"的
-   **假阴性**；改用 `zstd -d -c` 重扫后，真实 `~/.dsh` **确有 2 个日志命中** `ref-lib/set`
-   （共 7 个事件，见升级文档 §6.3 表格），已在升级宿主前整目录备份（L4）后删除。
-   命中时的两条出路：删除会话，或按 §6.3 末尾的"离线重编码为 `session.v3.jsonl.zstd`"
-   路径保留（已在临时安装里验证：干净 0.1.5-rc.3 冷读通过）。
+2. v1/v2 事故日志的收尾（**含两处事实订正，务必按此理解**）：
+   - 当时给旧日志补 `ignorable: true` 的修补/验证脚本已删除（2026-09-05，确认无残留）。
+   - **订正 1**：`SESSION_FORMAT_VERSION` 在 ≤0.1.2-rc.1 为 0、0.1.3-alpha.2 起为 2、
+     0.1.5 起为 3、0.1.7 起为 4；而 **v0→v1 历史迁移边拒绝未知事件类型——即使事件带
+     `ignorable: true`**（`packages/session/session-format-v0-to-v1/src/validation.ts`，
+     有测试钉死）。所以"补过 ignorable 的旧日志仍可读"只对 **≤0.1.2-rc.1 的宿主**成立：
+     在 ≥0.1.3-alpha.2 宿主上，含 `ref-lib/set` 的 v0 日志**读取阶段就被整体拒读**，
+     `foldRefLibs` 拿不到事件。该路径保留仅为兼容旧宿主，**不是可靠的迁移手段**
+     （`src/service.ts` 已注明）。
+   - **订正 2（扫描脚本的假阴性）**：`docs/upgrade-dsh-0.1.7-rc.2.md` §6.3 第一版脚本用
+     node `zlib.zstdDecompressSync` 整文件解压，**只解第一帧**，而会话日志是**多帧 zstd
+     （每行一帧，实测单文件最多 18,132 帧）** ⇒ 恒报"零命中"。必须用 `zstd -d -c` 重扫：
+     真实 `~/.dsh` 当时确有 2 个日志命中 `ref-lib/set`（共 7 个事件，见 §6.3 表格），
+     已在升级宿主前按 L4 整目录备份后删除。**升级宿主到 0.1.3+ 之前，先按 §6.3 重扫一遍。**
+   - 命中后的两条出路：删除该会话，或按 §6.3 末尾"离线重编码为 `session.v3.jsonl.zstd`"
+     保留（已在临时安装里验证：干净 0.1.5-rc.3 冷读通过）。
 3. 每个插件交付时，`pnpm test` 必须包含 L0–L2 全部层（L3/L4 是开发流程约定，写入
    插件 README）。
 
@@ -293,15 +135,15 @@ TRACK=next ./scripts/dev-isolate.sh   # 预留（跟 dsh npm next）；当前无
 1. **解析版本**：`TRACK=main|next` → npm `dist-tags.latest|next`（可用 `DSH_VERSION=<版本>` 钉死；
    也可 `DSH_CACHE_DIR=<目录>` 复用已下载版本，省去每次下载）。
 2. **校验版本一致**：插件 `package.json` 的 `version` 必须等于该通道的 dsh 版本
-   （见 §1 版本号约定）；不等只警告，`STRICT_VERSION=1` 直接报错退出——这条专治"拿错分支测错通道"。
+   （见 §1 版本号约定）；不等只警告，`STRICT_VERSION=1` 直接报错退出——专治"拿错版本测错通道"。
 3. **构建插件**（`BUILD=1` 默认）：先 `pnpm build`，避免吃到过期 `lib/`（改完源码忘了构建是最常见的假故障）。
 4. **准备隔离 home**：`$HOME/.dsh-dev-<track>`；**sk 自动就位**（隔离 home 缺
    `.credentials.yaml` 时从真实 home 只读复制，权限 600；`SEED_CREDENTIALS=0|force` 可调），
    顺带补一份非密钥 `settings.yaml`。**home 里的 sessions/storages/settings/凭证一律不删。**
-5. **重装插件**（每次运行都 `plugin remove` + `plugin add`）：确保 profile 指向当前分支的最新构建；
+5. **重装插件**（每次运行都 `plugin remove` + `plugin add`）：确保 profile 指向当前源码的最新构建；
    插件自身数据（sidecar）默认保留，`RESET_PLUGIN_DATA=1` 才清。
-6. **启动 web**：`--port` 按轨道默认（main 3090 / next 3091），退出时删除本次临时下载的 dsh
-   （`KEEP_TOOLS=1` 保留）。
+6. **启动 web**：`--port` 按轨道默认（main=3090；`TRACK=next` 时为 3091），退出时删除本次
+   临时下载的 dsh（`KEEP_TOOLS=1` 保留）。
 
 **插件怎么装（`INSTALL_MODE`，默认 `link`）**——这决定"切分支会不会影响正在跑的环境"：
 
@@ -337,8 +179,169 @@ profile 清单里记的是 tarball 路径，所以**建议保留这个 tarball**
 版本解析与安装逻辑在共用库 `scripts/dsh-track.sh`（**刻意与 `dsh-local.sh` 平级**：
   `.gitignore` 的 `lib/` 会匹配任意层级的 `lib/` 目录，放 `scripts/lib/` 会被静默忽略而漏提交）。
 
-- 彻底重置某条轨：`rm -rf ~/.dsh-dev-main`（**会话与 sk 会一起删**，所以脚本平时不自动删它）。
+- 彻底重置隔离环境：`rm -rf ~/.dsh-dev-main`（**会话与 sk 会一起删**，所以脚本平时不自动删）。
 - 热更新：`src/client/*` 改动 `pnpm build:client` 后浏览器 ≤0.5s 自动更新；node half
   改动 `pnpm build:node` 后必须重启 `dsh web`。
 - shell 注意：macOS 自带 bash 3.2 把多字节字符当变量名字符，变量后紧跟中文标点必须写
   `${VAR}`（写成 `$VAR（` 会报 unbound variable）；同一 `local` 语句里也不能引用本句刚声明的变量。
+
+## 7. 版本沿革（v3 → v19）
+
+> 每版做了什么、当时什么约束。v19 已归档（见 §1「单轨」）。
+
+- **v3**（sidecar 存储，2026-08-17 事故修复）
+- **v4**（`ctx.webServer` 路由通道）
+- **v5**（UI 重构：dock 入口/设计令牌面板/zh-en 本地化）
+- **v6**（目录选择能力自适应）
+- **v7**（**dock 行内胶囊、零测量**：取消 hero 相位测量/绝对定位，纯 CSS 与输入卡左缘
+  对齐，根除与模式按钮的重叠竞态）
+- **v8**（**用途说明 note + 定稿英文注入模板**：
+  add 支持 `--note`/UI 输入框/自动 README 首标题兜底；注入升级为 MUST/ALWAYS 强制
+  查证流程、note 作 routing metadata、权威性/冲突处理/外部来源自报条款）
+- **v9**（**参考库可用性状态**：sidecar v3 条目带 `status`/`checkedAt`；每次读取（含每次
+  模型请求的注入回调）实时 `statSync` 探测、仅状态变化写盘；失效库（missing /
+  not-directory）不注入并红色提示（面板状态行 + dock 失效角标 + `/ref-lib list`
+  `[已失效]` 标记）；失效条目仅允许移除（UI 禁用详情 + node note 接口 400
+  `ref-lib/unavailable`）；胶囊徽标显可用数、红色角标显失效数；**`/ref-lib` 命令
+  结果专属卡片**（`conversation.chat.commandview` keyed 槽位：默认全展开完整结果 +
+  复制按钮，规避官方卡片折叠单行 ellipsis / 展开 260px 截断）；**UI 同步交互驱动**
+  （`/ref-lib` 命令完成 / 发消息 / 面板操作即时刷新——经 dock owner 响应式会话快照
+  钩子 `refLibCommandDone` / `userMessageCount`，无后台轮询；外部文件变化在下次
+  GUI 交互时同步，注入侧不受影响）；**竞态守卫 `RefreshGuard`**（`src/client/
+  refresh-guard.ts`：只接受最后发起的请求结果，`tests/refresh-guard.spec.ts` 钉死
+  并发/乱序/作废行为）；刷新触发派生提取为纯函数 `refresh-triggers.ts`（单次遍历
+  同时派生两个计数，`tests/refresh-triggers.spec.ts` 钉死信号契约，rc.7 前提查证
+  见设计文档 §16）
+- **v10**（**fork 分支会话参考库继承物化**：dsh「分支会话」在宿主创建新会话（新 id +
+  `header.parentSession`）；`session/created` 钩子（`{ global: true }`，与
+  core/tools seed 钩子同款）在 fork 时把父会话有效列表复制到子会话自身 sidecar
+  ——**条目 id 重新铸造**（副本独立身份）、继承时机提前到 fork 时刻（确定性快照）、
+  修复纯惰性继承的链式断口（每级落盘）；UI 无新通道（dock 挂载现有 load() 一次
+  刷新即读到，不新增 webServer 接口）；legacy 子会话惰性兜底同语义（重新铸造
+  id + 落盘，重启后 id 稳定）；设计文档 §17）
+- **v11**（**依赖基线升级 dsh 0.1.0-rc.7 → 0.1.1-rc.2**：v9 预留的"等新版本稳定后升级"
+  决策落地——peerDeps 11 包与 devDeps 4 包全部对齐 `^0.1.1-rc.2`（官方 npm 发布
+  惯例，peer 范围与宿主版本族同元组）；API 兼容性已逐项核对（ref-lib 所用接口
+  rc.7→rc.2 无破坏：唯一 breaking 是 `CommandRuntime.execute()` 新增必填 `images`
+  参数，ref-lib 不直接调用；`commands.register` / `systemPrompt.context` /
+  `webServer.register` / `session/created` / 两个槽位契约均未变）；客户端平台模块
+  （`dsh-client-ui-primitives` / `dsh-client-ui-slots` / `cordis` / `react`）在
+  rc.2 宿主由 **Vite shell seed 表**内联提供（非模块表 entry），ref-lib bundle
+  external 的 require 命中 seed，运行时吃 rc.2 实现；node half 依赖基线同步后
+  双版本消除（link 开发形态下此前解析到自身 rc.7 副本）；四道门禁全过（typecheck /
+  lint / 147 测试含 L2 harness-roundtrip / build），`scripts/dev-isolate.sh` 以
+  `~/.dsh-dev` + 3090 端口验证插件加载与 `/api/ref-lib/*` 路由）
+- **v12**（**跨会话导入（手动挑选）**：与 v10 fork 自动继承互补——从其他会话挑选
+  参考库条目导入当前会话。三步状态机（选会话 → 勾条目 → 冲突项处理）：来源
+  会话经 `sessionQuery` 枚举（只列有参考库的，按最近活跃排序；标题取
+  `readTitleSnapshots`，缺失回退"工作区名 · 新会话"）；条目分类纯函数
+  `classifyImport`（规范化绝对路径判定重复）；冲突项并排 diff 对比（用途说明 /
+  可用状态差异按侧高亮：mine 红 / incoming 绿）逐条选择「保留现有 / 采用导入」。
+  **快照语义**：新增条目重新铸造 id、note 保持源值；「采用导入」以导入侧 note
+  替换现有条目（保留现有 id）——不回流，与 v10 一致。源会话读取只读探测
+  可用性、不写回；目标会话导入时重新校验。错误显示在流程弹窗内部（flowError，
+  避免被下层面板遮住）；取消/关闭分层回退（conflicts→picks→sessions→关闭）；
+  默认**反选**起步、全选三态、失效新增条目禁用；`/ref-lib import [会话] [路径...]`
+  命令同语义（id 精确 → 标题模糊匹配，多候选列清单；冲突在命令模式一律跳过）
+- **v13**（**导入流程定稿 + 官方会话类型**：`@deepseek-ai/dsh-session-query` peer
+  （`^0.1.1-rc.2`）声明合并 `ctx.sessionQuery`，`attachSessionMeta` 改吃官方
+  `SessionTitleObservationResult`，`SessionId()` 官方工厂替换本地 `as` 断言——cwd
+  三源兜底逻辑不变（③ 观测 → ① live `sessions.get()?.header.cwd` → ②
+  `listSessions()` 记录，最终回退"新会话"），宿主结构变化从此走 typecheck 而非
+  被断言掩盖；冲突页视觉对齐原型（note 标签国际化"用途说明："、diff 高亮按侧
+  红/绿、主面板状态行/详情编辑打磨）；195 测试全过，`docs/prototype-session-
+  import.html` 为 v12 候选原型基准）
+- **v14**（**跨会话导入排除已归档会话**：宿主 `ctx.workspaceRegistry.archivedSessionIds`
+  （`@deepseek-ai/dsh-workspace` 展示层归档集合——归档只隐藏工作区树、会话仍在
+  live/persistence，sidecar 枚举原本会包含它们）在 `listSessions` **单点过滤**，
+  UI 面板（`/api/ref-lib/sessions`）与 `/ref-lib import` 命令同享；宿主无
+  workspaceRegistry（非 web 组合）或缺省时原样保留不阻断；纯函数
+  `excludeArchivedSources`（L0 钉死缺省/空集合/部分/全归档行为）+ 服务层 stub
+  集成测试；peer/dev 新增 `@deepseek-ai/dsh-workspace ^0.1.1-rc.2`（与 v11 基线
+  同元组，声明合并经 typecheck 而非断言）；200 测试全过）
+- **v15**（**跨会话导入按工作区分组 + 懒加载**：跨工作区平铺难选——`listSessions` 经
+  `workspaceRegistry.list()` 的 `sessionIds` **精确映射**（与宿主工作区树同口径）
+  给每个源会话补 `workspace`（注册工作区 display title，wire 可选字段向后兼容）；
+  纯函数 `groupSourcesByWorkspace`（分组键 = workspace，缺省归入「未分组」兜底组；
+  组顺序 = 首次出现顺序 ≈ 组内最近活跃降序，组内保持入参顺序；泛型只约束
+  sessionId/workspace，node 与 client 两半共用）；UI 会话选择步**分组渲染 + 组头
+  可折叠**（默认展开，组键哨兵防同名碰撞），未分组行附 cwd 基名辅助识别；命令
+  `/ref-lib import` 输出同步分组（`工作区 <title>：` / `未分组：` 分段）；**回退
+  标题去"工作区名 · "前缀**（分组后工作区名由组头承担，UI 与命令统一显示"新会话"）；
+  **v16 懒加载**（会话增多后全量 `readTitleSnapshots` 冷读会话日志变卡）——
+  `/api/ref-lib/sessions` 三级契约：`groups=1` 组概览（枚举+归档过滤+workspace
+  映射+计数，**不读标题**）→ 展开某组 `group=<key>` 按组拉取（标题补全只对该组
+  执行，`filterSourcesByGroupKey`）→ 无参数全量（命令/兼容）；node 侧拆
+  `enumerateSources`（公共枚举核心）+ `attachTitles`（标题补全，只对子集执行）+
+  `listSessionGroups` / `listSessionsByGroup`；UI **默认全折叠**，展开按组懒加载
+  并缓存（组内加载 spinner、失败进 flowError 可重试）；组键为服务端下发
+  `UNGROUPED_GROUP_KEY`（`__ungrouped__` 哨兵），client 不再自造；新增 locale
+  `import.group.ungrouped/count`；L0 钉死分组顺序/兜底组/概览聚合/按组过滤 +
+  wire 三级解析 + 路由三级分发 + 服务层两级映射 + render 分组文本；版本
+  0.12.0 → 0.13.0）
+- **v16.1**（**导入来源与宿主侧边栏同口径**：跨会话导入排除子代理
+  （`origin === 'subagent'`）与**空白会话**（`blank`——从未开始对话，如测试残留的
+  空会话；此前"未分组"被它们占满且侧边栏看不到）——一次
+  `ctx.apiProxy.sessions.list()` 拿 `SessionSummary`（与侧边栏**同源同逻辑**：
+  live 事件折叠 + 冷会话 size-cap 探测 + 投影缓存），`hiddenSessionIds()` 收集
+  `origin === 'subagent' || blank` 的 id，三个入口（全量/组概览/按组）统一过滤；
+  子代理 sidecar（v10 继承产物，带父会话参考库上下文）与 blank sidecar **保留
+  不动**，仅不入导入来源；宿主无 apiProxy（非 web 组合）或调用失败降级不过滤；
+  peer/dev 新增 `@deepseek-ai/dsh-host-apiproxy ^0.1.1-rc.2`；纯函数
+  `excludeHiddenSources`（L0 钉死缺省/部分/全滤）+ 服务层 apiProxy stub 4 条
+  （子代理/blank/调用失败/无服务）；231 测试全过，dev 实测 blank 会话（Redis
+  残留）被正确剔除）
+- **v17**（**依赖基线升级 dsh 0.1.1-rc.2 → 0.1.2-rc.1（2026-09-03 正式发布）+ v16.1
+  apiProxy 迁移**：破坏面与迁移方案见 `docs/upgrade-dsh-0.1.2-rc.1.md`。node half
+  仅 `service.ts`：`ctx.apiProxy.sessions.list()`（`dsh-host-apiproxy` 删除）→
+  `ctx.sessionController.list({}, signal)` 直接 `{ items }`
+  （`@deepseek-ai/dsh-api-session-controller`，`hiddenSessionIds` 降级分支保留）；
+  v1/v2 旧日志折叠改 `session.snapshotEvents()`（rc.1 起 `Session` 无 `.events`；
+  ~~rc.1 读取路径 `ignorable` 豁免与 rc.2 一致，含 ignorable 标记的旧日志仍可读~~
+  **【v18 订正】该结论自 dsh 0.1.3-alpha.2 起不成立**：`SESSION_FORMAT_VERSION` 在该版
+  升到 2，v0 日志须经 v0→v1 历史迁移边，而该边**拒绝未知事件类型——即使带
+  `ignorable: true`**，含 `ref-lib/set` 的旧日志被整体拒读。详见 §5 附加约定 2 与
+  `docs/upgrade-dsh-0.1.7-rc.2.md` §3.2 B3。
+  原修补/验证脚本已删除，见 §5 附加约定 2）。
+  client half：`dsh-client-runtime` 删除（6 个类型迁出）——`ClientContext`→cordis
+  `Context`、`SessionId`→`dsh-session/types`、`CommandNode/ConversationNode`→
+  `dsh-client-ui-conversation/client`、`DirectoryEntry/DirectoryListing`→
+  `dsh-host-directory-picker/types`（npm rc.1 的 `dsh-api-remotes` 无 ./client 类型
+  产物，故不走文档初拟的 remotes 收口，见升级文档 §2.1 注）；`ctx.workspaces`→
+  `ctx.uiWorkspace`（inject `'uiWorkspace'`）；dock 的 `session.nodes`→ui-chat 标准
+  hook `useChat(s => s.legacy.nodes)`、`sessionId` 取自 `InputZone.session.sessionId`；
+  `ctx.slots` 类型来源为 `@deepseek-ai/dsh-client-ui-renderer/client`（经 client 入口
+  import type {} 收口，非 ui-conversation 传递）；tsdown `PLATFORM_EXTERNALS` 移除
+  `dsh-client-runtime/client`。peer **16** 包（删 runtime/apiproxy + 增
+  session-controller/ui-chat/ui-workspace；api-remotes 因 npm 缺 client 类型不加）、
+  dev 新增 ui-renderer/host-directory-picker；version 0.15.0 → 0.17.0（v17 发布号
+  定版；落地代码先经 0.16.0）；多版本兼容
+  双轨矩阵与正式环境切换流程见升级文档 §5/§6）
+- **v18**（**依赖基线升级 dsh 0.1.2-rc.1 → 0.1.5-rc.2（npm `latest`）+ 双分支轨道建立**：
+  评估与迁移方案见 `docs/upgrade-dsh-0.1.7-rc.2.md`（该文档本次评估同时覆盖 0.1.7-rc.2 线）。
+  实测结论：0.1.2-rc.1 → 0.1.7-rc.2 共 3432 提交，但落到本插件消费面的破坏**只有两处**
+  ——① ui-primitives 图标改名（`Icon*<Size>` → `Icon*<Weight>`，**0.1.7-alpha.1 起**；
+  0.1.5/0.1.6 尚无此改动，故本轨不受影响）；② `dsh-session-persistence-jsonl`
+  自 **0.1.3-alpha.2** 起**只提供默认导出**（0.1.2-rc.1 及以前两者都有）——本轨据此改
+  `tests/harness-roundtrip.spec.ts` 的导入为 `default ?? namespace` 双形态兼容写法
+  （2026-09-25 探针实测：旧写法在 0.1.5-rc.2 依赖族上 `JsonlSessionPersistence is not a
+  constructor`，L2 两道防线整体失效）。
+  peer 由 `^0.1.2-rc.1` 改为 **`>=0.1.5-rc.2 <0.1.7-alpha.1`**（14 条 dsh-* peer 同值）：
+  上界排除 0.1.7+，使插件在 0.1.7+ 宿主上被 harness 的 peer 兼容闸门**干净跳过并在 stderr
+  打印原因**，而不是静默加载后因图标名缺失白屏——闸门见
+  `packages/boot/app-boot/src/plugin-compatibility.ts`（不满足的插件行置 `disabled`，
+  非致命，profile 仍可启动；可用 `dsh plugin allow-version` 精确豁免）。
+  devDeps 7 包精确 pin `0.1.5-rc.3`；peer 集合与 cordis `^4.0.1`（0.1.5 线 vendored
+  4.0.2，npm latest 4.0.4，均在范围内）不变。新增 `dsh.client.external: []`
+  （显式声明"基线之外无额外 module-table 请求"）；tsdown `PLATFORM_EXTERNALS` 移除
+  从不在宿主 seed 表里的 `dsh-client-locale/client`（此前仅因 type-only 擦除而无害）。
+  **事实修正（重要）**：`SESSION_FORMAT_VERSION` 在 ≤0.1.2-rc.1 为 0、0.1.3-alpha.2 起为 2、
+  0.1.5 起为 3、0.1.7 起为 4；而 v0→v1 **历史迁移边拒绝未知事件类型——即使带
+  `ignorable: true`**，故"补过 ignorable 的旧日志仍可读"自 0.1.3-alpha.2 起不再成立
+  （v17 沿革相应表述与 §5 附加约定 2 已订正）；legacy `foldRefLibs` 仅对 ≤0.1.2-rc.1
+  宿主可能生效，保留但已在 `src/service.ts` 注明"不是可靠迁移手段"。
+  version 0.17.0 → **`0.1.5-rc.3`**（自 v18 起版本号跟 dsh 走，见 §1 版本号约定）；
+  本轨跟 dsh npm `latest`，适用 0.1.5/0.1.6 宿主。**v19（next 轨，版本 `0.1.7-rc.2`，
+  适配 dsh 0.1.7+ 的图标改名等）已于 2026-09-25 归档为 tag `archive/next-0.1.7-rc.2`**
+  ——支持面收敛到 latest 单轨，见 §1「单轨」条。依赖族先按 `0.1.5-rc.2` 落地并通过四道门禁 + L3，
+  随后在 `latest` 的 `0.1.5-rc.3` 上复跑同样全绿（devDeps 与 CLI 均已对齐 rc.3）。

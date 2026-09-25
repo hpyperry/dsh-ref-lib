@@ -1,0 +1,21 @@
+# docs/ 索引
+
+本目录只放**历史**评估与设计记录，不参与构建、不影响运行。当前约定以仓库根的
+[`AGENTS.md`](../AGENTS.md)（核心记忆）与 [`README.md`](../README.md)（用户文档）为准。
+
+| 文件 | 是什么 | 状态 |
+| --- | --- | --- |
+| `upgrade-dsh-0.1.7-rc.2.md` | dsh `0.1.2-rc.1 → 0.1.7-rc.2` 的评估报告 + 双轨落地记录 | 历史记录（两节仍有效，见下） |
+| `upgrade-dsh-0.1.2-rc.1.md` | dsh `0.1.1-rc.2 → 0.1.2-rc.1` 的升级与双轨环境切换记录 | 历史记录 |
+| `v9-library-availability-design.md` | v9「参考库可用性状态」设计稿（状态探测、失效提示、命令卡片、刷新策略） | 历史记录 |
+| `prototype-session-import.html` | v12「跨会话导入」的静态交互原型（浏览器直接打开） | 参考原型 |
+
+`upgrade-dsh-0.1.7-rc.2.md` 里有两节**至今有效**，被代码和 `AGENTS.md` 引用：
+
+- **§3.2 B3**——`SESSION_FORMAT_VERSION` 的事实修正（`src/service.ts` 注释引用）；
+- **§6.3**——升级宿主前的旧日志扫描流程（`AGENTS.md` §5 附加约定 2 引用）。
+
+该文里"双轨 / `next` 分支"的描述属当时状态：`next` 轨已归档为 tag `archive/next-0.1.7-rc.2`。
+
+约定：**新增评估/设计文档放本目录，并在上表登记**；真正的长期约定写进 `AGENTS.md`，
+用户可见的用法写进 `README.md`——不要让 `docs/` 变成第二份真相来源。
