@@ -303,13 +303,17 @@ TRACK=next ./scripts/dev-isolate.sh   # next 轨（跟 dsh npm next），  home=
 6. **启动 web**：`--port` 按轨道默认（main 3090 / next 3091），退出时删除本次临时下载的 dsh
    （`KEEP_TOOLS=1` 保留）。
 
+> **只看不启**：`./scripts/dev-isolate.sh --check`（任意轨道）只解析版本、做一致性校验并打印
+> "会装什么/装到哪/哪个端口"，不下载 CLI、不装插件、不启动 web——改脚本或换轨道后先干跑一遍最省事。
+
 **安全护栏（硬性）**：`DEV_HOME` 必须是绝对路径、必须在 `$HOME` 下、**绝不允许落在代码库内**
 （脚本直接报错退出）——隔离 home 里有 sk 与真实会话；脚本内 `export DSH_HOME` 一次，
 避免"某条命令漏带 DSH_HOME → 静默打到真实 `~/.dsh`"这类事故（初版就踩过：启动 server 那条漏了）。
 
 **只想拿一个指定版本的 dsh**：`scripts/dsh-local.sh`（stdout 只打印 bin 路径；默认装到
 `mktemp` 临时目录 = 用完即弃，`DSH_CACHE_DIR` 改成按版本缓存；**永不 `npm i -g`**）。
-版本解析与安装逻辑在共用库 `scripts/lib/dsh-track.sh`。
+版本解析与安装逻辑在共用库 `scripts/dsh-track.sh`（**刻意放在 `scripts/` 平级**：
+  `.gitignore` 的 `lib/` 会匹配任意层级的 `lib/` 目录，放 `scripts/lib/` 会被一起忽略而漏提交）。
 
 - 彻底重置某条轨：`rm -rf ~/.dsh-dev-main`（**会话与 sk 会一起删**，所以脚本平时不自动删它）。
 - 热更新：`src/client/*` 改动 `pnpm build:client` 后浏览器 ≤0.5s 自动更新；node half
