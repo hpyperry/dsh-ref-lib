@@ -2,10 +2,7 @@
 
 给 DeepSeek Harness 的每个会话挂一个「只读参考库」：把本地目录（比如你的项目源码、内部文档）登记为参考库后，agent 回答前会**先去这些目录里查证**，查不到才允许走外部途径——而不是凭空猜或者直接上网搜。
 
-```
-gh release download v0.18.0 --repo hpyperry/dsh-ref-lib --pattern '*.tgz'
-dsh plugin --profile web add ./hpyperry-dsh-ref-lib-0.18.0.tgz
-```
+> 装法见 [📦 安装](#安装)——一条命令装进 profile。**npm 上还没发新版**，当前从 GitHub Release 取 tarball。
 
 ## 它解决什么问题
 
@@ -18,11 +15,11 @@ dsh plugin --profile web add ./hpyperry-dsh-ref-lib-0.18.0.tgz
 **当前用 GitHub Release 的 tarball 安装**（npm 上还没有新版，原因见下）：
 
 ```bash
-# 1) 取最新 tarball（也可以直接在浏览器打开 releases 页面下载）
-gh release download v0.18.0 --repo hpyperry/dsh-ref-lib --pattern '*.tgz'
+# 1) 取最新 Release 的 tarball（不带 tag 就是 latest；也可以直接在浏览器打开 releases 页面下载）
+gh release download --repo hpyperry/dsh-ref-lib --pattern '*.tgz'
 
 # 2) 装进 profile
-dsh plugin --profile web add ./hpyperry-dsh-ref-lib-0.18.0.tgz
+dsh plugin --profile web add ./hpyperry-dsh-ref-lib-*.tgz
 
 # 卸载
 dsh plugin --profile web remove @hpyperry/dsh-ref-lib
