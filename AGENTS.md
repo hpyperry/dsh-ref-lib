@@ -11,6 +11,11 @@
   next 线：`next` 分支跟 dsh npm **`next`**（当前 `0.1.7-rc.2`，适用 dsh 0.1.7+ 宿主）；
   `main` 分支跟 dsh npm **`latest`**（当前 `0.1.5-rc.3`，适用 dsh 0.1.5 / 0.1.6 宿主）。
   dsh 发新版 → 对应分支同步改 version（并复跑门禁）；README「📦 安装」有给用户看的对应表。
+- **当前发布状态（2026-09-25）**：两分支均已推送 `origin`（`main` / `next`）；
+  **npm 未发布**（账号锁定），解锁后 `npm publish --tag latest|next`（带 `-rc` 的版本不会被
+  npm 自动设成 `latest`，必须显式 `--tag`）。另：`dsh plugin add` 本质是转发 pnpm，
+  所以本地路径、`pnpm pack` 打出的 tarball、git/npm 版本都能装；要"冻结副本"用
+  `INSTALL_MODE=pack`（§6）。落地全记录见 `docs/upgrade-dsh-0.1.7-rc.2.md` §9。
 - **自包含工程**：`package.json` / `tsconfig.json` / `src/` / `tests/` / `scripts/` /
   构建配置与 `README.md` 齐全，可独立安装/构建/验证（安装见 `README.md`「📦 安装」、
   构建/验证见「🧑‍💻 开发」）。

@@ -1,9 +1,14 @@
 # dsh 最新代码评估与升级方案（0.1.2-rc.1 → 0.1.7-rc.2）
-## —— ref-lib 存在意义复核 + 实测破坏面 + 「单包多宿主」兼容路线
+## —— ref-lib 存在意义复核 + 实测破坏面 + 双轨落地记录
 
-> 状态：**评估定稿**（2026-09-25；对照 deepseek-harness `HEAD` = tag `dsh-v0.1.7-rc.2`
-> 逐项查证 + **在两份真实依赖族上实测**）。本文档只做评估与方案，**未改动任何源码**。
-> 落地目标版本：ref-lib **v18**（当前 v17 / 0.17.0）。
+> 状态：**评估定稿 + 已落地**（2026-09-25 评估；同日按 §4 与 §5 的最终决策落地并推送）。
+> 对照 deepseek-harness `HEAD` = tag `dsh-v0.1.7-rc.2` 逐项查证 + **在多份真实依赖族上实测**。
+>
+> **落地结果速览**（细节见 §9）：
+> - `main` 分支 → 插件版本 **`0.1.5-rc.3`**（跟 dsh npm `latest`），已推送；
+> - `next` 分支 → 插件版本 **`0.1.7-rc.2`**（跟 dsh npm `next`），已推送；
+> - 约定：**插件 `version` = 它所跟踪的 dsh 版本号**（dsh 发版 → 对应分支同步改号）；
+> - npm 发布**待账号解锁**（`npm publish --tag latest|next`），期间用本地路径或 tarball 安装（§9.4）。
 > 依据：
 > - 参考库 checkout `/Users/hpy/dev/PROJECTS/deepseek-harness` @ `477b4f4205`（tag `dsh-v0.1.7-rc.2`，
 >   2026-09-25；root `package.json` version `0.1.7-rc.2`）——**只读查证**，未做任何写入；
@@ -27,11 +32,13 @@ AGENTS.md 链、右栏 tab 注册表），但**没有任何内建能力提供「
 改名），**231 个测试 229 通过、2 个失败全部来自同一处破坏**（`JsonlSessionPersistence`
 改默认导出）。**其余 node API 面与全部 client 槽位/服务/类型零破坏**（逐条清单见 §3.3）。
 
-**结论三：本次不需要 v17 那套「双轨发布」。单包可同时跑 0.1.2-rc.1 … 0.1.7-rc.2。**
+**结论三：技术上"单包多宿主"可行，但最终选择了「双分支双轨」。**
 跨版本差异只在**图标的导出名**（0.1.7 起 `Icon*16` → `Icon*<Weight>`），而图标是
-**运行时从宿主 seed 模块表取的外部模块**——一个约 40 行的运行时兜底（§4.2 / §5.2）就能让**同一份
-client bundle** 在 0.1.2/0.1.5/0.1.7 三代宿主上都正确渲染。peer 区间 `^0.1.2-rc.1`
-**继续保留**（实测它满足 0.1.7 新引入的 peer preflight，且不含 0.2.x，§5.4）。
+**运行时从宿主 seed 模块表取的外部模块**——所以一个约 40 行的运行时兜底（§4.2 / §5.2）确实能让
+**同一份 client bundle** 在三代宿主上都正确渲染；`^0.1.2-rc.1` 这类区间也能通过 0.1.7 的 peer 闸门（§5.4）。
+**但项目最终选了按宿主代分两条分支**（`main` 跟 dsh `latest`、`next` 跟 dsh `next`），
+理由是版本语义更直白（**插件版本号 = dsh 版本号**）、且能借 0.1.7 起新增的 peer 闸门
+在装错轨时**直接拒绝安装**而不是白屏。取舍与实测见 §5 开头的"落地决策"块与 §9。
 
 **结论四：两处必须纠正的"过期事实"（文档级，非数据级）。**
 - **旧日志可读性声明已失效**：`SESSION_FORMAT_VERSION` 从 0 一路升到 **4**，而 v0→v1 迁移边
@@ -45,6 +52,12 @@ client bundle** 在 0.1.2/0.1.5/0.1.7 三代宿主上都正确渲染。peer 区�
 右栏 tab（`ctx.sidebarRightTabs`，0.1.5-alpha.1 起在位，可把 Modal 面板升级为常驻面板）、
 `workspaceRegistry.pinnedSessionIds`（导入来源排序与侧边栏同口径）、
 `ctx.uiWorkspace.createDirectory`（原生目录浏览器的"新建文件夹"对齐）。
+
+**结论六：分发包与开发工具链也一并理顺了**（§9）：
+`dsh plugin add` 本质是转发 pnpm，因此**本地路径 / tarball / npm 版本 / git 都能装**；
+测试脚本升级为**双轨 + 临时下载 dsh + 每次重装插件但保留 sk/会话**，并新增
+`--check`（干跑）与 `INSTALL_MODE=pack`（tarball 冻结安装，切分支不影响运行中的环境）；
+顺带修掉一个**会污染发布包**的问题：`lib/` 从不清理，历史版本产物被打进 tarball（§9.3）。
 
 ---
 
@@ -384,7 +397,7 @@ See the Agent Note (.../2026-09-09-deprecate-synchronous-session-event-reads.md)
 
 ---
 
-## 4. 逐文件升级方案（v18 实现基准）
+## 4. 逐文件升级方案（v18/v19 实现基准 —— **已落地**）
 
 > 总改动面：**2 个源文件族（图标 + 测试导入）+ 1 个 package.json + 3 处注释/文档**。
 > 预计净增代码 < 40 行（若采用 §5.2 的图标兜底），**无逻辑重写**。
@@ -393,7 +406,7 @@ See the Agent Note (.../2026-09-09-deprecate-synchronous-session-event-reads.md)
 
 ```diff
 -  "version": "0.17.0",
-+  "version": "0.18.0",
++  "version": "0.1.5-rc.3",     # main 轨＝dsh npm latest；next 轨为 0.1.7-rc.2
    "peerDependencies": {
      "@deepseek-ai/cordis": "^4.0.1",
 -    "@deepseek-ai/dsh-api-session-controller": "^0.1.2-rc.1",
@@ -589,7 +602,7 @@ export const IconCopyOutline = glyph('IconCopyOutline')
 
 ---
 
-## 5. 多版本兼容：「单包多宿主」路线（本次取代 v17 的双轨）
+## 5. 多版本兼容：两条候选路线（**最终采用「双分支双轨」**，下方保留评估过程）
 
 > ### ⚠️ 落地决策（2026-09-25）：改走**双分支双轨**，本节方案降级为"未来可选精简"
 >
@@ -716,16 +729,24 @@ cd .probe-017 && pnpm install --ignore-scripts        # 约 4–5 分钟
 ### 6.2 四道门禁 + L3 隔离冒烟
 
 ```bash
-pnpm typecheck && pnpm lint && pnpm test && pnpm build    # L0–L2 全绿
-# L3：版本化本地宿主（不装全局、不动 PATH）
-DSH_BIN_NEXT="$(DSH_VERSION=0.1.7-rc.2 ./scripts/dsh-local.sh)"
-DSH_BIN_LATEST="$(DSH_VERSION=0.1.5-rc.3 ./scripts/dsh-local.sh)"
-DSH_BIN_CUR="$(DSH_VERSION=0.1.2-rc.1 ./scripts/dsh-local.sh)"
-DEV_HOME="$HOME/.dsh-dev-017" PROFILE=ref-lib-017 DSH_BIN="$DSH_BIN_NEXT" \
-  PLUGIN=/Users/hpy/dev/PROJECTS/dsh-plugins/ref-lib ./scripts/dev-isolate.sh
+pnpm typecheck && pnpm lint && pnpm test && pnpm build    # L0–L2 全绿（含 L2 持久化新契约）
+
+# L3：一条命令起隔离环境（脚本内部自己按通道拉一份**临时** dsh，退出即删；不装全局）
+./scripts/dev-isolate.sh              # main 轨：dsh latest，home=~/.dsh-dev-main，端口 3090
+TRACK=next ./scripts/dev-isolate.sh   # next 轨：dsh next，  home=~/.dsh-dev-next，端口 3091
+
+# 只想看会装什么（不下载、不安装、不启动）
+TRACK=next ./scripts/dev-isolate.sh --check
+
+# 冻结安装（profile 里是 tarball 副本，之后切分支/改代码都不影响它）
+TRACK=next INSTALL_MODE=pack ./scripts/dev-isolate.sh
 ```
 
-（真实 `~/.dsh` 零接触；`rm -rf ~/.dsh-dev-017 ~/.dsh-tools` 即完全重置。）
+脚本每次运行都会：解析通道版本 → 校验插件 `version` 与该通道 dsh 版本一致 →
+构建插件 → 准备隔离 home（缺 sk 时从真实 home 只读复制，600 权限）→ **重装插件** →
+起 web。**home 里的 sessions / storages / settings / 凭证一律不删**（要清插件 sidecar 才用
+`RESET_PLUGIN_DATA=1`）；`DEV_HOME` 若落在代码库内会被直接拒绝（sk 防泄漏）。
+彻底重置某条轨：`rm -rf ~/.dsh-dev-main`。详见 `AGENTS.md` §6。
 
 ### 6.3 数据平面检查：legacy `ref-lib/set` 日志扫描（**升级宿主前执行**）
 
@@ -766,14 +787,15 @@ node scan.mjs "$HOME/.dsh/sessions"
 
 ## 7. 决策与风险清单
 
-### 7.1 待决决策（需要拍板）
+### 7.1 决策记录（**已定**）
 
-| # | 决策 | 建议 |
-| --- | --- | --- |
-| D1 | 基线选 **0.1.5-rc.3（npm `latest`）** 还是 **0.1.7-rc.2（HEAD / `next`）** | **devDeps 用 0.1.7-rc.2**（最新类型真相源）+ **图标兜底**，于是两者**同时**被覆盖；不必二选一 |
-| D2 | 图标用"直接改名"还是"运行时兜底" | **兜底**（§4.2）：多 1 个 40 行模块，换来单包多宿主，避免 v17 式双轨维护 |
-| D3 | legacy `foldRefLibs` 路径删除还是保留 | **删除**（推荐）：它已不可达（B3），删掉同时消掉 `snapshotEvents()` 的 deprecated 用法（B4） |
-| D4 | 是否顺带做右栏 tab / pinned 排序 / `createDirectory` | **不做进本次**：升级与增强分两次提交，先拿到 0.1.7 兼容性的净收益（§7.3 单独排期） |
+| # | 决策 | 最终选择 | 结果 |
+| --- | --- | --- | --- |
+| D1 | 基线：一条轨还是两条？ | **两条分支各跟一条 dsh 通道** | `main` → `0.1.5-rc.3`（dsh `latest`）；`next` → `0.1.7-rc.2`（dsh `next`） |
+| D2 | 图标：直接改名还是运行时兜底？ | **直接改名**（每轨只用该轨存在的名字） | 13 图标 / 52 处，next 轨改 `*Regular`；兜底方案保留在 §5.2 备查 |
+| D3 | peer 区间怎么写？ | main 轨 `>=0.1.5-rc.2 <0.1.7-alpha.1`；next 轨 `^0.1.7-rc.2` | main 的上界让 0.1.7+ 宿主**装不上**（实测被 `plugin add` 直接拒绝，§5） |
+| D4 | legacy `foldRefLibs` / `snapshotEvents()` 怎么处理？ | **保留但冻结**（加注释：不得新增调用、删 legacy 时一并移除） | 未删除，因它仍是 ≤0.1.2-rc.1 宿主上的唯一迁移手段 |
+| D5 | 右栏 tab / pinned 排序 / `createDirectory` | **本次不做** | 排期见 §7.3 |
 
 ### 7.2 风险清单
 
@@ -786,6 +808,8 @@ node scan.mjs "$HOME/.dsh/sessions"
 | **P2** | `SessionSummary.agentAvailable` 新增必填 | 生产只读 `origin`/`blank` 不受影响；`tests/service.spec.ts` 的 stub 目前有 `as never` 兜着，去掉断言时补字段 |
 | **P3** | `PLATFORM_EXTERNALS` 漂移（B6） | §4.5 |
 | **P3** | 我们自研 tsdown 配置**不受官方 purity gate 保护**（`packages/client/tsdown.client.ts:538-542` 的构建期校验只覆盖 monorepo 内部包） | 显式 `dsh.client.external: []` + 构建后断言 `require` 集合（可写成一条测试） |
+| ✅ 已闭环 | **构建不清理 `lib/`**：历史版本产物（`coverage/identify/metrics/search/tool/client/layout`）残留并被 `files: ["lib"]` 打进发布包（实测旧 tarball 106 文件 / 231KB） | `build` 改为 `pnpm run clean && tsc && tsdown`；重建后 tarball 82 文件 / 202KB、残留归零（§9.3） |
+| ✅ 已闭环 | **只读目录 link 安装会被切分支影响**（同一份 `lib/` 被两个环境共用） | 测试脚本新增 `INSTALL_MODE=pack`（tarball 冻结副本）；或按轨开 worktree（§9.4） |
 
 ### 7.3 后续增强排期（非本次升级范围）
 
@@ -811,6 +835,9 @@ node scan.mjs "$HOME/.dsh/sessions"
 | cordis | 仓库 vendored 4.0.4；npm `latest` 4.0.4；我方 peer `^4.0.1` 覆盖 |
 | 提交规模 | `dsh-v0.1.2-rc.1..dsh-v0.1.7-rc.2` = 3432 非 merge 提交 |
 | 探针 | `.probe-017/`（已删）：`tsc` 23 错（全图标）、`vitest` 229/231 |
+| **落地插件版本** | `main` = `0.1.5-rc.3`；`next` = `0.1.7-rc.2`（= 各自跟踪的 dsh 版本） |
+| **远端** | `origin/main`、`origin/next` 均已推送（2026-09-25） |
+| **npm 发布** | **未发布**（账号锁定）；替代路径见 §9.4 |
 
 ### 8.2 关键源码锚点（HEAD）
 
@@ -852,6 +879,75 @@ node scan.mjs "$HOME/.dsh/sessions"
 | 槽位注册 | `src/client/index.ts:128-154`；`inject` `:38` |
 | 打包 externals | `tsdown.config.ts:15-22` |
 | 需纠正的过期声明 | `AGENTS.md` §5 附加约定 2；`src/service.ts` 头部注释 |
+
+---
+
+## 9. 落地记录（2026-09-25 当日完成并推送）
+
+### 9.1 两轨产物
+
+| 分支 | 插件版本 | 目标宿主（dsh） | peer 区间 | 主要改动 |
+| --- | --- | --- | --- | --- |
+| `main` | `0.1.5-rc.3` | npm `latest`（0.1.5 / 0.1.6 系列） | `>=0.1.5-rc.2 <0.1.7-alpha.1` | 持久化契约迁移（§4.3）、事实修正、打包 hygiene、脚本双轨化 |
+| `next` | `0.1.7-rc.2` | npm `next`（0.1.7+） | `^0.1.7-rc.2` | 上述全部 **+ 图标改名 13 个 / 52 处 / 5 文件** |
+
+两分支均已推送：`origin/main`、`origin/next`；`scripts/`、`docs/`、`.gitignore` 内容逐字一致。
+**版本号约定**：插件 `version` = 所跟踪的 dsh 版本号（dsh 发版 → 对应分支同步改号并复跑门禁）。
+
+### 9.2 门禁与 L3 证据
+
+- 四道门禁在**两条轨各自的依赖族**上分别全绿：`typecheck` / `lint` / `test`（**231**，
+  含 L2 在最严契约下的写句柄回路）/ `build`。
+- L3 隔离实测（每轨各一次，真实 `~/.dsh` 零写入）：
+  - `main` + dsh `0.1.5-rc.3`（端口 3090）：插件安装无兼容拒绝、`/api/ref-lib/*` 响应、
+    client bundle 进入 boot 图且 200，bundle 内是**旧图标名**（与该宿主一致）；
+  - `next` + dsh `0.1.7-rc.2`（端口 3091）：同上，bundle 内是**13 个新图标名**；
+  - 隔离有效性用"在隔离 home 放 marker sidecar → `/source` 能读到"证明（不会读到真实 home）。
+- 反向验证：在 0.1.7-rc.2 宿主上安装 peer 上界排除 0.1.7 的探针插件，
+  `dsh plugin add` **直接拒绝**并给出 `allow-version` 逃生路径（⇒ main 轨的上界是有效的安装期安全网）。
+
+### 9.3 打包残留修复（新发现）
+
+`lib/` 是 tsc/tsdown 的输出且从不清理 → 历史版本产物长期累积，而 `package.json` 的
+`files: ["lib", …]` 会把它们**一起发布**。实测对比：
+
+| | 修复前 | 修复后 |
+| --- | --- | --- |
+| tarball 文件数 | 106 | **82** |
+| tarball 体积 | 231,889 B | **202,632 B** |
+| 陈旧残留 | `lib/coverage|identify|metrics|search|tool.js`、`lib/client/layout.js` | **无** |
+
+修法：`scripts.clean = rm -rf lib`，`build = pnpm run clean && tsc && tsdown`，`prepare` 复用 `build`。
+
+### 9.4 分发：npm 账号锁定期间的替代路径
+
+`dsh plugin --profile <p> add <spec>` 本质是把参数转发给 profile 目录里的 pnpm，
+所以以下都能装（官方条目："Manage a profile's plugins by forwarding to pnpm in the profile directory"）：
+
+| 方式 | 命令 | 特点 |
+| --- | --- | --- |
+| 本地路径（link） | `dsh plugin --profile web add /path/to/ref-lib` | 改动即时生效；**切分支会影响该环境** |
+| **tarball（冻结）** | `pnpm pack --pack-destination ~/.dsh-pkgs/<版本>` → `dsh plugin --profile web add <tgz>` | 独立副本，切分支/删仓库都不影响；无热更新 |
+| npm（解锁后） | `npm publish --tag latest` / `--tag next` | 面向用户的正式通道 |
+
+注意：带 `-rc` 的版本号不会被 npm 自动设成 `latest`，发布时**必须显式指定 tag**；
+profile 清单里记的是 tarball 路径，故建议保留 `~/.dsh-pkgs/`（删了当前安装仍可用，
+但该 profile 之后 `pnpm install` 会缺源）。
+
+### 9.5 文档与脚本改动清单
+
+`AGENTS.md`（§1 版本号约定 + v18/v19 沿革 + §5-L3 + §6 双轨/`INSTALL_MODE`/worktree/`--check`）、
+`README.md`（安装对应表 + 开发节：一条命令起双轨环境、pack 模式）、
+`scripts/dev-isolate.sh`（双轨、临时 CLI、sk 就位、每次重装插件、`--check`、`INSTALL_MODE`、
+home 护栏）、`scripts/dsh-local.sh`（通道→版本解析、临时/缓存安装、`--print-version`）、
+`scripts/dsh-track.sh`（共用库，**刻意与 `dsh-local.sh` 平级**——`.gitignore` 的 `lib/` 会匹配任意层级，
+放 `scripts/lib/` 会被静默忽略）、`package.json`（版本号 + `clean`）。
+
+### 9.6 遗留
+
+- **npm 未发布**（账号锁定）——解锁后按 §9.4 两条命令发布；
+- 右栏 tab / `pinnedSessionIds` / `createDirectory` / `inputTriggers` 四条增强仍待排期（§7.3）；
+- legacy `foldRefLibs` + `snapshotEvents()` 冻结中（D4）。
 
 ---
 
