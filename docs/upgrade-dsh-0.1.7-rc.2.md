@@ -965,11 +965,11 @@ SessionFormatUnsupportedError: format v0 contains unknown historical event type 
 | 方式 | 命令 | 特点 |
 | --- | --- | --- |
 | 本地路径（link） | `dsh plugin --profile web add /path/to/ref-lib` | 改动即时生效；**切分支会影响该环境** |
-| **tarball（冻结）** | `pnpm pack --pack-destination ~/.dsh-pkgs/<版本>` → `dsh plugin --profile web add <tgz>` | 独立副本，切分支/删仓库都不影响；无热更新 |
+| **tarball（冻结）** | `pnpm pack`（在仓库根出 `<包名>-<版本>.tgz`）→ `dsh plugin --profile web add <tgz>` | 独立副本，切分支/删仓库都不影响；无热更新 |
 | npm（解锁后） | `npm publish --tag latest` / `--tag next` | 面向用户的正式通道 |
 
 注意：带 `-rc` 的版本号不会被 npm 自动设成 `latest`，发布时**必须显式指定 tag**；
-profile 清单里记的是 tarball 路径，故建议保留 `~/.dsh-pkgs/`（删了当前安装仍可用，
+profile 清单里记的是 tarball 路径，故建议保留打出的 tarball（删了当前安装仍可用，
 但该 profile 之后 `pnpm install` 会缺源）。
 
 ### 9.5 文档与脚本改动清单
@@ -995,15 +995,32 @@ home 护栏）、`scripts/dsh-local.sh`（通道→版本解析、临时/缓存�
 | --- | --- | --- |
 | ① 备份（L4） | `cp -R ~/.dsh ~/.dsh.bak-<ts>` | `~/.dsh.bak-20260925-141619`（111 MB） |
 | ② 处置 P0 日志 | 见 §6.3 | 删除 2 个含 `ref-lib/set` 的会话目录（日志 79 → 77） |
-| ③ 打 tarball | `git checkout main && pnpm install && pnpm build && pnpm pack --pack-destination ~/.dsh-pkgs/0.1.5-rc.3` | `hpyperry-dsh-ref-lib-0.1.5-rc.3.tgz`（82 文件 / 202,232 B，version `0.1.5-rc.3`） |
+| ③ 打 tarball | `git checkout main && pnpm install && pnpm build && pnpm pack`（当时打在仓库外，见 §9.8） | `hpyperry-dsh-ref-lib-0.1.5-rc.3.tgz`（82 文件 / 202,232 B，version `0.1.5-rc.3`） |
 | ④ 升宿主 | `npm i -g @deepseek-ai/dsh@0.1.5-rc.3` | `dsh --version` = `0.1.5-rc.3`（全局装在 fnm 的 `installation` 前缀，`npm prefix -g` 已核对） |
-| ⑤ 换插件 | `dsh plugin --profile web add file:~/.dsh-pkgs/0.1.5-rc.3/hpyperry-dsh-ref-lib-0.1.5-rc.3.tgz` | profile 依赖变为 `file:` 规格；`node_modules/@hpyperry/dsh-ref-lib` 是**独立副本**（与 tarball 逐文件 `diff -rq` 一致，82 文件） |
+| ⑤ 换插件 | `dsh plugin --profile web add hpyperry-dsh-ref-lib-0.1.5-rc.3.tgz` | profile 依赖变为 `file:` 规格；`node_modules/@hpyperry/dsh-ref-lib` 是**独立副本**（与 tarball 逐文件 `diff -rq` 一致，82 文件） |
 | ⑥ 清历史残留 | `rm node_modules/@dsh-plugins/ref-lib` | 删掉 8-17 遗留的指向仓库的野软链 |
 | ⑦ 重启 GUI | 在跑 `dsh web` 的终端 Ctrl-C 后重启 | 宿主换版 + 插件换版都要重启才生效（client 扫描按包名解析，无 HMR） |
 
 要点：**`dsh plugin add` 转发 pnpm ⇒ 本地 tarball 就能装**，npm 账号锁定不影响自己这台机器；
 但面向用户的正式分发仍需 `npm publish`。升级后**恢复/写入过的老会话日志会落盘成 v3**，
 此后不能再用 0.1.2-rc.1 打开（只读打开不写盘）。
+
+### 9.8 pack 目的地变更（2026-09-25 后续）+ 真实环境清理
+
+`INSTALL_MODE=pack` 原先要求把 tarball 打在**仓库外**的独立目录（dsh home 旁的 pkgs 布局），
+现改为**直接打在插件目录本身（仓库根）**：
+
+```bash
+pnpm pack                      # → <repo>/hpyperry-dsh-ref-lib-<版本>.tgz（无子目录）
+dsh plugin --profile web add hpyperry-dsh-ref-lib-<版本>.tgz
+```
+
+- `scripts/dev-isolate.sh` 的 `PKG_ROOT` 默认值 = `${PLUGIN}`（仍可用 `PKG_ROOT=<目录>` 覆盖），
+  `--check` 会打印实际落点；`.gitignore` 排除 `*.tgz`（`package.json` 的 `files` 只有
+  `lib/` + `cordis.patch.yml`，tarball 不会打进自身）。
+- §9.4 / §9.7 的旧命令已按此更新；**当时首次落地确实打在仓库外**，仅为历史事实。
+- 用户随后**清理了 dsh 历史环境**（多版本残留）：那个仓库外的 tarball 目录与 L4 备份均已删除，
+  真实 profile `web` 回到干净初始态（`dependencies: {}`，插件未安装）⇒ 需要时按 §9.4 重装。
 
 ---
 

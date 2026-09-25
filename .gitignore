@@ -7,6 +7,9 @@ lib/
 # 测试临时目录（vitest mkdtemp 于 tests/ 下）
 tests/.tmp-*/
 
+# pack 模式（scripts/dev-isolate.sh INSTALL_MODE=pack）直接在仓库根打出的 tarball
+*.tgz
+
 # 系统杂项
 .DS_Store
 *.log

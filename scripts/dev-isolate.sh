@@ -42,7 +42,8 @@
 #               但**该环境与当前工作区绑定**（切分支/改代码会影响它）。
 #       pack —— 先 `pnpm pack` 打成 tarball 再安装：profile 里是**冻结副本**，
 #               之后切分支、甚至删掉仓库都不影响这个环境（代价：没有热更新）。
-#   PKG_ROOT=<目录>         pack 模式的 tarball 存放根（默认 ~/.dsh-pkgs/<版本>/）
+#   PKG_ROOT=<目录>         pack 模式的 tarball 存放目录（默认 = 插件目录，即仓库根；
+#                           文件名自带版本号，多版本可共存；已 gitignore）
 #   RESET_PLUGIN_DATA=1     清空插件自身数据目录（默认 0）
 #   KEEP_TOOLS=1            保留本次临时下载的 dsh（默认 0=退出即删）
 #   DSH_CACHE_DIR=<目录>    改成按版本缓存复用（不再每次重新下载）
@@ -65,7 +66,9 @@ BUILD="${BUILD:-1}"
 SEED_CREDENTIALS="${SEED_CREDENTIALS:-1}"
 SEED_SETTINGS="${SEED_SETTINGS:-1}"
 INSTALL_MODE="${INSTALL_MODE:-link}"
-PKG_ROOT="${PKG_ROOT:-${HOME}/.dsh-pkgs}"
+# 默认就打在**插件目录本身**（仓库根），不建任何子目录：tarball 名字自带版本号
+# （`hpyperry-dsh-ref-lib-<版本>.tgz`），多版本共存不会撞名；已在 .gitignore 排除（*.tgz）。
+PKG_ROOT="${PKG_ROOT:-${PLUGIN}}"
 RESET_PLUGIN_DATA="${RESET_PLUGIN_DATA:-0}"
 KEEP_TOOLS="${KEEP_TOOLS:-0}"
 REAL_HOME="${REAL_HOME:-${HOME}/.dsh}"
@@ -122,6 +125,8 @@ fi
 PLUGIN_NAME="$(node -p 'require(process.argv[1]).name' "${PLUGIN}/package.json" 2>/dev/null || true)"
 [ -n "${PLUGIN_NAME}" ] || die "读不出插件包名：${PLUGIN}/package.json"
 PLUGIN_VERSION="$(node -p 'require(process.argv[1]).version' "${PLUGIN}/package.json" 2>/dev/null || true)"
+# pnpm/npm 的 tarball 命名：去 scope 的 `@`，`/` 换成 `-`（@scope/name → scope-name-<版本>.tgz）
+PKG_BASENAME="$(printf '%s' "${PLUGIN_NAME}" | sed 's|^@||; s|/|-|g')-${PLUGIN_VERSION}.tgz"
 if [ "${PLUGIN_VERSION}" != "${VERSION}" ]; then
   msg="插件版本 ${PLUGIN_VERSION} ≠ dsh ${TRACK} 通道版本 ${VERSION}（约定：两者一致；多半是当前分支与被测通道不匹配）"
   if [ "${STRICT_VERSION}" = "1" ]; then die "${msg}"; fi
@@ -146,6 +151,9 @@ if [ "${CHECK_ONLY}" = "1" ]; then
   note "  通道=${TRACK}  dsh 版本=${VERSION}  插件版本=${PLUGIN_VERSION}"
   note "  隔离 home=${DEV_HOME}  端口=${PORT}  profile=${PROFILE}"
   note "  构建=${BUILD}  安装方式=${INSTALL_MODE}  重装插件=每次  清插件数据=${RESET_PLUGIN_DATA}"
+  if [ "${INSTALL_MODE}" = "pack" ]; then
+    note "  打包目录=${PKG_ROOT}（tarball：${PKG_BASENAME}）"
+  fi
   exit 0
 fi
 
@@ -209,13 +217,18 @@ INSTALL_SPEC="${PLUGIN}"
 if [ "${INSTALL_MODE}" = "pack" ]; then
   # 冻结安装：先打包（`pnpm pack` 会跑 prepare=构建，tarball 内含 lib/），再装 tarball。
   # 之后 profile 里是独立副本，切分支/改源码/删仓库都不影响这个环境。
-  PKG_DIR="${PKG_ROOT}/${VERSION}"
+  # 直接打在 PKG_ROOT（默认 = 插件目录本身），不再套 <版本>/ 子目录。
+  PKG_DIR="${PKG_ROOT}"
   mkdir -p "${PKG_DIR}"
   note "打包：pnpm pack → ${PKG_DIR}"
   if ! INSTALL_SPEC="$(cd "${PLUGIN}" && pnpm pack --pack-destination "${PKG_DIR}" 2>/dev/null | tail -1)"; then
     die "打包失败（先跑 pnpm build 确认能构建）"
   fi
   [ -f "${INSTALL_SPEC}" ] || die "打包产物不存在：${INSTALL_SPEC}"
+  actual_basename="$(basename "${INSTALL_SPEC}")"
+  if [ "${actual_basename}" != "${PKG_BASENAME}" ]; then
+    note "⚠️  tarball 名与预期不同（预期 ${PKG_BASENAME}，实际 ${actual_basename}）"
+  fi
   note "tarball：${INSTALL_SPEC}（$(du -h "${INSTALL_SPEC}" | cut -f1)）"
 fi
 
