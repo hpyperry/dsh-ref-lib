@@ -129,6 +129,22 @@ pnpm build       # 构建 node half（tsc）+ client bundle（tsdown）→ lib/
   ```
 - **热更新**：改 `src/client/*` 后跑 `pnpm build:client`，浏览器约 0.5 秒内生效；改 node half 需要重启 `dsh web`。
 
+### 发布（维护者）
+
+版本号跟 dsh 走：`main` 分支发 dsh `latest` 对应的版本，`next` 分支发 dsh `next` 对应的版本。
+发布前确认 `pnpm typecheck && pnpm lint && pnpm test && pnpm build` 全绿，且 `version` 等于该通道的 dsh 版本。
+
+```bash
+git checkout main && npm publish --tag latest   # 例：0.1.5-rc.3
+git checkout next && npm publish --tag next     # 例：0.1.7-rc.2
+```
+
+- **带 `-rc` 的版本号不会被 npm 自动设为 `latest`**，必须显式指定 `--tag`。
+- 暂时不发布（或只想自己用）时的替代装法：`pnpm pack` 打出 tarball →
+  `dsh plugin --profile web add ./hpyperry-dsh-ref-lib-<版本>.tgz`（冻结副本，不依赖 registry）。
+- 发布包只含 `lib/` 与 `cordis.patch.yml`；`pnpm build` 会先清空 `lib/` 再构建，
+  确保不会把历史版本的残留产物打进包里。
+
 ## License
 
 [MIT](LICENSE)，与 DeepSeek Harness 一致。
