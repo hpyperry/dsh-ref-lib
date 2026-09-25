@@ -243,6 +243,12 @@
 - 门禁：`pnpm typecheck`（`tsc --noEmit`）/ `pnpm lint`（eslint + prettier，见
   `eslint.config.js`）/ `pnpm test`（必须含 L0–L2 全部层，见 §5）/ `pnpm build`
   （`tsc` + `tsdown`）。
+- **双轨共享文件：两边保持一致（否则合并必冲突）**。`main` 跟 dsh `latest`、`next` 跟
+  dsh `next`，两条轨长期并存：`docs/*`、`scripts/*`、`.gitignore`、`src/**`、`tests/**`
+  这类"两条轨都要有"的文件，改动后在另一条轨提交**内容完全相同**的版本（沿用既有的
+  "与 next / main 同步"提交习惯）。只改一边 → 合并干净；**只在一边删文件 → 下次合并
+  必然 `modify/delete` 冲突**，所以要删就两边一起删、要留就两边都留。版本号、轨道措辞
+  这类本就该不同的内容，集中放在各自独有的段落里，别混进共享文件的同一段。
 
 ## 3. 参考速查
 
