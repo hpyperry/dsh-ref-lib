@@ -8,7 +8,7 @@
  *
  * 图标是宿主 seed 模块表里的 **value import**：运行时按名取值，所以只要在取值处
  * 做一次回退，**同一份 client bundle 就能同时在两代宿主上正确渲染**——这是"一份
- * 插件版本支持多代宿主"的关键（详见 `docs/upgrade-dsh-0.1.7-rc.2.md` §5.2）。
+ * 插件版本支持多代宿主"的关键（取值处见 `icons.ts`，理由见 `AGENTS.md` 的「硬约束」第 2 条）。
  *
  * 本模块刻意不 import 任何东西（`ComponentType` 是 type-only，构建期擦除），
  * 使单测不必加载真实的 ui-primitives 包。

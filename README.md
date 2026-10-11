@@ -113,10 +113,11 @@ UI 面板和命令操作的是同一份数据，按习惯用哪个都行。
 pnpm typecheck   # 类型检查（tsc --noEmit）
 pnpm lint        # eslint（门禁之一）
 pnpm format      # prettier --write（可选，不进 CI；仓库现有代码未全量 prettier 化）
-pnpm test        # vitest：L0 纯函数 / L1 装载 / L2 harness 边界回归
+pnpm test        # vitest：L0 纯函数 / L1 装配与真实语义 / L2 harness 边界回归
 pnpm build       # 构建 node half（tsc）+ client bundle（tsdown）→ lib/
 ```
 
+- **测试分三档**（L0 纯函数 / L1 装配与真实语义 / L2 harness 边界回归）：每个测试文件的第一行都标了自己属于哪档，完整定义、文件归属与那道事故防线见 [`docs/agents/testing.md`](docs/agents/testing.md)。
 - **代码结构**：`src/` 是 node half（服务、`/api/ref-lib/*` 路由、`/ref-lib` 命令、上下文注入），`src/client/` 是 web half（dock 胶囊、管理面板、目录浏览器、本地化），`tests/` 是测试。
 - **一条命令起联调环境**：`scripts/dev-isolate.sh` 会自动做四件事——按通道拉一份**临时** dsh（不装全局）、把 sk 从真实 home 复制进隔离 home、**重装插件**（吃到当前源码最新构建）、启动 web。真实 `~/.dsh` 全程零写入。
 
@@ -197,5 +198,7 @@ npm dist-tag add @hpyperry/dsh-ref-lib@0.18.0 latest
 
 ## 更多
 
-- 开发规范 / 测试标准 / 开发环境约定：见仓库 `AGENTS.md`
+- 开发规范与硬性约束：见仓库 `AGENTS.md`
+- 测试分档与每个测试文件的归属：见 [`docs/agents/testing.md`](docs/agents/testing.md)
+- 联调 / 升级 / 取指定版本 dsh 的脚本与护栏：见 [`docs/agents/dev-env.md`](docs/agents/dev-env.md)
 - 仓库：<https://github.com/hpyperry/dsh-ref-lib>

@@ -1,7 +1,8 @@
+// L0：纯函数（无 IO、不碰宿主）
 /**
  * 刷新触发信号派生（deriveRefreshTriggers）单测：会话快照节点 → 两个刷新计数。
  *
- * 钉死 RefLibDock 两个交互刷新 effect 的信号语义（设计文档 §14/§16）：
+ * 钉死 RefLibDock 两个交互刷新 effect 的信号语义：
  * - userMessageCount：仅 `kind: 'user'` 计数；steering/context/tool 等其他节点不计；
  * - refLibCommandDone：仅已结算（outcome 非 null）的 `ref-lib` 命令计数；
  *   运行中（outcome null）、其他命令、name 为 null（run 落在窗口外）不计。

@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # dev-isolate.sh —— 启动**隔离**的 dsh web 联调环境（默认跟插件所跟踪的 dsh 通道 `next`）。
 #
-# 设计目标（2026-09-25 修订；插件当前跟 dsh `next` = 0.1.7-rc.2，见 AGENTS.md §1）：
+# 设计目标（2026-09-25 修订；插件版本号与 dsh 解耦，见 AGENTS.md「硬约束」）：
 #
 #   1) **跟 dsh dist-tag 走**：`TRACK` 给 npm dist-tag（默认 `next` = 插件所跟踪的通道，
-#      也可传 `main`/`latest` 等）。版本由 registry 实时解析（也可 DSH_VERSION 显式钉），并校验被测插件的
-#      package.json version 是否与之一致（不一致只警告；STRICT_VERSION=1 则报错退出）。
+#      也可传 `main`/`latest` 等）。版本由 registry 实时解析（也可 DSH_VERSION 显式钉），并校验该版本
+#      是否落在被测插件声明的宿主范围（`dsh-*` peer 区间）内（不在区间内只警告；STRICT_VERSION=1 报错退出）。
 #   2) **CLI 用临时下载**：每次运行 `npm install --prefix <mktemp 临时目录>` 拉一份该版本的
 #      dsh，**不装全局、不动 PATH、不碰 `which dsh` 那份**；退出时自动删除该临时目录
 #      （KEEP_TOOLS=1 保留，DSH_CACHE_DIR=… 改成按版本缓存复用）。
@@ -22,7 +22,7 @@
 #
 # 用法：
 #   ./scripts/dev-isolate.sh                          # 默认：跟插件所跟踪的 dsh 通道 next，home=<repo>/.dsh-dev/next，端口 3090
-#   TRACK=main ./scripts/dev-isolate.sh               # 任意 npm dist-tag（如 main = latest，0.1.5/0.1.6 线）→ 端口 3091
+#   TRACK=main ./scripts/dev-isolate.sh               # 任意 npm dist-tag（如 main = npm latest）→ 端口 3091
 #   PORT=4000 ./scripts/dev-isolate.sh --no-open      # 自定义端口 + 透传 dsh 参数
 #   RESET_PLUGIN_DATA=1 ./scripts/dev-isolate.sh      # 顺带清插件自身数据（会话/sk 不动）
 #
@@ -49,7 +49,7 @@
 #   KEEP_TOOLS=1            保留本次临时下载的 dsh（默认 0=退出即删）
 #   DSH_CACHE_DIR=<目录>    改成按版本缓存复用（不再每次重新下载）
 #   REAL_HOME=<目录>        真实 dsh home（默认 ~/.dsh，只读用于取 sk）
-#   STRICT_VERSION=1        插件版本 ≠ dsh 版本时直接报错（默认只警告）
+#   STRICT_VERSION=1        dsh 版本不在插件声明的宿主范围（peer 区间）内时直接报错（默认只警告）
 #
 # 清理：彻底重置 = `rm -rf <repo>/.dsh-dev/next`（**会话与 sk 会一起没**，所以本脚本平时不自动删）。
 #       真实 `~/.dsh` 全程零写入。
@@ -134,7 +134,7 @@ PLUGIN_NAME="$(node -p 'require(process.argv[1]).name' "${PLUGIN}/package.json" 
 PLUGIN_VERSION="$(node -p 'require(process.argv[1]).version' "${PLUGIN}/package.json" 2>/dev/null || true)"
 # pnpm/npm 的 tarball 命名：去 scope 的 `@`，`/` 换成 `-`（@scope/name → scope-name-<版本>.tgz）
 PKG_BASENAME="$(printf '%s' "${PLUGIN_NAME}" | sed 's|^@||; s|/|-|g')-${PLUGIN_VERSION}.tgz"
-# ── 2) 校验宿主范围（版本号不再跟 dsh 走，见 AGENTS.md §1）────────────────────
+# ── 2) 校验宿主范围（插件版本号不跟 dsh 走，见 AGENTS.md「硬约束」）────────────
 # 约定：插件 version 是**插件自己的 semver**；能跑在哪些宿主由 peerDependencies 声明。
 # 所以这里校验的是「dsh 版本 ∈ 插件声明的 dsh-* peer 区间」，而不是版本号相等。
 HOST_RANGE="$(node -p 'require(process.argv[1]).peerDependencies["@deepseek-ai/dsh-session"] ?? ""' "${PLUGIN}/package.json" 2>/dev/null || true)"

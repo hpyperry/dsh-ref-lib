@@ -1,3 +1,4 @@
+// L0：纯函数（无 IO、不碰宿主）
 import { describe, expect, it } from 'vitest'
 import { renderImportSessions, renderLibList, renderRefLibs } from '../src/render.ts'
 import type { RefLibEntry } from '../src/spec.ts'

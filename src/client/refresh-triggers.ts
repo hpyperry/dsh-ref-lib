@@ -9,7 +9,7 @@
  *   （`outcome !== null`）的节点计数——`/ref-lib` 命令完成后 +1，驱动「命令执行
  *   即刷新」。
  *
- * 派生依据见设计文档 §16（当时按 deepseek-harness `dsh-v0.1.0-rc.7` 源码逐条查证；
+ * 派生依据（当时按 deepseek-harness `dsh-v0.1.0-rc.7` 源码逐条查证；
  * v17 迁移后节点改由 ui-chat 的 `legacy.nodes` 投影提供）：
  * - dock 槽位 owner 的 `session` 是响应式会话快照：ConversationRoot 经
  *   `useSession(s => s)` 订阅会话 store，每次发布都重渲染 dock（
@@ -23,7 +23,7 @@
  *   重名注册 fail loud），故 `name === 'ref-lib'` 过滤精确
  *   （`interaction/commands/src/index.ts` + `conversation-nodes/command.ts`）。
  *
- * 已知信号盲区（设计取舍，见设计文档 §14/§16）：
+ * 已知信号盲区（设计取舍，由 tests/refresh-triggers.spec.ts 钉死）：
  * - steer 打断消息永不产生 `'user'` 节点 → 不触发发消息刷新（无状态变更，可接受）；
  * - 忙碌期排队消息的 `user/message` 在 step 领取时才落盘 → 计数延迟至消息进入步骤；
  * - `command/run` 落在窗口外（压缩/截断）时节点 `name` 为 null → 不增

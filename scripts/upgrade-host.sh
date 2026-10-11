@@ -3,7 +3,7 @@
 # 重装进真实 profile。和 dev-isolate.sh 的区别：**这个脚本动的是真实 `~/.dsh`**。
 #
 # 设计目标：
-#   1) **先备份再动手**：默认 `cp -R ~/.dsh ~/.dsh.bak-<时间戳>`（L4 约定，见 AGENTS.md §5）。
+#   1) **先备份再动手**：默认 `cp -R ~/.dsh ~/.dsh.bak-<时间戳>`（见 docs/agents/dev-env.md）。
 #      备份失败即中止——会话格式升级（v3 → v4）是不可逆的，旧宿主之后打不开写过的会话。
 #   2) **非交互也要显式确认**：把"要做什么"先打印清楚，`--yes` 才跳过确认。
 #   3) **两个动作可分开**：`SKIP_HOST=1` 只换插件；`SKIP_PLUGIN=1` 只升宿主（默认都做）。
@@ -31,12 +31,16 @@
 #   FORCE=1                跳过"宿主不在插件 peer 区间内"的拒绝
 #   PKG_ROOT=<目录>        打 tarball 的位置（默认 = 插件目录，即仓库根）
 #
-# 关于 SCAN_LEGACY：`docs/upgrade-dsh-0.1.7-rc.2.md` §6.3 要求"升级到 ≥0.1.3-alpha.2 之前"
-# 扫描含 `ref-lib/set` 的 v0 日志（那类日志在 v0→v1 迁移边会被整体拒读）。**那道坎早已过了**：
-# 本机当时已把命中的 2 个会话删除，之后插件只写 sidecar（不再写会话事件），新日志不可能含它。
-# 所以默认不扫；真不放心就 `SCAN_LEGACY=1` 跑一次（用 `zstd -d -c`，别用 grep 直接扫压缩流）。
+# 关于 SCAN_LEGACY（默认关，只对 0.1.2 时代的老 home 有意义）：2026-08-17 事故期的 v1/v2 插件把
+# 状态写成会话事件 `ref-lib/set`，而含该事件的旧日志在 ≥0.1.3-alpha.2 宿主上会被**整体拒读**
+# （v0→v1 迁移边拒绝未知事件类型，补 `ignorable` 标记也没用）。**那道坎早已过了**：本机当时已把
+# 命中的 2 个会话删除，之后插件只写 sidecar（不再写会话事件），新日志不可能含它，所以默认不扫。
+# 真要扫就 `SCAN_LEGACY=1`（必须用 `zstd -d -c`：会话日志是**多帧** zstd，直接 grep 压缩流或只解
+# 第一帧都会恒报"零命中"）。命中后**先停手处置、再升级**：此时真实 home 还没被改动——先做整目录
+# 备份，再把命中的会话文件移走（或离线重编码），然后才升级宿主。理由见 docs/agents/dev-env.md。
 #
-# 全程只做四件事：备份 → `npm i -g` 宿主 → `pnpm pack` + `plugin remove/add` → 打印后续步骤。
+# 全程按这个顺序做，**顺序不能换**（理由见下面第 5 步的注释）：
+#   构建并打包 → 校验产物 → 备份 → 升宿主 → 换插件 → 打印后续步骤。
 set -euo pipefail
 
 SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -140,7 +144,7 @@ else
   note "⚠️  ${msg}（FORCE=1，继续）"
 fi
 
-# ── 4) 可选：旧日志扫描（§6.3；默认关，理由见头部注释）──────────────────────
+# ── 4) 可选：旧日志扫描（默认关，理由与处置见头部注释）──────────────────────
 if [ "${SCAN_LEGACY}" = "1" ]; then
   command -v zstd >/dev/null 2>&1 || die "SCAN_LEGACY=1 需要 zstd（多帧 zstd 必须用 zstd -d -c 解）"
   hits=0
@@ -150,7 +154,7 @@ if [ "${SCAN_LEGACY}" = "1" ]; then
   done < <(find "${REAL_HOME}/sessions" -name 'session*.jsonl.zstd' ! -name '*.bak-*' 2>/dev/null || true)
   note "旧日志扫描完成：${hits} 个文件命中（命中会让该会话在新宿主上读不出来，需先处置）"
   if [ "${hits}" != "0" ]; then
-    [ "${ASSUME_YES}" = "1" ] || die "命中旧日志，先按 docs/upgrade-dsh-0.1.7-rc.2.md §6.3 处置后再升级"
+    [ "${ASSUME_YES}" = "1" ] || die "命中旧日志：真实 home 还没动，先按头部 SCAN_LEGACY 说明做整目录备份并处置这些会话，再重跑升级"
   fi
 fi
 

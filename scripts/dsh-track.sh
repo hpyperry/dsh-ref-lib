@@ -3,7 +3,7 @@
 #
 # 被 scripts/dsh-local.sh 与 scripts/dev-isolate.sh `source`（不直接执行）。
 #
-# 三条约定（2026-09-25 修订；ref-lib 当前跟 dsh npm `next` = 0.1.7-rc.2，见 AGENTS.md §1）：
+# 三条约定（2026-09-25 修订；插件版本号与 dsh 解耦，见 AGENTS.md「硬约束」）：
 #   1) **永不全局安装**：一律 `npm install --prefix <目录>`；目录默认是 mktemp 出来的
 #      临时目录（用完即删），也可用 DSH_CACHE_DIR 按版本缓存到用户目录复用。
 #      **任何情况下都不执行 `npm i -g`、不改 PATH、不碰 `which dsh` 那份全局 CLI。**

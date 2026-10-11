@@ -1,3 +1,4 @@
+// L0：纯函数（无 IO、不碰宿主）
 import { describe, expect, it } from 'vitest'
 import { applyProbe, attachSessionMeta, excludeArchivedSources, excludeHiddenSources, filterAvailable, filterSourcesByGroupKey, groupKeyOf, groupSourcesByWorkspace, planImport, probeLibs, removeLib, statusChanged, summarizeGroups, UNGROUPED_GROUP_KEY, upsertLib, type RefLibSourceSessionRow } from '../src/logic.ts'
 import type { RefLibEntry } from '../src/spec.ts'

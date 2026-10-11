@@ -1,7 +1,7 @@
 /**
  * 跨会话导入流程（v12）：从其他会话挑选参考库条目导入当前会话。
  *
- * 三步状态机（与原型 prototype-session-import.html 一致）：
+ * 三步状态机：
  *   1. 会话选择：列出配置过参考库的其他会话（只列有参考库的，按最近活跃排序）；
  *   2. 条目选择：多选 + 「全选本会话全部条目」（三态勾选）；与当前会话重复的条目
  *      标 ⚠ 警示（按规范化绝对路径判定，classifyImport）；
@@ -10,8 +10,8 @@
  *
  * 语义（与 v10 fork 继承一致）：导入即**快照、不回流**——新增条目重新铸造 id、
  * note 保持源值；「使用导入的」= 以导入侧 note 替换现有条目（保留现有 id）。
- * 数据通道：/api/ref-lib/sessions（v16 懒加载：`groups=1` 组概览 + `group=<key>`
- * 按组会话）+ /list（源条目）+ /import（写入）。
+ * 数据通道：/api/ref-lib/sessions（懒加载：`groups=1` 组概览 + `group=<key>` 按组会话）
+ * + /source（源条目，只读、不要求源会话 live）+ /import（写入）。
  * 本组件为纯展示 + 状态机：异步操作（枚举/拉取/导入）经注入面执行，错误在
  * 流程弹窗内部展示（flowError）——导入流程是叠在面板之上的独立 Modal，
  * 写入面板错误槽会被遮住（v12.1 修复）。
@@ -56,7 +56,7 @@ export interface RefLibImportProps {
   listGroups: () => Promise<RefLibImportGroup[]>
   /** 单个工作区的会话（v16 懒加载第二级，GET /api/ref-lib/sessions?group=<key>）。 */
   loadGroupSessions: (groupKey: string) => Promise<RefLibSourceSession[]>
-  /** 拉取某会话的条目（GET /api/ref-lib/list?session=<id>）。 */
+  /** 拉取某会话的条目（GET /api/ref-lib/source?session=<id>，只读、不要求源会话 live）。 */
   loadEntries: (sessionId: SessionId) => Promise<RefLibEntry[]>
   /** 提交导入（POST /api/ref-lib/import）；失败抛错（错误在流程弹窗内展示）。 */
   onImport: (plan: ImportPlan) => Promise<void>

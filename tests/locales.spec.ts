@@ -1,3 +1,4 @@
+// L0：纯函数（无 IO、不碰宿主）
 /** ref-lib 本地化字典：zh/en 键集对等 + 关键文案抽查。 */
 import { describe, expect, it } from 'vitest'
 import { en, zh } from '../src/client/locales.ts'

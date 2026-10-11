@@ -1,3 +1,4 @@
+// L0：纯函数（无 IO、不碰宿主）
 /** client 端数据纯函数（/api/ref-lib 路由响应解析）单测。 */
 import { describe, expect, it } from 'vitest'
 import { classifyImport, libBasename, parseApiErrorPayload, parseGroupsPayload, parseLibsPayload, parseSessionsPayload } from '../src/client/data.ts'

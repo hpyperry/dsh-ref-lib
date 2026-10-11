@@ -1,3 +1,4 @@
+// L0：纯函数（无 IO、不碰宿主）
 /** 共享校验/消毒纯函数（src/validate.ts）单测。 */
 import { describe, expect, it } from 'vitest'
 import { hasControlCharacters, isRefLibEntry, sanitizeControlCharacters } from '../src/validate.ts'

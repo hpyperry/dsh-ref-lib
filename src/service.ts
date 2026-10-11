@@ -9,7 +9,7 @@
  * v3 起 per-session 列表存为 dsh home 下的 sidecar JSON
  * （`<dshHome>/plugin-data/ref-lib/<sessionId>.json`）。v1/v2 的 `ref-lib/set` 事件
  * **不做迁移**：含它的旧日志在 ≥0.1.3-alpha.2 宿主上读取阶段就被整体拒读
- * （见 `docs/upgrade-dsh-0.1.7-rc.2.md` §3.2 B3），折叠路径无从触达，已删除。
+ * （v0→v1 迁移边拒绝未知事件类型，补 ignorable 标记也没用），折叠路径无从触达，已删除。
  *
  * **fork 继承（2026-08-23 加固）**：dsh 的「分支会话」在宿主创建**新会话**
  * （`SessionStore.fork()` 铸造新 id，header 携带 `parentSession`）。本服务在

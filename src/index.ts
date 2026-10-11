@@ -14,10 +14,10 @@
  *   参考库的会话注入其库清单与只读约束（命名遵循 harness 的 `域:类型` 惯例，
  *   与 `sandbox:policy` / `approval:policy` 同类）。
  *
- * 只读保证分层：
- * - L1 沙箱天然只读：库位于 session workspace 之外时，read-only /
+ * 只读保证分两层（**与 tests/ 的 L0–L2 分档无关**，别混）：
+ * - 沙箱层天然只读：库位于 session workspace 之外时，read-only /
  *   workspace-write 模式下 bash/fs 均进程级只读（推荐用法）；
- * - L2 本插件注入的上下文软约束。
+ * - 注入层软约束：本插件在上下文里要求 agent 不得修改库内文件。
  * @module @hpyperry/dsh-ref-lib
  */
 

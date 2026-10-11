@@ -1,3 +1,4 @@
+// L1：真实装配与真实语义（宿主对象用假件）
 import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'

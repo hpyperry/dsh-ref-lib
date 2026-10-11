@@ -1,3 +1,4 @@
+// L1：真实装配与真实语义（宿主对象用假件）
 /**
  * 隔离的 loader 级测试：用真实 `cordis-plugin-loader` + `cordis-plugin-include`
  * 装载与用户安装一致的 cordis.yml 组合（ref-lib 插件）。

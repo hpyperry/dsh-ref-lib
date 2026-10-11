@@ -187,7 +187,7 @@ export function RefLibDock(props: RefLibDockProps): ReactElement {
   // conversation-nodes 迁至 ui-chat，`ChatSnapshot.legacy` 为兼容投影，官方
   // StatsLine 同款读法）——用户发消息落盘后产生 user 消息节点（`kind: 'user'`），
   // 计数 +1 触发静默刷新；流式 assistant 回复不改变 user 计数，不会每 token 刷新。
-  // 信号盲区（rc.7 查证，见 refresh-triggers.ts 与设计文档 §16）：steer 打断消息
+  // 信号盲区（rc.7 查证，见 refresh-triggers.ts）：steer 打断消息
   // 折叠为 'steering' 节点不触发；忙碌期排队消息的 user 节点在 step 领取时才落盘
   // （刷新延迟）；外部文件操作无会话事件（下次 GUI 交互同步）。
   const chatNodes = useChat((s: ChatSnapshot) => s.legacy.nodes)
@@ -209,7 +209,7 @@ export function RefLibDock(props: RefLibDockProps): ReactElement {
   // 后台轮询已移除（2026-08-22 用户决策）：UI 同步改为**交互驱动**——/ref-lib
   // 命令完成、发消息、面板操作均即时刷新；外部文件操作（删/恢复目录）在下次
   // GUI 交互时同步。注入侧不受影响：每次模型请求的注入回调仍实时探测
-  // （node half list()），与 UI 刷新完全解耦。详见设计文档 §14。
+  // （node half list()），与 UI 刷新完全解耦。
 
   const handleRemove = async (id: string): Promise<void> => {
     setRemovingId(id)
@@ -324,8 +324,8 @@ export function RefLibDock(props: RefLibDockProps): ReactElement {
   /**
    * 胶囊计数（v9）：徽标显示**可用**数量（失效不计入），红色角标显示失效数量
    * （总数 − 可用数），仅存在失效条目时显示。注意：UI 数据只在打开面板/操作后
-   * 刷新，外部变更（如删除目录）不会自动反向同步到界面（与命令修改后不刷新同属
-   * 待解决的 UI 数据同步问题，见设计文档"遗留备注"）。
+   * 刷新，外部变更（如删除目录）不会自动反向同步到界面——这是有意的取舍
+   * （见 README「已知限制」），不是待修的 bug。
    */
   const availableCount = libs.filter((entry) => entry.status === 'available').length
   const unavailableCount = libs.length - availableCount

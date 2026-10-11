@@ -1,3 +1,4 @@
+// L1：真实装配与真实语义（宿主对象用假件）
 /**
  * `/api/ref-lib/*` 路由单测：loopback 护栏 + list/add/remove 语义。
  * 用假 req/res/服务（不启动真实 HTTP server）。

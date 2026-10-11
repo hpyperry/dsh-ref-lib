@@ -1,3 +1,4 @@
+// L0：纯函数（无 IO、不碰宿主）
 import { describe, expect, it } from 'vitest'
 import { pickGlyph, type GlyphProps, type GlyphTable } from '../src/client/glyph.ts'
 

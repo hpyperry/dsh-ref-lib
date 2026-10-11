@@ -1,6 +1,6 @@
 name: ci
 
-# 门禁：push 到 main、以及所有 PR。与本地四道门禁一致（AGENTS.md §2）。
+# 门禁：push 到 main、以及所有 PR。与本地四道门禁一致（见 AGENTS.md「硬约束」第 4 条）。
 on:
   push:
     branches: [main]
