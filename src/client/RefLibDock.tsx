@@ -32,7 +32,7 @@ import {
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ImportPlan } from '../logic.ts'
 import type { RefLibEntry } from '../spec.ts'
-import { formatRefLibError, RefLibApiError, type RefLibImportGroup, type RefLibSourceSession } from './data.ts'
+import { formatRefLibError, isSessionNotLiveError, RefLibApiError, type RefLibImportGroup, type RefLibSourceSession } from './data.ts'
 import { RefreshGuard } from './refresh-guard.ts'
 import { deriveRefreshTriggers } from './refresh-triggers.ts'
 import { RefLibBrowser } from './RefLibBrowser.tsx'
@@ -159,6 +159,12 @@ export function RefLibDock(props: RefLibDockProps): ReactElement {
         setError(null)
       } catch (cause) {
         if (stopped || !guard.current.isLatest(mine)) return
+        // 会话不在本进程运行（另一个 dsh 实例持有它）是**永久性**失败：重试 5 次只会
+        // 白等 4 秒再给出同样的结论，直接本地化展示并收工。
+        if (isSessionNotLiveError(cause)) {
+          setError(formatRefLibError(cause, t))
+          return
+        }
         if (retries < MOUNT_RETRY_MAX) {
           retries += 1
           timer = window.setTimeout(() => { void attempt() }, MOUNT_RETRY_DELAY_MS)

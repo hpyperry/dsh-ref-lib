@@ -56,8 +56,12 @@
    状态一律写 sidecar（`ctx.refLibs`）；`tests/harness-roundtrip.spec.ts` 用陷阱守卫钉死这条。
 2. **client 图标必须从 `src/client/icons.ts` 取**，不要直接从 `ui-primitives` import：0.1.7 起图标
    由 `Icon*16` 改名为 `Icon*Regular` 且两代名字不共存，直连会把插件钉死在一代宿主上。
-3. **client bundle 的外部依赖表是契约**：新增来自宿主 seed 模块的 value import 时，必须**同时**
-   加进 `tsdown.config.ts` 的 `PLATFORM_EXTERNALS` 与 `package.json` 的 `dsh.client.external`。
+3. **client bundle 的外部依赖表是契约**：新增来自宿主 seed 模块（baseline）的 value import 时，
+   必须加进 `tsdown.config.ts` 的 `PLATFORM_EXTERNALS`——否则 tsdown 会把宿主模块内联成私有副本，
+   重复一份 React 组件身份。但 **baseline 词禁止写进 `package.json` 的 `dsh.client.external`**：
+   baseline 是隐式的，上游 `verify-client-packages` 把重复声明判为错误（"repeats baseline module"），
+   该字段只用于 baseline 之外的额外模块请求（本插件保持 `[]`）。baseline = 9 词，清单见
+   `tsdown.config.ts` 的备忘。
 4. **门禁四道**：`pnpm typecheck` / `pnpm lint` / `pnpm test` / `pnpm build` 全过才算完成；其中
    `pnpm test` 必须含三档测试（定义见 `docs/agents/testing.md`）。
 5. **单轨维护**：只在 `main` 上开发，不开长期分支；要试别的 dsh 版本，用 `TRACK=<dist-tag>` 或

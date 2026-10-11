@@ -17,12 +17,18 @@
  * 取代 0.1.2-rc.1 及以前的「具名导出 + `load(id) → SessionInspection`」。本轨
  * （devDeps pin `0.1.5-rc.2`）按新契约书写；旧写法在 0.1.5 上会先报
  * `JsonlSessionPersistence is not a constructor`、改对导出后报 `backend.load is not a function`。
+ *
+ * **v21 读接口迁移**：`Session.snapshotEvents()` 自 **0.2.0-rc.2** 起被标 `@deprecated`
+ * ——宿主政策是「同步读取任意位置/区间的历史一律弃用，也不许新增同义别名」，所以没有
+ * drop-in 替代。本轨改为用官方保留的两条未弃用路径断言"零日志污染"：`session.seq`
+ * （日志长度，纯 getter）与 `session/event`（提交后的事件流）。陷阱守卫那条断言的是
+ * 持久化层的冷读规则，与读接口无关，原样保留。
  */
 
 import { mkdir, mkdtemp, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
-import { SessionId, SessionStore, type SessionHeader } from '@deepseek-ai/dsh-session'
+import { SessionId, SessionStore, type SessionEvent, type SessionHeader } from '@deepseek-ai/dsh-session'
 import { SessionFormatUnsupportedError, type SessionHandle } from '@deepseek-ai/dsh-session-persistence'
 import JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -77,13 +83,24 @@ describe('harness 边界回归（会话日志可加载性）', () => {
     const service = new RefLibService(first.ctx, { root: sidecarRoot })
     const session = first.store.create(sessionId)
     const writer = await claimWrite(first, session)
+    // v21：不再用已弃用的 snapshotEvents()。seq 报长度（同步 getter，非历史读取），
+    // session/event 报提交后的增量事件——两者都不在被禁的"同步历史读取"之列。
+    const seqBefore = session.seq
+    const heard: SessionEvent[] = []
+    const stopFeed = first.ctx.on('session/event', (owner, event) => {
+      if (owner.id === sessionId) heard.push(event)
+    })
     const entry = await service.add(session, libDir)
     expect(service.list(session)).toEqual([entry])
     await service.remove(session, entry.id)
-    expect(session.snapshotEvents()).toEqual([]) // v3：插件操作零日志污染（rc.1 起经 snapshotEvents）
+    expect(session.seq).toBe(seqBefore) // v3：插件操作零日志污染
+    expect(heard).toEqual([])
+    // 哨兵：确认事件流本身是通的——否则上面的"零事件"可能只是监听没接上造成的假通过。
     // 模拟真实对话内容（平衡的一轮）
     session.append('turn/start', { turn: 1 })
     session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
+    expect(heard.map((event) => event.type)).toEqual(['turn/start', 'turn/end'])
+    stopFeed()
     // flush 必须真有监听者参与（否则说明持久化链路没接上，冷读会误报 not found）
     expect(await first.store.flush(session)).toBe(true)
     await writer.close()

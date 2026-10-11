@@ -1,0 +1,110 @@
+name: dsh track watch
+
+# 巡检：npm 上 dsh 的每个 dist-tag 当前指向的版本，是否仍落在本插件声明的 dsh-* peer 区间内。
+# 区间外的宿主上，插件会被兼容闸门拒绝安装、或在 profile 启动时被禁用——2026-10-11 的
+# dsh 0.2.0-rc.2 就是这么被动发现的（见 docs/adr/0001-host-version-compatibility.md）。
+#
+# 区间判定复用 scripts/dsh-track.sh 的 dsh_version_in_range，与 dev-isolate.sh /
+# upgrade-host.sh 的校验同源；只有取 dist-tags 这一步自己发请求（走 registry 的
+# dist-tags 小端点，避免为了拿几个 tag 去拉整份 packument）。
+#
+# 失败行为：**不让 workflow 变红**——"该去加宽区间了"是待办信号，不是构建坏了。
+# 改为开/更新一条带 dsh-track-watch 标签的 issue；registry 不可达时只警告并跳过。
+on:
+  schedule:
+    # 每周一 01:17 UTC（避开整点，少排队）
+    - cron: '17 1 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  watch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+
+      - name: 比对各 dist-tag 与 peer 区间
+        id: check
+        run: |
+          set -euo pipefail
+          source scripts/dsh-track.sh
+
+          RANGE="$(node -p "require('./package.json').peerDependencies['@deepseek-ai/dsh-session']")"
+          echo "插件声明的宿主区间：${RANGE}"
+
+          if ! TAGS_JSON="$(curl -fsSL 'https://registry.npmjs.org/-/package/@deepseek-ai%2Fdsh/dist-tags')"; then
+            echo "::warning::registry 不可达，本次跳过（不报红、不开 issue）"
+            exit 0
+          fi
+
+          # 动态遍历当下存在的所有 dist-tag（将来多出 beta 之类也自动覆盖）。
+          TAGS="$(printf '%s' "${TAGS_JSON}" | node -e 'let s="";process.stdin.on("data",(d)=>{s+=d}).on("end",()=>{process.stdout.write(Object.keys(JSON.parse(s)).join(" "))})')"
+          bad=0
+          lines=""
+          for tag in ${TAGS}; do
+            version="$(printf '%s' "${TAGS_JSON}" | node -e 'const t=JSON.parse(require("node:fs").readFileSync(0,"utf8"));process.stdout.write(t[process.argv[1]] ?? "")' "${tag}")"
+            if dsh_version_in_range "${version}" "${RANGE}"; then
+              echo "  ${tag} = ${version} 在区间内"
+              lines="${lines}- \`${tag}\` = \`${version}\` 在区间内"$'\n'
+            else
+              echo "::error::${tag} = ${version} 不在 ${RANGE} 内"
+              lines="${lines}- \`${tag}\` = \`${version}\` **不在区间内**"$'\n'
+              bad=1
+            fi
+          done
+
+          echo "bad=${bad}" >> "${GITHUB_OUTPUT}"
+          {
+            echo 'report<<REFLIB_EOF'
+            printf '%s' "${lines}"
+            echo 'REFLIB_EOF'
+          } >> "${GITHUB_OUTPUT}"
+
+      - name: 开或更新巡检 issue
+        if: steps.check.outputs.bad == '1'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPORT: ${{ steps.check.outputs.report }}
+        run: |
+          set -euo pipefail
+          TICK='`'
+          RANGE="$(node -p "require('./package.json').peerDependencies['@deepseek-ai/dsh-session']")"
+          RUN_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+
+          gh label create dsh-track-watch --color FBCA04 \
+            --description "dsh 的 dist-tag 超出插件 peer 区间（自动巡检）" 2>/dev/null || true
+
+          # 注意：这里必须用可展开的 heredoc（要插值），所以正文里的反引号用 ${TICK} 拼，
+          # 免得被 bash 当成命令替换执行。
+          BODY="$(cat <<EOF
+          自动巡检发现有 dsh dist-tag 指向的版本**不在插件声明的宿主区间内**。
+
+          插件区间：${TICK}${RANGE}${TICK}
+
+          ${REPORT}
+          区间外的宿主上，插件会被兼容闸门拒绝安装、或在 profile 启动时被禁用。
+
+          处理方式见 ${TICK}docs/agents/dev-env.md${TICK} 的「dsh 换线时先查闸门，再查 API」：
+          先改 ${TICK}package.json${TICK} 的 dsh-* peer 上界，再跑四道门禁 + 隔离环境验收，然后发一个新版本。
+
+          本次运行：${RUN_URL}
+          EOF
+          )"
+
+          existing="$(gh issue list --state open --label dsh-track-watch --json number --jq '.[0].number // empty')"
+          if [ -n "${existing}" ]; then
+            echo "已有巡检 issue #${existing}，追加评论"
+            gh issue comment "${existing}" --body "${BODY}"
+          else
+            gh issue create \
+              --title "dsh 的 dist-tag 已超出插件的 peer 区间" \
+              --body "${BODY}" \
+              --label dsh-track-watch --label ready-for-human
+          fi

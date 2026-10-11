@@ -120,11 +120,15 @@ describe('makeRefLibRoutes', () => {
     })
   })
 
-  it('list 对非 live 会话返回 404', async () => {
+  it('list 对非 live 会话返回 404，且带 wire code（client 据此本地化并停止重试）', async () => {
     const { byPath } = boot()
     const { res, out } = fakeRes()
     await byPath('/api/ref-lib/list').handler(fakeReq({ url: '/api/ref-lib/list?session=session-gone' }), res)
     expect(out.status).toBe(404)
+    expect(JSON.parse(out.body)).toEqual({
+      error: 'session not live: session-gone',
+      code: 'ref-lib/session-not-live',
+    })
   })
 
   it('POST add 调用服务并返回 { entry }', async () => {

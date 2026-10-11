@@ -122,7 +122,13 @@ export function makeRefLibRoutes(deps: RefLibRouteDeps): WebRoute[] {
     return true
   }
 
-  /** 会话解析：不存在（非 live）时写出 404 并返回 undefined。 */
+  /**
+   * 会话解析：不存在（非 live）时写出 404（带 wire code）并返回 undefined。
+   * 「非 live」的典型场景不是 id 写错，而是**同一个 home 同时开了两个 dsh 实例**——
+   * 对方持有该会话的 `session.lock`，本进程永远拿不到它（`SessionStore.get` 只返回本进程
+   * 的活会话）。所以错误体带 `code`，让 client 能本地化成"去持有它的那个实例操作"，
+   * 并对这类永久性失败停止重试。
+   */
   const requireSession = (res: ServerResponse, sessionId: unknown): Session | undefined => {
     if (typeof sessionId !== 'string' || sessionId === '') {
       writeJson(res, 400, { error: 'missing session id' })
@@ -130,7 +136,7 @@ export function makeRefLibRoutes(deps: RefLibRouteDeps): WebRoute[] {
     }
     const session = resolveSession(sessionId)
     if (session === undefined) {
-      writeJson(res, 404, { error: `session not live: ${sessionId}` })
+      writeJson(res, 404, { error: `session not live: ${sessionId}`, code: 'ref-lib/session-not-live' })
       return undefined
     }
     return session

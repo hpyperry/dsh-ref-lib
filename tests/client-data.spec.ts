@@ -1,7 +1,25 @@
 // L0：纯函数（无 IO、不碰宿主）
 /** client 端数据纯函数（/api/ref-lib 路由响应解析）单测。 */
+import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
 import { describe, expect, it } from 'vitest'
-import { classifyImport, libBasename, parseApiErrorPayload, parseGroupsPayload, parseLibsPayload, parseSessionsPayload } from '../src/client/data.ts'
+import { classifyImport, formatRefLibError, isSessionNotLiveError, libBasename, parseApiErrorPayload, parseGroupsPayload, parseLibsPayload, parseSessionsPayload, RefLibApiError } from '../src/client/data.ts'
+
+describe('非 live 会话错误（v21 wire code）', () => {
+  /** 只回键名的 t 桩：验证 wire code → 文案键的映射，不依赖词典措辞。 */
+  const tStub = ((key: string) => key) as unknown as TranslateNS<'ref-lib'>
+
+  it('session-not-live 映射为本地化键，不再是原始英文消息', () => {
+    const cause = new RefLibApiError('ref-lib/session-not-live', 'session not live: session-x')
+    expect(formatRefLibError(cause, tStub)).toBe('error.sessionNotLive')
+    expect(isSessionNotLiveError(cause)).toBe(true)
+  })
+
+  it('未知 code 与普通 Error 仍回退原始消息，且不被判为 not-live', () => {
+    expect(formatRefLibError(new RefLibApiError('ref-lib/whatever', 'boom'), tStub)).toBe('boom')
+    expect(formatRefLibError(new Error('boom'), tStub)).toBe('boom')
+    expect(isSessionNotLiveError(new Error('boom'))).toBe(false)
+  })
+})
 
 describe('parseLibsPayload', () => {
   it('缺失/畸形返回空列表', () => {

@@ -233,6 +233,12 @@ const ERROR_KEYS: Record<string, RefLibKey> = {
   'ref-lib/unsafe': 'error.unsafe',
   'ref-lib/unknown-id': 'error.unknownId',
   'ref-lib/unavailable': 'error.unavailable',
+  'ref-lib/session-not-live': 'error.sessionNotLive',
+}
+
+/** 会话不在本进程运行（not-live wire code）——重试无意义，只能去持有它的实例操作。 */
+export function isSessionNotLiveError(cause: unknown): boolean {
+  return cause instanceof RefLibApiError && cause.code === 'ref-lib/session-not-live'
 }
 
 /** 把未知错误规整为可展示文案。 */
