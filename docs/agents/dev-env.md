@@ -53,7 +53,10 @@ INSTALL_MODE=pack ./scripts/dev-isolate.sh   # 冻结副本：切分支/改源�
   `error: profile "desktop" is managed exclusively by the Electron application`（宿主 `lib/bin.js` 里的硬拦，
   与插件无关）。桌面端 profile 只能走**应用内的插件管理界面**，它的安装目标支持四类：包名（registry）、
   本地路径（path）、git 地址、`.tgz` 直链（tarball）。所以 `upgrade-host.sh` 只服务 CLI 可管的 profile
-  （默认 `web`）；要装进桌面端，就把 Release 的 tarball 链接或本地 `.tgz` 路径填进那个界面。
+  （默认 `web`）；要装进桌面端，就在那个界面里填**本地**仓库路径或本地 `.tgz` 路径。
+  ⚠️ `tarball` 那一类**填 Release 直链在本仓库必然 404**：private 仓库的
+  `/releases/download/…` 对匿名请求（pnpm 不带 Authorization 头）一律 404，带 token 也一样；
+  只有 API 资产端点认 token。要远程取产物先 `gh release download` 落本地。
 - **热更新分两半**：改 `src/client/*` 跑 `pnpm build:client`，浏览器秒级生效；改 node half
   必须重启 `dsh web`。改完源码忘了构建、吃到过期的 `lib/`，是最常见的"假故障"（`BUILD=1` 默认会
   先构建一次）。

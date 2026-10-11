@@ -51,8 +51,13 @@ dsh plugin --profile web remove @hpyperry/dsh-ref-lib
 
 > **桌面端（Electron 应用）走应用内安装**：`desktop` profile 由应用独占，`dsh plugin --profile desktop …`
 > 会被直接拒绝（`profile "desktop" is managed exclusively by the Electron application`）。请在应用的插件管理
-> 界面里安装——它接受包名、本地路径、git 地址和 `.tgz` 直链，直链形如
-> `https://github.com/hpyperry/dsh-ref-lib/releases/download/v<版本>/hpyperry-dsh-ref-lib-<版本>.tgz`。
+> 界面里安装：用「本地目录」填仓库路径，或用「压缩包」填**本地** `.tgz` 路径。
+>
+> ⚠️ **不要填 Release 的下载直链**：本仓库是 private，`/releases/download/…` 对匿名请求（pnpm 就是匿名）
+> 一律 404——`No authorization header was set for the request` 说的就是这件事；带 token 请求这个直链也同样
+> 404，只有官方 API 资产端点（`api.github.com/…/releases/assets/<id>` + `Authorization` 头）才拿得到，
+> 而 pnpm 不会发这个头。浏览器里能下，是因为你已经登录。要远程取产物就先 `gh release download` 落到本地，
+> 再把本地路径填进去。
 
 ## 快速上手
 
