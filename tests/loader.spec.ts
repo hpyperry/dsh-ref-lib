@@ -12,7 +12,7 @@ import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { afterEach, describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
-import type { Session, SessionEvent, SessionHeader } from '@deepseek-ai/dsh-session'
+import type { Session, SessionHeader } from '@deepseek-ai/dsh-session'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
 import Include from '@deepseek-ai/cordis-plugin-include'
 import RefLibPlugin from '../src/index.ts'
@@ -28,12 +28,11 @@ afterEach(async () => {
   root = undefined
 })
 
-/** fake session（per-session 数据操作；rc.1 起 Session 经 snapshotEvents() 读事件）。 */
+/** fake session（per-session 数据操作；服务只读 `id` 与 `header`）。 */
 function fakeSession(): Session {
   const id = `session-test-${++counter}`
-  const events: SessionEvent[] = []
   const header = { version: 0, id, createdAt: Date.now() } as SessionHeader
-  return { id, header, snapshotEvents: () => events } as unknown as Session
+  return { id, header } as unknown as Session
 }
 
 /** 构造与用户 profile 等价的组合（ref-lib 插件，存储根指向临时目录）。 */

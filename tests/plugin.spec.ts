@@ -2,18 +2,17 @@
 import { mkdtemp, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
-import type { Session, SessionEvent, SessionHeader } from '@deepseek-ai/dsh-session'
+import type { Session, SessionHeader } from '@deepseek-ai/dsh-session'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import RefLibPlugin from '../src/index.ts'
 
 let counter = 0
 
-/** fake session（装配测试只验证服务注册，不操作数据；rc.1 起读事件走 snapshotEvents）。 */
+/** fake session（装配测试只验证服务注册，不操作数据；服务只读 `id` 与 `header`）。 */
 function fakeSession(): Session {
   const id = `session-test-${++counter}`
-  const events: SessionEvent[] = []
   const header = { version: 0, id, createdAt: Date.now() } as SessionHeader
-  return { id, header, snapshotEvents: () => events } as unknown as Session
+  return { id, header } as unknown as Session
 }
 
 /** 装配测试：模拟 loader 装载插件（await ctx.plugin 装配 Service 类）。 */
