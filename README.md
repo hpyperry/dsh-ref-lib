@@ -139,7 +139,7 @@ pnpm build       # 构建 node half（tsc）+ client bundle（tsdown）→ lib/
 
   ```bash
   ./scripts/dev-isolate.sh              # 跟本插件所跟踪的通道（dsh npm next），home=.dsh-dev/next，端口 3090
-  TRACK=main ./scripts/dev-isolate.sh   # 测别的 dist-tag（main = latest，0.1.5/0.1.6 线），端口 3091
+  TRACK=main ./scripts/dev-isolate.sh   # 测别的 dist-tag（main = npm latest），端口 3091
   ```
 
   - 隔离 home 放在**仓库内**（`.dsh-dev/<track>`，**已 gitignore**）——这样 agent/CI 也能直接起环境，不依赖 `$HOME` 写权限。home 里有从真实 home 复制来的 sk 与会话副本，脚本启动时用 `git check-ignore` **实测**它确实被忽略，没被忽略就直接报错退出（删掉 `.gitignore` 里那行会立刻失败）。
@@ -166,8 +166,10 @@ pnpm build       # 构建 node half（tsc）+ client bundle（tsdown）→ lib/
 
 ### 发布（维护者）
 
-插件按**自己的语义化版本号**发布（当前 `0.18.0`），不再跟 dsh 版本号绑定；能装在哪代 dsh
-由 `package.json` 的 `dsh-*` peer 区间决定。dsh 发新版时只需要复核这个区间，不必改版本号。
+插件按**自己的语义化版本号**发布（以 `package.json` 的 `version` 为准），不与 dsh 版本号绑定；
+能装在哪代 dsh 由 `package.json` 的 `dsh-*` peer 区间决定。dsh 发新版时只需要复核这个区间，
+不必改版本号——区间为什么这么定、断点在哪，见
+[`docs/adr/0001-host-version-compatibility.md`](docs/adr/0001-host-version-compatibility.md)。
 
 **打 tag 即自动打包并挂 Release（推荐）**——把 `package.json` 的 `version` 改成目标版本并提交，然后：
 
@@ -182,7 +184,7 @@ git tag -a v0.20.1 -m "0.20.1" && git push origin v0.20.1
 只想拿一个 tar 而不发版：在 Actions 页手动触发同一个工作流，tar 作为 artifact 下载。
 
 **npm —— dist-tag 与 dsh 同构**：预发布进 `next`，正式版进 `latest`。**目前尚未发布**
-（npm 账号锁定，`npm whoami` 返回 401；registry 上这个包只有历史的 `0.11.0 / 0.14.0 / 0.15.0 / 0.17.0`，
+（npm 账号锁定，`npm whoami` 返回 401；registry 上这个包全是 `0.17.0` 及更早的历史版本，
 `latest = 0.17.0`，那版是 0.1.1-rc.2 时代的产物，见「安装」节的警告）。解锁后：
 
 ```bash
@@ -207,6 +209,11 @@ npm dist-tag add @hpyperry/dsh-ref-lib@0.20.1 latest
 - 发布包只含 `lib/` 与 `cordis.patch.yml`（`pnpm build` 先清空 `lib/` 再构建，不会带历史残留）；
   用户也可直接装打出的 tarball：`dsh plugin --profile web add ./hpyperry-dsh-ref-lib-<版本>.tgz`。
 - CI（[`.github/workflows/ci.yml`](.github/workflows/ci.yml)）在 push `main` 与所有 PR 上跑同样的四道门禁。
+- **宿主换线巡检**（[`.github/workflows/dsh-track-watch.yml`](.github/workflows/dsh-track-watch.yml)）：每周一自动跑一次（也可在 Actions 页手动触发），
+  比对 npm 上 dsh 的每个 dist-tag 当前指向的版本是否仍落在插件的 `dsh-*` peer 区间内——判定复用
+  [`scripts/dsh-track.sh`](scripts/dsh-track.sh) 的区间检查，与联调/升级脚本同源。落在区间外时**不让 CI 变红**，
+  而是开/更新一条带 `dsh-track-watch` 标签的 issue（插件在那一代宿主上会被兼容闸门拒绝，这是"该去加宽区间"的信号）；
+  registry 不可达时只警告并跳过。
 
 ## License
 
@@ -215,6 +222,8 @@ npm dist-tag add @hpyperry/dsh-ref-lib@0.20.1 latest
 ## 更多
 
 - 开发规范与硬性约束：见仓库 `AGENTS.md`
+- 术语表（本仓库特有的词汇，如「参考库条目」「侧车」「轨道」）：见 [`GLOSSARY.md`](GLOSSARY.md)
+- 关键决策与取舍（ADR）：见 [`docs/adr/`](docs/adr/)——其中 [0001](docs/adr/0001-host-version-compatibility.md) 是插件与宿主版本的兼容策略
 - 测试分档与每个测试文件的归属：见 [`docs/agents/testing.md`](docs/agents/testing.md)
 - 联调 / 升级 / 取指定版本 dsh 的脚本与护栏：见 [`docs/agents/dev-env.md`](docs/agents/dev-env.md)
 - 仓库：<https://github.com/hpyperry/dsh-ref-lib>
