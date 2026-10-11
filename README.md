@@ -49,6 +49,11 @@ dsh plugin --profile web remove @hpyperry/dsh-ref-lib
 
 安装完成后重启 `dsh web` 生效。本地开发期想改动即时生效，也可以直接指向仓库本地路径：`dsh plugin --profile web add /path/to/ref-lib`。
 
+> **桌面端（Electron 应用）走应用内安装**：`desktop` profile 由应用独占，`dsh plugin --profile desktop …`
+> 会被直接拒绝（`profile "desktop" is managed exclusively by the Electron application`）。请在应用的插件管理
+> 界面里安装——它接受包名、本地路径、git 地址和 `.tgz` 直链，直链形如
+> `https://github.com/hpyperry/dsh-ref-lib/releases/download/v<版本>/hpyperry-dsh-ref-lib-<版本>.tgz`。
+
 ## 快速上手
 
 1. 重启后，**输入框正上方**会出现一个「参考库」胶囊，点开即见管理面板。
