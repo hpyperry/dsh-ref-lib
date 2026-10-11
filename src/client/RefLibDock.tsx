@@ -93,6 +93,11 @@ export function RefLibDock(props: RefLibDockProps): ReactElement {
   const [picking, setPicking] = useState(false)
   const [removingId, setRemovingId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  // 会话不在本进程运行（典型：同一个 home 开了两个 dsh 实例，对方持有 session.lock）：
+  // 此时**所有**写操作都会被服务端拒绝，表单就不该看起来可用——否则界面在撒谎
+  // （2026-10-11 用户实测：点「选择文件夹」会顺手把红字清掉，让人误以为又能添加了）。
+  // 置位后禁用全部操作并给出「重试」；会话变活（重试成功）或重新打开面板即恢复。
+  const [blocked, setBlocked] = useState(false)
   // add 重复确认（v12）：同路径已注册且显式 note 不同 → 弹「保留现有 / 更新用途」，
   // 不再静默覆盖（历史行为缺陷修复）。newNote 为用户提交时的显式 note。
   const [duplicate, setDuplicate] = useState<{ entry: RefLibEntry; newNote: string } | null>(null)
@@ -133,13 +138,25 @@ export function RefLibDock(props: RefLibDockProps): ReactElement {
       const next = await load(sessionId)
       if (!guard.current.isLatest(mine)) return
       setLibs(next)
-      if (!silent) setError(null)
+      if (!silent) {
+        setError(null)
+        setBlocked(false)
+      }
     } catch (cause) {
       if (!guard.current.isLatest(mine)) return
-      if (!silent) setError(formatRefLibError(cause, t))
+      if (!silent) {
+        setBlocked(isSessionNotLiveError(cause))
+        setError(formatRefLibError(cause, t))
+      }
     } finally {
       if (guard.current.isLatest(mine) && !silent) setLoading(false)
     }
+  }
+
+  /** 「重试」（非 live 态）：重新拉列表；会话已变活则一次即恢复。 */
+  const handleRetry = async (): Promise<void> => {
+    setLoading(true)
+    await refresh()
   }
 
   // 挂载/会话切换预载（带失败重试）：重启 dsh web 后会话可能尚未 live（/list 404），
@@ -157,11 +174,13 @@ export function RefLibDock(props: RefLibDockProps): ReactElement {
         if (stopped || !guard.current.isLatest(mine)) return
         setLibs(next)
         setError(null)
+        setBlocked(false)
       } catch (cause) {
         if (stopped || !guard.current.isLatest(mine)) return
         // 会话不在本进程运行（另一个 dsh 实例持有它）是**永久性**失败：重试 5 次只会
-        // 白等 4 秒再给出同样的结论，直接本地化展示并收工。
+        // 白等 4 秒再给出同样的结论，直接本地化展示、置不可用态并收工。
         if (isSessionNotLiveError(cause)) {
+          setBlocked(true)
           setError(formatRefLibError(cause, t))
           return
         }
@@ -285,7 +304,9 @@ export function RefLibDock(props: RefLibDockProps): ReactElement {
   /** 唤起目录选择（browse 应用内浏览器 / native 系统对话框）并返回选中的路径；
    * 取消或失败返回 null——**不直接添加**，由面板把路径填入表单（用户可补用途后提交）。 */
   const pickPath = async (): Promise<string | null> => {
-    setError(null)
+    // 注意：这里**不**清错误槽。曾经的 setError(null) 会把"会话不在本实例"这类与
+    // 选目录毫不相干的错误一并擦掉，界面看起来恢复了、提交时又被同一个闸门拒掉。
+    // 错误只在真正拉到数据（refresh 成功）或被重试的动作成功时才清。
     // 探测目录选择能力：browse → 应用内目录浏览器；native → 系统 OS 对话框。
     let mode: 'browse' | 'native'
     try {
@@ -378,6 +399,10 @@ export function RefLibDock(props: RefLibDockProps): ReactElement {
         picking={picking}
         removingId={removingId}
         error={error}
+        blocked={blocked}
+        onRetry={() => {
+          void handleRetry()
+        }}
         t={t}
         onRemove={(id) => {
           void handleRemove(id)
@@ -396,6 +421,9 @@ export function RefLibDock(props: RefLibDockProps): ReactElement {
         open={importOpen}
         onClose={() => {
           setImportOpen(false)
+          // 关闭导入弹窗顺手刷新：导入流程本身只读 sidecar（不要求当前会话 live），
+          // 关掉后不该让面板停在旧视图上。
+          void refresh()
         }}
         currentLibs={libs}
         t={t}

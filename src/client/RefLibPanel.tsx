@@ -59,6 +59,10 @@ export interface RefLibPanelProps {
   removingId: string | null
   /** 已本地化的错误文案（null 表示无错误）。 */
   error: string | null
+  /** 会话不在本实例运行（另一个 dsh 实例持有）：所有操作必然被拒，禁用它们并给出重试。 */
+  blocked: boolean
+  /** 重新拉取列表（会话变活后恢复）；仅 `blocked` 时露出。 */
+  onRetry: () => void
   /** 本地化取词。 */
   t: TranslateNS<'ref-lib'>
   /** 移除一个条目（父组件执行异步并刷新）。 */
@@ -81,7 +85,7 @@ export interface RefLibPanelProps {
  * @returns 对话框元素（关闭时 Modal 返回 null）。
  */
 export function RefLibPanel(props: RefLibPanelProps): ReactElement {
-  const { open, onClose, libs, loading, busy, picking, removingId, error, t, onRemove, onRescan, onAddPath, onUpdateNote, onBrowse, onImportOpen } = props
+  const { open, onClose, libs, loading, busy, picking, removingId, error, blocked, onRetry, t, onRemove, onRescan, onAddPath, onUpdateNote, onBrowse, onImportOpen } = props
   const [draft, setDraft] = useState('')
   const [noteDraft, setNoteDraft] = useState('')
   // 详情展开：正在查看/编辑的条目 id + 编辑中的用途草稿。
@@ -139,7 +143,7 @@ export function RefLibPanel(props: RefLibPanelProps): ReactElement {
   /** 卡片 ⋯ 菜单项（失效条目禁用「编辑」——只允许移除/重扫；node 端 note 接口同样拒绝）。 */
   const entryMenuItems = (entry: RefLibEntry): MenuEntry[] => {
     const unavailable = entry.status !== undefined && entry.status !== 'available'
-    const locked = busy || removingId !== null
+    const locked = busy || removingId !== null || blocked
     return [
       { id: 'edit', label: t('menu.edit'), icon: <IconEditOutline size={14} />, disabled: locked || unavailable },
       { id: 'rescan', label: t('menu.rescan'), icon: <IconRefreshOutline size={14} />, disabled: locked },
@@ -162,6 +166,11 @@ export function RefLibPanel(props: RefLibPanelProps): ReactElement {
           <div className="reflib-error" role="alert">
             <IconWarningOutline size={14} className="reflib-errorIcon" />
             <span>{error}</span>
+            {blocked && (
+              <Button variant="ghost" size="sm" disabled={busy} onClick={onRetry}>
+                {t('error.retry')}
+              </Button>
+            )}
           </div>
         )}
         {/* 红绿灯状态行：绿点可用数 / 红点失效数（仅存在时显示）——计数一目了然 */}
@@ -340,7 +349,7 @@ export function RefLibPanel(props: RefLibPanelProps): ReactElement {
               value={draft}
               placeholder={t('add.placeholder')}
               aria-label={t('add.path.label')}
-              disabled={busy || picking}
+              disabled={busy || picking || blocked}
               onChange={(event) => {
                 setDraft(event.currentTarget.value)
               }}
@@ -354,7 +363,7 @@ export function RefLibPanel(props: RefLibPanelProps): ReactElement {
             <button
               type="button"
               className="reflib-addBrowse"
-              disabled={busy || picking}
+              disabled={busy || picking || blocked}
               onClick={() => {
                 void handleBrowse()
               }}
@@ -374,7 +383,7 @@ export function RefLibPanel(props: RefLibPanelProps): ReactElement {
               value={noteDraft}
               placeholder={t('add.note.placeholder')}
               aria-label={t('add.note.label')}
-              disabled={busy || picking}
+              disabled={busy || picking || blocked}
               rows={2}
               maxLength={NOTE_MAX_LENGTH}
               onChange={(event) => {
@@ -391,7 +400,7 @@ export function RefLibPanel(props: RefLibPanelProps): ReactElement {
               variant="ghost"
               size="sm"
               icon={<IconFolderOpen size={14} />}
-              disabled={busy || picking}
+              disabled={busy || picking || blocked}
               onClick={onImportOpen}
             >
               {t('import.open')}
@@ -400,7 +409,7 @@ export function RefLibPanel(props: RefLibPanelProps): ReactElement {
               variant="primary"
               size="sm"
               icon={<IconPlusOutline size={14} />}
-              disabled={busy || picking || draft.trim() === ''}
+              disabled={busy || picking || blocked || draft.trim() === ''}
               onClick={() => {
                 void handleSubmit()
               }}

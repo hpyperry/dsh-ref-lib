@@ -119,8 +119,9 @@ UI 面板和命令操作的是同一份数据，按习惯用哪个都行。
 - **导入是单向的**：导入后源会话的改动不会回流；同路径再次导入仍走冲突处理，不会自动合并。
 - **部分会话不在导入来源里**：归档会话、空白会话、子代理会话都不列出（见上文），需要时先在 GUI 里取消归档。
 - **同一个 home 不要同时开两个 dsh 实例**：会话在进程内是**独占**的（谁先打开谁持有 `session.lock`），
-  另一个实例拿不到它，面板会提示「该会话正在另一个 dsh 实例中运行」。参考库按会话管理，请固定在
-  拥有该会话的那个实例里操作；两个实例共写同一个 sidecar 也会互相覆盖（整文件写入，没有锁）。
+  另一个实例拿不到它，面板会提示「该会话正在另一个 dsh 实例中运行」并**禁用所有操作**（那些操作必然被服务端拒绝），
+  只留一个「重试」——会话变活后点一下即恢复。参考库按会话管理，请固定在拥有该会话的那个实例里操作；
+  两个实例共写同一个 sidecar 也会互相覆盖（整文件写入，没有锁）。
 
 ## 开发
 
@@ -171,7 +172,7 @@ pnpm build       # 构建 node half（tsc）+ client bundle（tsdown）→ lib/
 **打 tag 即自动打包并挂 Release（推荐）**——把 `package.json` 的 `version` 改成目标版本并提交，然后：
 
 ```bash
-git tag -a v0.20.0 -m "0.20.0" && git push origin v0.20.0
+git tag -a v0.20.1 -m "0.20.1" && git push origin v0.20.1
 ```
 
 [`.github/workflows/release.yml`](.github/workflows/release.yml) 会跑门禁 → 构建 → `pnpm pack`，
@@ -185,7 +186,7 @@ git tag -a v0.20.0 -m "0.20.0" && git push origin v0.20.0
 `latest = 0.17.0`，那版是 0.1.1-rc.2 时代的产物，见「安装」节的警告）。解锁后：
 
 ```bash
-npm publish --tag latest    # 例：0.20.0（正式版，同时把 latest 从 0.17.0 挪过来）
+npm publish --tag latest    # 例：0.20.1（正式版，同时把 latest 从 0.17.0 挪过来）
 npm publish --tag next      # 例：0.21.0-rc.1（预发布）
 ```
 
@@ -200,7 +201,7 @@ npm publish --tag next      # 例：0.21.0-rc.1（预发布）
 # ① 废弃所有会白屏的旧版本
 npm deprecate "@hpyperry/dsh-ref-lib@<=0.17.0" "旧版本基于 dsh 0.1.1-rc.2；在 0.1.7+ 宿主上会白屏，请升级"
 # ② 确认 latest 指向新稳定版（正常发布时会自动指过去，可用这条兜底/核对）
-npm dist-tag add @hpyperry/dsh-ref-lib@0.20.0 latest
+npm dist-tag add @hpyperry/dsh-ref-lib@0.20.1 latest
 ```
 
 - 发布包只含 `lib/` 与 `cordis.patch.yml`（`pnpm build` 先清空 `lib/` 再构建，不会带历史残留）；

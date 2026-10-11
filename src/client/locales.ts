@@ -117,6 +117,7 @@ export const zh = {
   'error.unknownId': '未找到参考库条目：{id}',
   'error.unavailable': '参考库目录不可用（仅允许移除）',
   'error.sessionNotLive': '该会话正在另一个 dsh 实例中运行；请在拥有它的那个实例里管理参考库',
+  'error.retry': '重试',
   // ── /ref-lib 命令结果卡片（conversation.chat.commandview）──
   'command.running': '执行中…',
   'command.done': '完成',
@@ -232,6 +233,7 @@ export const en = {
   'error.unknownId': 'Reference library entry not found: {id}',
   'error.unavailable': 'Reference library directory unavailable (remove only)',
   'error.sessionNotLive': 'This session is running in another dsh instance; manage its reference libraries from the instance that owns it',
+  'error.retry': 'Retry',
   // ── /ref-lib command result card (conversation.chat.commandview) ──
   'command.running': 'Running…',
   'command.done': 'Done',

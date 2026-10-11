@@ -22,5 +22,10 @@ describe('ref-lib locale dictionaries', () => {
     expect(en['panel.available']).toContain('{count}')
     expect(zh['panel.unavailable']).toContain('{count}')
     expect(en['panel.unavailable']).toContain('{count}')
+    // v23 非 live 态：说清"去哪个实例操作"，并露出「重试」
+    expect(zh['error.sessionNotLive']).toContain('另一个 dsh 实例')
+    expect(en['error.sessionNotLive']).toContain('another dsh instance')
+    expect(zh['error.retry']).toBe('重试')
+    expect(en['error.retry']).toBe('Retry')
   })
 })
