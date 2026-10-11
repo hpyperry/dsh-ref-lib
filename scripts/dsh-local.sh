@@ -63,5 +63,9 @@ else
   echo "dsh-local: 临时安装目录 ${PREFIX}（用完请 rm -rf；想复用请设 DSH_CACHE_DIR）" >&2
 fi
 
-echo "dsh-local: 通道=${DSH_TRACK:-main} 版本=${VERSION} 目录=${PREFIX}" >&2
+if [ -n "${DSH_VERSION:-}" ]; then
+  echo "dsh-local: 版本=${VERSION}（DSH_VERSION 显式指定，未走通道）目录=${PREFIX}" >&2
+else
+  echo "dsh-local: 通道=${DSH_TRACK:-${TRACK:-next}} 版本=${VERSION} 目录=${PREFIX}" >&2
+fi
 dsh_install_cli "${VERSION}" "${PREFIX}"

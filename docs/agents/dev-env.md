@@ -53,6 +53,26 @@ INSTALL_MODE=pack ./scripts/dev-isolate.sh   # 冻结副本：切分支/改源�
   必须重启 `dsh web`。改完源码忘了构建、吃到过期的 `lib/`，是最常见的"假故障"（`BUILD=1` 默认会
   先构建一次）。
 
+## dsh 换线时先查闸门，再查 API
+
+宿主发新线时，断点通常不是 API 而是 peer 区间：宿主的兼容闸门把插件每条 `@deepseek-ai/dsh` /
+`@deepseek-ai/dsh-*` peer 与**单一** runtimeVersion 比对（`includePrerelease: true`），
+不在区间里的插件装不上（`plugin add` 直接拒绝），按路径装的则在 profile 启动时被禁用。
+所以顺序是：
+
+1. **先确认目标宿主落在区间内**：`DSH_VERSION=<目标版本> ./scripts/dev-isolate.sh`
+   （要硬失败就加 `STRICT_VERSION=1`）。这一步不需要改任何代码。
+2. **不在区间里就改 `package.json` 的 dsh-* peer**：通常只动上界。上界写成下一条线的
+   `-0` 形式（如 `<0.3.0-0`）可以让一份 bundle 继续通吃整条线。
+3. **再去读 API 差异**。0.1.7-rc.2 → 0.2.0-rc.2 那次，插件用到的 API 逐字节未变，
+   唯一断点就是区间上界——结论与取舍见 `docs/adr/0001-host-version-compatibility.md`。
+4. **`devDependencies` 跟着钉到要真机验的那一代**，并把 `pnpm-workspace.yaml` 的
+   `minimumReleaseAgeExclude` 白名单同步重建，否则 `pnpm install` 会被 pnpm 11 的
+   最小发布年龄拦下。
+
+区间是"声明范围"，`devDependencies` 钉的那一代才是"每次升级真机冒烟的范围"，两者不必相等，
+但 README 要如实写明这个区别。
+
 ## `SCAN_LEGACY`（默认关，只对 0.1.2 时代的老 home 有意义）
 
 2026-08-17 事故期的 v1/v2 插件把状态写成会话事件 `ref-lib/set`；含该事件的旧日志在

@@ -15,8 +15,9 @@
 | 五个 triage 标签的字符串 | `docs/agents/triage-labels.md` |
 | 术语表与决策记录（ADR）放在哪 | `docs/agents/domain.md` |
 
-术语表 `GLOSSARY.md` 与决策记录目录 `docs/adr/` 是**约定的存放位置，目前都还是空的**：
-缺失不算错，等真有术语要固定、真有决策要留档时再建，不要为了"补齐"提前造文件。
+术语表 `GLOSSARY.md` 与决策记录目录 `docs/adr/` 是**约定的存放位置**，现在各有一份：
+`docs/adr/0001-host-version-compatibility.md` 记插件与宿主版本的兼容策略。有新术语要固定、
+有新决策要留档就往里加，不要为了"补齐"提前造文件。
 
 ## 1. 项目定位
 

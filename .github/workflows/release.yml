@@ -57,7 +57,7 @@ jobs:
           VER="$(tar -xzOf "${TGZ}" package/package.json | node -p 'JSON.parse(require("node:fs").readFileSync(0, "utf8")).version')"
           echo "tarball=${TGZ}  version=${VER}"
           if [ "${GITHUB_REF_TYPE}" = "tag" ] && [ "${GITHUB_REF_NAME#v}" != "${VER}" ]; then
-            echo "✖ tag ${GITHUB_REF_NAME} 与 package.json 的 version ${VER} 不一致（约定：插件 version = 所跟踪的 dsh 版本号，tag 用 v<version>）"
+            echo "✖ tag ${GITHUB_REF_NAME} 与 package.json 的 version ${VER} 不一致（约定：tag 名 = v<插件版本>；插件 version 是自己的 semver，与 dsh 版本无关）"
             exit 1
           fi
           if tar -tzf "${TGZ}" | grep -qE 'package/(src|tests|scripts)/'; then
